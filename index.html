@@ -16,9 +16,9 @@ button.active { background:#0f0; color:#000;}
 <input type="file" id="fileInput" accept=".wav" style="display:none">
 <canvas id="canvas" width="800" height="600"></canvas>
 <div id="ui">
-  <button id="loadBtn">Load</button>
-  <button id="fadeBtn">Fade</button>
-  <button id="invertBtn">Normal</button>
+  <button id="loadBtn">Load</button>
+  <button id="fadeBtn">Fade</button>
+  <button id="invertBtn">Normal</button>
 </div>
 
 <script>
@@ -40,7 +40,7 @@ let rotationSpeed = 0;
 let friction = 0.98;
 let autoplay = true;
 let loop = true;
-let fadeSpeed = 1.0;
+let fadeSpeed = 0.7;
 let volume = 1.0;
 let reverseFadeLogic = false;
 let fadeActive = false;
@@ -52,20 +52,26 @@ diskImg.src = 'https://i.ibb.co/1tMTRJWZ/disc.png';
 let mouseDown = false;
 let lastMouseX = 0;
 let needleX = 0;
-let manualControl = false; // NEU: Kontrolle durch Scratchen
+let manualControl = false;
+
+// 🔧 Scratch-bezogene Variablen
+let scratchStart = 0;
+let scratchEnd = 0;
+let scratchBufferActive = false;
+let scratchRangeSamples = 0;
 
 // --- WAV Laden ---
 loadBtn.addEventListener('click', ()=> {
-    fileInput.click();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
+    fileInput.click();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
 });
 fileInput.addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const arrayBuffer = await file.arrayBuffer();
-    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-    currentSamplePos = 0;
-    rotation = 0;
+    const file = e.target.files[0];
+    if(!file) return;
+    const arrayBuffer = await file.arrayBuffer();
+    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    currentSamplePos = 0;
+    rotation = 0;
 });
 
 // --- Buttons ---
@@ -75,25 +81,39 @@ invertBtn.addEventListener('click', ()=> reverseFadeLogic = !reverseFadeLogic);
 // --- Maus Scratching ---
 canvas.addEventListener('mousedown', e => { 
     mouseDown = true; 
-    manualControl = true; // <<< Scratch aktiv
-    lastMouseX = e.offsetX; 
+    manualControl = true;
+    lastMouseX = e.offsetX;
+
+    // 🔧 Kleines Scratch-Segment um aktuelle Position definieren
+    if(audioBuffer){
+        const segmentDuration = 0.2; // Sekunden
+        scratchRangeSamples = Math.floor(segmentDuration * audioCtx.sampleRate);
+        scratchStart = Math.max(0, Math.floor(currentSamplePos) - scratchRangeSamples / 2);
+        scratchEnd = Math.min(audioBuffer.length, scratchStart + scratchRangeSamples);
+        scratchBufferActive = true;
+    }
 });
 canvas.addEventListener('mouseup', e => { 
     mouseDown = false; 
-    // sanfter Übergang zurück zu Auto
-    setTimeout(()=>manualControl=false, 300); 
+    setTimeout(()=>{
+        manualControl=false;
+        scratchBufferActive = false; // zurück zu normalem Audio
+    }, 300); 
 });
 canvas.addEventListener('mouseleave', e => { 
     mouseDown = false; 
-    setTimeout(()=>manualControl=false, 300); 
+    setTimeout(()=>{
+        manualControl=false;
+        scratchBufferActive = false;
+    }, 300); 
 });
 canvas.addEventListener('mousemove', e => {
-    if(mouseDown && audioBuffer){
-        const dx = e.offsetX - lastMouseX;
-        rotationSpeed = dx * 5;
-        lastMouseX = e.offsetX;
-        currentSamplePos = ((rotation % 360)/360) * audioBuffer.length;
-    }
+    if(mouseDown && audioBuffer){
+        const dx = e.offsetX - lastMouseX;
+        rotationSpeed = dx * 5;
+        lastMouseX = e.offsetX;
+        currentSamplePos = ((rotation % 360)/360) * audioBuffer.length;
+    }
 });
 
 // --- Gamepad ---
@@ -105,113 +125,124 @@ window.addEventListener("gamepaddisconnected", e=>gamepadIndex=null);
 // --- Audio ScriptProcessorNode ---
 let scriptNode = audioCtx.createScriptProcessor(1024, 1, 1);
 scriptNode.onaudioprocess = function(e){
-    if(!audioBuffer || paused) return;
-    const outData = e.outputBuffer.getChannelData(0);
-    const channelData = audioBuffer.getChannelData(0);
+    if(!audioBuffer || paused) return;
+    const outData = e.outputBuffer.getChannelData(0);
+    const channelData = audioBuffer.getChannelData(0);
 
-    let normalSpeed = audioBuffer.length / audioBuffer.duration / audioCtx.sampleRate;
-    let rotationSpeedNormal = 360 / (audioBuffer.duration*60);
-    let speed = normalSpeed * (rotationSpeed / rotationSpeedNormal);
+    let normalSpeed = audioBuffer.length / audioBuffer.duration / audioCtx.sampleRate;
+    let rotationSpeedNormal = 360 / (audioBuffer.duration*60);
+    let speed = normalSpeed * (rotationSpeed / rotationSpeedNormal);
 
-    for(let i=0;i<outData.length;i++){
-        let idx = Math.floor(currentSamplePos);
-        if(loop) idx = ((idx % channelData.length)+channelData.length)%channelData.length;
-        else idx = Math.min(idx, channelData.length-1);
-        outData[i] = channelData[idx]*volume;
-        currentSamplePos += speed;
-    }
+    for(let i=0;i<outData.length;i++){
+        if(scratchBufferActive){
+            // 🔧 Scratch arbeitet nur im kleinen Segment
+            let idx = Math.floor(currentSamplePos);
+            if(idx < scratchStart) idx = scratchStart;
+            if(idx > scratchEnd) idx = scratchEnd;
+            outData[i] = channelData[idx] * volume;
 
-    // Fade Logic
-    let targetVolume = (paused || fadeActive) ? (reverseFadeLogic?1:0) : (reverseFadeLogic?0:1);
-    volume += (targetVolume - volume) * fadeSpeed;
+            currentSamplePos += speed;
+            if(currentSamplePos < scratchStart) currentSamplePos = scratchStart;
+            if(currentSamplePos > scratchEnd) currentSamplePos = scratchEnd;
+        } else {
+            // Normalbetrieb
+            let idx = Math.floor(currentSamplePos);
+            if(loop) idx = ((idx % channelData.length)+channelData.length)%channelData.length;
+            else idx = Math.min(idx, channelData.length-1);
+            outData[i] = channelData[idx]*volume;
+            currentSamplePos += speed;
+        }
+    }
+
+    // Fade Logic
+    let targetVolume = (paused || fadeActive) ? (reverseFadeLogic?1:0) : (reverseFadeLogic?0:1);
+    volume += (targetVolume - volume) * fadeSpeed;
 };
 scriptNode.connect(gainNode);
 
 // --- Draw ---
 function draw(){
-    const sw = canvas.width;
-    const sh = canvas.height;
-    ctx.fillStyle="#111";
-    ctx.fillRect(0,0,sw,sh);
+    const sw = canvas.width;
+    const sh = canvas.height;
+    ctx.fillStyle="#111";
+    ctx.fillRect(0,0,sw,sh);
 
-    const waveformH = sh*0.2;
-    const midY = waveformH/2;
-    if(audioBuffer){
-        const data = audioBuffer.getChannelData(0);
-        const factor = Math.max(1, data.length/sw);
-        ctx.strokeStyle="#ccc";
-        for(let x=0;x<sw;x++){
-            const idx = Math.floor(x*factor);
-            const sample = data[idx]*volume;
-            const h = sample*(waveformH/2);
-            ctx.beginPath();
-            ctx.moveTo(x, midY-h);
-            ctx.lineTo(x, midY+h);
-            ctx.stroke();
-        }
-    }
+    const waveformH = sh*0.2;
+    const midY = waveformH/2;
+    if(audioBuffer){
+        const data = audioBuffer.getChannelData(0);
+        const factor = Math.max(1, data.length/sw);
+        ctx.strokeStyle="#ccc";
+        for(let x=0;x<sw;x++){
+            const idx = Math.floor(x*factor);
+            const sample = data[idx]*volume;
+            const h = sample*(waveformH/2);
+            ctx.beginPath();
+            ctx.moveTo(x, midY-h);
+            ctx.lineTo(x, midY+h);
+            ctx.stroke();
+        }
+    }
 
-    // Nadel folgt Audio-Position
-    if(audioBuffer){
-        let pos = currentSamplePos;
-        if(loop) pos = ((pos % audioBuffer.length) + audioBuffer.length) % audioBuffer.length;
-        needleX = pos / audioBuffer.length * sw;
-    } else {
-        needleX = 0;
-    }
-    ctx.strokeStyle="red";
-    ctx.lineWidth=2;
-    ctx.beginPath();
-    ctx.moveTo(needleX,0);
-    ctx.lineTo(needleX,waveformH);
-    ctx.stroke();
+    // Nadel folgt Audio-Position
+    if(audioBuffer){
+        let pos = currentSamplePos;
+        if(loop) pos = ((pos % audioBuffer.length) + audioBuffer.length) % audioBuffer.length;
+        needleX = pos / audioBuffer.length * sw;
+    } else {
+        needleX = 0;
+    }
+    ctx.strokeStyle="red";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(needleX,0);
+    ctx.lineTo(needleX,waveformH);
+    ctx.stroke();
 
-    // Disk
-    const centerX = sw/2;
-    const centerY = sh*0.55;
-    const size = Math.min(sw,sh)*0.6;
-    ctx.save();
-    ctx.translate(centerX,centerY);
-    ctx.rotate(rotation*Math.PI/180);
-    ctx.drawImage(diskImg,-size/2,-size/2,size,size);
-    ctx.restore();
+    // Disk
+    const centerX = sw/2;
+    const centerY = sh*0.55;
+    const size = Math.min(sw,sh)*0.6;
+    ctx.save();
+    ctx.translate(centerX,centerY);
+    ctx.rotate(rotation*Math.PI/180);
+    ctx.drawImage(diskImg,-size/2,-size/2,size,size);
+    ctx.restore();
 
-    // Rotation
-    if(!paused){
-        if(manualControl){
-            // Scratch steuert Rotation
-            rotation += rotationSpeed;
-            rotationSpeed *= 0.9; // etwas mehr Dämpfung für Kontrolle
-        } else {
-            // Auto-Loop / Gamepad
-            if(gamepadIndex!==null && Math.abs(zAxis)>0.01){
-                rotationSpeed = zAxis * 150;
-            } else if(autoplay && audioBuffer){
-                rotationSpeed = 360 / (audioBuffer.duration * 60);
-            }
-            rotation += rotationSpeed;
-            rotationSpeed *= friction;
-        }
-    }
+    // Rotation
+    if(!paused){
+        if(manualControl){
+            rotation += rotationSpeed;
+            rotationSpeed *= 0.8; // etwas mehr Dämpfung für Kontrolle
+        } else {
+            if(gamepadIndex!==null && Math.abs(zAxis)>0.01){
+                rotationSpeed = zAxis * 150;
+            } else if(autoplay && audioBuffer){
+                rotationSpeed = 360 / (audioBuffer.duration * 60);
+            }
+            rotation += rotationSpeed;
+            rotationSpeed *= friction;
+        }
+    }
 
-    // Buttons Feedback
-    fadeBtn.classList.toggle('active', fadeActive);
-    invertBtn.classList.toggle('active', reverseFadeLogic);
+    // Buttons Feedback
+    fadeBtn.classList.toggle('active', fadeActive);
+    invertBtn.classList.toggle('active', reverseFadeLogic);
 
-    requestAnimationFrame(draw);
+    requestAnimationFrame(draw);
 }
 
 // --- Gamepad Polling ---
 function pollGamepad(){
-    if(gamepadIndex!==null){
-        const gp = navigator.getGamepads()[gamepadIndex];
-        if(gp){
-            zAxis = gp.axes[2]; // Z-Achse
-            paused = gp.buttons[0].pressed; // Button A
-            fadeActive = gp.buttons[2].pressed; // Button Y
-        }
-    }
-    requestAnimationFrame(pollGamepad);
+    if(gamepadIndex!==null){
+        const gp = navigator.getGamepads()[gamepadIndex];
+        if(gp){
+            zAxis = gp.axes[2];
+            paused = gp.buttons[0].pressed;
+            fadeActive = gp.buttons[2].pressed;
+        }
+    }
+    requestAnimationFrame(pollGamepad);
 }
 
 draw();
@@ -219,4 +250,5 @@ pollGamepad();
 </script>
 
 </body>
-</html>
+    </html>
+    
