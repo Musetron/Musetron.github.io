@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Spirit Chat Box – Rausch zu Satz</title>
+<title>Spirit Chat Box – Mikrofon Rausch</title>
 <style>
-body { background:#111; color:#eee; font-family:Arial,sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+body { background:#111; color:#eee; font-family:Arial,sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px;}
 #chat { width:100%; max-width:500px; height:350px; border:2px solid #444; border-radius:10px; padding:10px; overflow-y:auto; background:#222; margin-bottom:20px;}
 .message{margin:5px 0;}
 .user{color:#4caf50;}
@@ -17,21 +17,23 @@ button{padding:10px 20px;font-size:16px;border:none;border-radius:5px;cursor:poi
 </head>
 <body>
 
-<h1>Spirit Chat Box – Rausch zu Satz</h1>
+<h1>Spirit Chat Box – Mikrofon Rausch</h1>
 <div id="chat"></div>
 <div id="volume-meter"><div id="volume-level"></div></div>
 <button id="startBtn">Mikrofon starten</button>
 
 <script>
-// --- Setup ---
-const chat = document.getElementById('chat');
-const volumeLevel = document.getElementById('volume-level');
-const startBtn = document.getElementById('startBtn');
+const chat=document.getElementById('chat');
+const volumeLevel=document.getElementById('volume-level');
+const startBtn=document.getElementById('startBtn');
 
 let audioContext, analyser, microphone, dataArray;
 let spiritInterval;
 
-// --- Text zu Sprache ---
+// Kleine deutsche Wortliste zur Decodierung
+const dictionary=["ich","du","er","sie","es","wir","ihr","Hallo","Geist","Geheimnis","Antwort","Hilfe","jetzt","Ja","Nein","sehen","gehen","kommen","sprechen"];
+
+// TTS Funktion
 function speak(text){
     if('speechSynthesis' in window){
         const u=new SpeechSynthesisUtterance(text);
@@ -41,7 +43,7 @@ function speak(text){
     }
 }
 
-// --- Nachricht hinzufügen ---
+// Chat Nachricht hinzufügen
 function addMessage(text,sender){
     const msg=document.createElement('div');
     msg.className='message '+sender;
@@ -51,41 +53,16 @@ function addMessage(text,sender){
     if(sender==='spirit') speak(text);
 }
 
-// --- Zufälliger Rauschtext (Buchstaben + Leerzeichen) ---
-function randomNoise(length){
-    const chars='abcdefghijklmnopqrstuvwxyzäöüß ';
-    let str='';
-    for(let i=0;i<length;i++){
-        str+=chars.charAt(Math.floor(Math.random()*chars.length));
-    }
-    return str;
-}
-
-// --- Rausch decodieren zu korrektem deutschen Satz ---
-function decodeNoiseToSentence(noise){
-    // Simulierter Autokorrektur-Algorithmus
-    // Schritt 1: entferne mehrfach Leerzeichen
-    noise=noise.replace(/\s+/g,' ');
-    // Schritt 2: jeder „Wortfragment“ wird zu einem echten Wort ersetzt (kleine Beispielsammlung)
-    const dict=["ich","du","er","sie","es","wir","ihr","Hallo","Geist","Geheimnis","Antwort","Hilfe","jetzt","Ja","Nein","sehen","gehen","kommen","sprechen"];
-    const words=noise.split(' ').map(f=>{
-        if(f.length===0) return '';
-        // nimm zufälliges echtes Wort aus dict
-        return dict[Math.floor(Math.random()*dict.length)];
-    });
-    return words.join(' ');
-}
-
-// --- Mikrofon starten ---
+// Mikrofon starten
 async function startMic(){
     try{
-        const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+        const stream=await navigator.mediaDevices.getUserMedia({audio:true});
         audioContext=new (window.AudioContext||window.webkitAudioContext)();
         analyser=audioContext.createAnalyser();
+        analyser.fftSize=2048; // höhere Auflösung für Rausch-Analyse
         microphone=audioContext.createMediaStreamSource(stream);
         microphone.connect(analyser);
-        analyser.fftSize=256;
-        dataArray=new Uint8Array(analyser.frequencyBinCount);
+        dataArray=new Float32Array(analyser.fftSize);
 
         updateVolume();
         startSpiritBox();
@@ -95,23 +72,51 @@ async function startMic(){
     }
 }
 
-// --- Pegelanzeige ---
+// Pegelanzeige
 function updateVolume(){
-    analyser.getByteFrequencyData(dataArray);
-    const avg=dataArray.reduce((a,b)=>a+b,0)/dataArray.length;
-    const percent=Math.min(100,(avg/128)*100);
-    volumeLevel.style.width=percent+'%';
+    analyser.getFloatTimeDomainData(dataArray);
+    let sum=0;
+    for(let i=0;i<dataArray.length;i++){
+        sum+=dataArray[i]*dataArray[i];
+    }
+    const rms=Math.sqrt(sum/dataArray.length);
+    const percent=Math.min(100,rms*500);
+    volumeLevel.style.width=percent+"%";
     requestAnimationFrame(updateVolume);
 }
 
-// --- Spirit Box Logik ---
+// Mappe Rauschsignal zu Buchstaben
+function noiseToLetters(){
+    analyser.getFloatTimeDomainData(dataArray);
+    let letters="";
+    for(let i=0;i<dataArray.length;i+=100){ // Sample-Intervall
+        const amp=Math.abs(dataArray[i]);
+        if(amp>0.02){ // Schwellenwert
+            const chars="abcdefghijklmnopqrstuvwxyzäöüß ";
+            const index=Math.floor(Math.min(amp*100,chars.length-1));
+            letters+=chars[index];
+        }
+    }
+    return letters;
+}
+
+// Decodierung in Wörter/Sätze
+function decodeLettersToSentence(letters){
+    letters=letters.replace(/\s+/g,' ');
+    const fragments=letters.split(' ');
+    const words=fragments.map(f=>{
+        if(f.length===0) return '';
+        return dictionary[Math.floor(Math.random()*dictionary.length)];
+    });
+    return words.join(' ');
+}
+
+// Spirit Box Logik
 function startSpiritBox(){
     spiritInterval=setInterval(()=>{
-        analyser.getByteFrequencyData(dataArray);
-        const avg=dataArray.reduce((a,b)=>a+b,0)/dataArray.length;
-        if(avg>25){ // hoher Pegel = Rausch wird erzeugt
-            const noise=randomNoise(Math.max(5,Math.floor(avg/10)));
-            const sentence=decodeNoiseToSentence(noise);
+        const letters=noiseToLetters();
+        if(letters.length>0){
+            const sentence=decodeLettersToSentence(letters);
             addMessage(sentence,'spirit');
         }
     },800);
@@ -121,5 +126,5 @@ startBtn.addEventListener('click',startMic);
 </script>
 
 </body>
-  </html>
-  
+    </html>
+    
