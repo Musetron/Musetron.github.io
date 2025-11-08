@@ -2,58 +2,65 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Mikrofon Rausch zu Text</title>
+<title>Mikrofon Rausch Chat</title>
 <style>
-  body { font-family: monospace; background: #222; color: #0f0; padding: 20px; }
-  #output { white-space: pre-wrap; line-height: 1.5; }
+  body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+  #chat { white-space: pre-wrap; line-height: 1.5; max-width: 600px; margin: auto; }
+  .message { margin-bottom: 1em; }
 </style>
 </head>
 <body>
-<h2>Mikrofon Rausch zu Buchstaben</h2>
-<div id="output"></div>
-<script>
-const output = document.getElementById("output");
+<h2>Rausch → Buchstaben Chat</h2>
+<div id="chat"></div>
 
-// Audio-Setup
+<script>
+const chat = document.getElementById("chat");
+
 navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioCtx.createMediaStreamSource(stream);
     const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
+    analyser.fftSize = 512; // höhere Auflösung
     source.connect(analyser);
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    let lastSoundTime = Date.now();
     let currentMessage = "";
+    let lastSoundTime = Date.now();
+    const MESSAGE_TIMEOUT = 3000; // 3 Sekunden
 
     function mapLoudnessToChar(level) {
-        // Mappt Pegel 50-100% auf Buchstaben und Leerzeichen
-        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
-        const index = Math.floor((level - 0.5) / 0.5 * (chars.length - 1));
+        // Mehr Buchstaben pro Pegel: gemappt auf 64 Zeichen
+        const chars = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const index = Math.floor(level * (chars.length - 1));
         return chars[index] || " ";
     }
 
     function processAudio() {
         analyser.getByteTimeDomainData(dataArray);
-        // RMS berechnen (Lautstärke)
+
+        // RMS berechnen
         let sum = 0;
-        for(let i=0; i<dataArray.length; i++) {
+        for(let i = 0; i < dataArray.length; i++) {
             const val = (dataArray[i] - 128) / 128;
             sum += val * val;
         }
         const rms = Math.sqrt(sum / dataArray.length);
 
-        if(rms > 0.5) { // ab 50% Pegel
+        if(rms > 0.5) {
             lastSoundTime = Date.now();
-            currentMessage += mapLoudnessToChar(rms);
-            output.textContent = currentMessage;
-        } else {
-            // Prüfen, ob >1 Sekunde Leerlauf
-            if(Date.now() - lastSoundTime > 1000 && currentMessage) {
-                currentMessage += "\n--- Nachricht Ende ---\n";
-                output.textContent = currentMessage;
-                currentMessage = "";
+            // Mehr Buchstaben pro Frame: z.B. 3 pro Sample
+            for(let i=0; i<3; i++) {
+                currentMessage += mapLoudnessToChar(rms);
             }
+        }
+
+        // Nachricht nach 3 Sekunden Inaktivität beenden
+        if(Date.now() - lastSoundTime > MESSAGE_TIMEOUT && currentMessage) {
+            const messageDiv = document.createElement("div");
+            messageDiv.className = "message";
+            messageDiv.textContent = currentMessage;
+            chat.appendChild(messageDiv);
+            currentMessage = "";
         }
 
         requestAnimationFrame(processAudio);
