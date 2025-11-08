@@ -20,19 +20,18 @@ navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioCtx.createMediaStreamSource(stream);
     const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512; // höhere Auflösung
+    analyser.fftSize = 512;
     source.connect(analyser);
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     let currentMessage = "";
-    let lastSoundTime = Date.now();
-    const MESSAGE_TIMEOUT = 3000; // 3 Sekunden
+    let lastSoundTime = 0;
+    const MESSAGE_TIMEOUT = 3000; // 3 Sekunden Inaktivität
 
-    function mapLoudnessToChar(level) {
-        // Mehr Buchstaben pro Pegel: gemappt auf 64 Zeichen
-        const chars = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        const index = Math.floor(level * (chars.length - 1));
-        return chars[index] || " ";
+    const chars = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    function randomChar() {
+        return chars[Math.floor(Math.random() * chars.length)];
     }
 
     function processAudio() {
@@ -48,14 +47,14 @@ navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
 
         if(rms > 0.5) {
             lastSoundTime = Date.now();
-            // Mehr Buchstaben pro Frame: z.B. 3 pro Sample
-            for(let i=0; i<3; i++) {
-                currentMessage += mapLoudnessToChar(rms);
+            // Mehr Buchstaben pro Frame
+            for(let i=0; i<5; i++) {
+                currentMessage += randomChar();
             }
         }
 
-        // Nachricht nach 3 Sekunden Inaktivität beenden
-        if(Date.now() - lastSoundTime > MESSAGE_TIMEOUT && currentMessage) {
+        // Nachricht beenden nach 3 Sekunden Inaktivität
+        if(currentMessage && Date.now() - lastSoundTime > MESSAGE_TIMEOUT) {
             const messageDiv = document.createElement("div");
             messageDiv.className = "message";
             messageDiv.textContent = currentMessage;
