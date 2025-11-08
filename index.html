@@ -73,19 +73,19 @@ fadeBtn.addEventListener('click', ()=> fadeActive = !fadeActive);
 invertBtn.addEventListener('click', ()=> reverseFadeLogic = !reverseFadeLogic);
 
 // --- Maus Scratching ---
-canvas.addEventListener('mousedown', e => { 
-    mouseDown = true; 
-    manualControl = true; // <<< Scratch aktiv
-    lastMouseX = e.offsetX; 
+canvas.addEventListener('mousedown', e => { 
+    mouseDown = true; 
+    manualControl = true; // <<< Scratch aktiv
+    lastMouseX = e.offsetX; 
 });
-canvas.addEventListener('mouseup', e => { 
-    mouseDown = false; 
-    // sanfter Übergang zurück zu Auto
-    setTimeout(()=>manualControl=false, 300); 
+canvas.addEventListener('mouseup', e => { 
+    mouseDown = false; 
+    // sanfter Übergang zurück zu Auto
+    setTimeout(()=>manualControl=false, 300); 
 });
-canvas.addEventListener('mouseleave', e => { 
-    mouseDown = false; 
-    setTimeout(()=>manualControl=false, 300); 
+canvas.addEventListener('mouseleave', e => { 
+    mouseDown = false; 
+    setTimeout(()=>manualControl=false, 300); 
 });
 canvas.addEventListener('mousemove', e => {
     if(mouseDown && audioBuffer){
@@ -207,7 +207,8 @@ function pollGamepad(){
         const gp = navigator.getGamepads()[gamepadIndex];
         if(gp){
             zAxis = gp.axes[2]; // Z-Achse
-            paused = gp.buttons[0].pressed; // Button A
+            pau
+sed = gp.buttons[0].pressed; // Button A
             fadeActive = gp.buttons[2].pressed; // Button Y
         }
     }
