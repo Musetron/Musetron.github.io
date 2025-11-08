@@ -23,6 +23,7 @@
   let ctx, analyser, src, micStream, anim;
   let ambient = 0, calibrated = false;
   let symbols = '', decoded = '';
+  let lastSoundTime = 0;
 
   document.getElementById('start').onclick = async () => {
     if(ctx){ stop(); return; }
@@ -63,17 +64,28 @@
     const pct = Math.min(100, adj * 2000);
     document.getElementById('bar').style.width = pct + '%';
 
+    const now = performance.now();
+
     if(pct > 50){
+      lastSoundTime = now;
       const idx = Math.floor(pct) % 2;
       const symbol = idx ? '-' : '.';
       symbols += symbol;
 
-      // Nur alle paar Symbole decodieren, damit Text stehen bleibt
       if (symbols.length % 4 === 0) {
         const part = decode(symbols);
         decoded += part;
         symbols = '';
         document.getElementById('output').textContent = decoded;
+      }
+    } else {
+      // Wenn länger als 1 Sekunde kein Ton, Leerzeichen einfügen
+      if(now - lastSoundTime > 1000 && symbols.length > 0){
+        const part = decode(symbols);
+        decoded += part + ' ';
+        symbols = '';
+        document.getElementById('output').textContent = decoded;
+        lastSoundTime = now;
       }
     }
 
@@ -91,4 +103,5 @@
   }
   </script>
 </body>
-</html>
+  </html>
+  
