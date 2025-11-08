@@ -1,284 +1,314 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>3D Pointcloud Spectrogram Visualizer — Live Mikrofon</title>
-  <style>
-    html,body{height:100%;margin:0;background:#0b0b0f;color:#ddd;font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
-    #ui{position:fixed;left:12px;top:12px;z-index:5;background:rgba(0,0,0,0.4);padding:8px;border-radius:8px}
-    label{display:block;font-size:12px;margin-bottom:6px}
-    .btn{padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.02);color:#fff;cursor:pointer}
-    #credits{position:fixed;right:12px;bottom:12px;font-size:12px;opacity:0.7}
-  </style>
+<meta charset="UTF-8">
+<title>DJ Disk Accurate</title>
+<style>
+body { margin:0; background:#333; font-family:sans-serif; user-select:none; overflow:hidden;}
+canvas { display:block; margin:0 auto; background:#2b2b2b; } /* dunkleres Grau für Canvas */
+#ui { position:absolute; bottom:10px; width:100%; display:flex; justify-content:center; gap:20px;}
+button { padding:10px 20px; font-size:16px; background:#333; color:#fff; border:2px solid #ccc; cursor:pointer;}
+button.active { background:#0f0; color:#000;}
+</style>
 </head>
 <body>
-  <div id="ui">
-    <button id="startBtn" class="btn">Mikrofon starten</button>
-    <label>FFT Größe: <select id="fftSelect"><option>1024</option><option selected>2048</option><option>4096</option></select></label>
-    <label>Punkte pro Frame: <input id="binsRange" type="range" min="64" max="2048" value="512"></label>
-    <label>Depth (Zeit): <input id="depthRange" type="range" min="16" max="512" value="128"></label>
-    <label>Point Size: <input id="sizeRange" type="range" min="0.5" max="6" step="0.1" value="1.8"></label>
-  </div>
-  <div id="credits">3D Pointcloud Spectrogram — live from your microphone</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+<input type="file" id="fileInput" accept=".wav" style="display:none">
+<canvas id="canvas" width="800" height="600"></canvas>
+<div id="ui">
+  <button id="loadBtn">Load</button>
+  <button id="fadeBtn">Fade</button>
+  <button id="invertBtn">Normal</button>
+</div>
 
-  <script>
-  let renderer, scene, camera, controls;
-  let particleSystem, positions, colors;
-  let WIDTH = window.innerWidth, HEIGHT = window.innerHeight;
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const loadBtn = document.getElementById('loadBtn');
+const fadeBtn = document.getElementById('fadeBtn');
+const invertBtn = document.getElementById('invertBtn');
+const fileInput = document.getElementById('fileInput');
 
-  let audioContext, analyser, sourceNode;
-  let freqData;
+let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let gainNode = audioCtx.createGain();
+gainNode.connect(audioCtx.destination);
 
-  let BINS = 512;
-  let DEPTH = 128;
-  let POINT_SIZE = 1.8;
+let audioBuffer = null;
+let currentSamplePos = 0;
+let rotation = 0;
+let rotationSpeed = 0;
+let friction = 0.98;
+let autoplay = true;
+let loop = true;
+let fadeSpeed = 0.7;
+let volume = 1.0;
+let reverseFadeLogic = false;
+let fadeActive = false;
+let paused = false;
 
-  let framesBuffer;
+let diskImg = new Image();
+diskImg.src = 'https://i.ibb.co/1tMTRJWZ/disc.png';
 
-  function initThree(){
-    renderer = new THREE.WebGLRenderer({antialias:true});
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(WIDTH, HEIGHT);
-    document.body.appendChild(renderer.domElement);
+let mouseDown = false;
+let lastMouseX = 0;
+let needleX = 0;
+let manualControl = false; // NEU: Kontrolle durch Scratchen
 
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x05050b);
+// --- Microphone ---
+let micStream = null;
+let micSource = null;
+let micAnalyser = null;
+let micDataArray = null;
+let micLevel = 0; // 0..1
 
-    camera = new THREE.PerspectiveCamera(60, WIDTH/HEIGHT, 0.1, 1000);
-    camera.position.set(0, 30, 120);
+async function startMic(){
+    if(micStream) return;
+    try{
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video:false });
+        micSource = audioCtx.createMediaStreamSource(micStream);
+        micAnalyser = audioCtx.createAnalyser();
+        micAnalyser.fftSize = 512;
+        micDataArray = new Uint8Array(micAnalyser.fftSize);
+        micSource.connect(micAnalyser);
+    } catch(err){
+        console.warn("Mikrofon nicht verfügbar oder Zugriff verweigert:", err);
+    }
+}
 
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
+// --- WAV Laden ---
+loadBtn.addEventListener('click', ()=> {
+    fileInput.click();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    startMic(); // Starte Mikrofon beim Interagieren
+});
+fileInput.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const arrayBuffer = await file.arrayBuffer();
+    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    currentSamplePos = 0;
+    rotation = 0;
+});
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-    dir.position.set(10,30,10);
-    scene.add(dir);
+// --- Buttons ---
+fadeBtn.addEventListener('click', ()=> fadeActive = !fadeActive);
+invertBtn.addEventListener('click', ()=> reverseFadeLogic = !reverseFadeLogic);
 
-    window.addEventListener('resize', onWindowResize);
-  }
+// --- Maus Scratching ---
+canvas.addEventListener('mousedown', e => { 
+    mouseDown = true; 
+    manualControl = true; // <<< Scratch aktiv
+    lastMouseX = e.offsetX; 
+});
+canvas.addEventListener('mouseup', e => { 
+    mouseDown = false; 
+    // sanfter Übergang zurück zu Auto
+    setTimeout(()=>manualControl=false, 300); 
+});
+canvas.addEventListener('mouseleave', e => { 
+    mouseDown = false; 
+    setTimeout(()=>manualControl=false, 300); 
+});
+canvas.addEventListener('mousemove', e => {
+    if(mouseDown && audioBuffer){
+        const dx = e.offsetX - lastMouseX;
+        rotationSpeed = dx * 5;
+        lastMouseX = e.offsetX;
+        currentSamplePos = ((rotation % 360)/360) * audioBuffer.length;
+    }
+});
 
-  function onWindowResize(){
-    WIDTH = window.innerWidth; HEIGHT = window.innerHeight;
-    camera.aspect = WIDTH/HEIGHT; camera.updateProjectionMatrix();
-    renderer.setSize(WIDTH, HEIGHT);
-  }
+// --- Gamepad ---
+let gamepadIndex = null;
+let zAxis = 0.0;
+window.addEventListener("gamepadconnected", e=>gamepadIndex=e.gamepad.index);
+window.addEventListener("gamepaddisconnected", e=>gamepadIndex=null);
 
-  function createPointCloud(){
-    if (particleSystem) scene.remove(particleSystem);
+// --- Audio ScriptProcessorNode ---
+let scriptNode = audioCtx.createScriptProcessor(512, 1, 1);
+scriptNode.onaudioprocess = function(e){
+    if(!audioBuffer || paused) return;
+    const outData = e.outputBuffer.getChannelData(0);
+    const channelData = audioBuffer.getChannelData(0);
 
-    const total = BINS * DEPTH;
-    const geometry = new THREE.BufferGeometry();
+    // Berechne Geschwindigkeit relativ zum Original
+    let normalSpeed = audioBuffer.length / audioBuffer.duration / audioCtx.sampleRate;
+    let rotationSpeedNormal = 360 / (audioBuffer.duration*60);
+    let speed = normalSpeed * (rotationSpeed / rotationSpeedNormal);
 
-    positions = new Float32Array(total * 3);
-    colors = new Float32Array(total * 3);
-    const sizes = new Float32Array(total);
-
-    const X_RANGE = 100;
-    const Z_SPACING = 0.6;
-
-    let idx = 0;
-    for(let z=0; z<DEPTH; z++){
-      for(let x=0; x<BINS; x++){
-        const px = (x / (BINS-1) - 0.5) * X_RANGE;
-        const py = -10;
-        const pz = z * Z_SPACING;
-        positions[idx*3+0] = px;
-        positions[idx*3+1] = py;
-        positions[idx*3+2] = pz;
-
-        const t = x / Math.max(1,BINS-1);
-        const c = new THREE.Color();
-        c.setHSL(0.6 - 0.5 * t, 0.85, 0.5);
-        colors[idx*3+0] = c.r;
-        colors[idx*3+1] = c.g;
-        colors[idx*3+2] = c.b;
-
-        sizes[idx] = POINT_SIZE;
-        idx++;
-      }
+    for(let i=0;i<outData.length;i++){
+        let idx = Math.floor(currentSamplePos);
+        if(loop) idx = ((idx % channelData.length)+channelData.length)%channelData.length;
+        else idx = Math.min(idx, channelData.length-1);
+        outData[i] = channelData[idx]*volume;
+        currentSamplePos += speed;
     }
 
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setAttribute('customColor', new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
+    // Fade Logic
+    let targetVolume = (paused || fadeActive) ? (reverseFadeLogic?1:0) : (reverseFadeLogic?0:1);
+    volume += (targetVolume - volume) * fadeSpeed;
+};
+scriptNode.connect(gainNode);
 
-    const material = new THREE.ShaderMaterial({
-      transparent: true,
-      depthTest: true,
-      uniforms: {
-        uPixelRatio: { value: window.devicePixelRatio },
-        uSize: { value: POINT_SIZE }
-      },
-      vertexShader: `
-        attribute vec3 customColor;
-        varying vec3 vColor;
-        uniform float uPixelRatio;
-        uniform float uSize;
-        void main(){
-          vColor = customColor;
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = max(1.0, uPixelRatio * uSize);
-          gl_Position = projectionMatrix * mvPosition;
+// --- Draw ---
+function draw(){
+    const sw = canvas.width;
+    const sh = canvas.height;
+    ctx.fillStyle="#2b2b2b"; // Canvas dunkles Grau
+    ctx.fillRect(0,0,sw,sh);
+
+    // Update mic level (RMS aus TimeDomain)
+    if(micAnalyser){
+        micAnalyser.getByteTimeDomainData(micDataArray);
+        // RMS normalisieren auf 0..1
+        let sum = 0;
+        for(let i=0;i<micDataArray.length;i++){
+            let v = (micDataArray[i] - 128) / 128; // -1..1
+            sum += v*v;
         }
-      `,
-      fragmentShader: `
-        varying vec3 vColor;
-        void main(){
-          float r = length(gl_PointCoord - vec2(0.5));
-          float alpha = smoothstep(0.5, 0.45, r);
-          gl_FragColor = vec4(vColor, alpha);
+        let rms = Math.sqrt(sum / micDataArray.length); // 0..1
+        micLevel = Math.min(1, rms*1.4); // etwas Empfindlichkeit hochziehen
+    } else {
+        micLevel = 0;
+    }
+
+    const waveformH = sh*0.2;
+    const midY = waveformH/2;
+    if(audioBuffer){
+        const data = audioBuffer.getChannelData(0);
+        const factor = Math.max(1, data.length/sw);
+        ctx.strokeStyle="#ccc";
+        ctx.lineWidth = 1;
+        for(let x=0;x<sw;x++){
+            const idx = Math.floor(x*factor);
+            const sample = data[idx]*volume;
+            const h = sample*(waveformH/2);
+            ctx.beginPath();
+            ctx.moveTo(x, midY-h);
+            ctx.lineTo(x, midY+h);
+            ctx.stroke();
         }
-      `
-    });
-
-    particleSystem = new THREE.Points(geometry, material);
-    particleSystem.rotation.x = -Math.PI/12;
-    scene.add(particleSystem);
-  }
-
-  async function initAudio(){
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    sourceNode = audioContext.createMediaStreamSource(stream);
-
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.3;
-    sourceNode.connect(analyser);
-
-    freqData = new Float32Array(analyser.frequencyBinCount);
-
-    DEPTH = parseInt(document.getElementById('depthRange').value,10);
-    BINS = parseInt(document.getElementById('binsRange').value,10);
-    framesBuffer = new Array(DEPTH);
-    for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
-
-    createPointCloud();
-    animate();
-  }
-
-  function pushFrame(){
-    const rawBins = new Float32Array(analyser.frequencyBinCount);
-    analyser.getFloatFrequencyData(rawBins);
-
-    const step = Math.max(1, Math.floor(rawBins.length / BINS));
-    const frame = new Float32Array(BINS);
-    for(let i=0, j=0; i<BINS; i++, j+=step){
-      const v = rawBins[Math.min(j, rawBins.length-1)];
-      const amp = Math.max(0, (v + 100) / 100);
-      frame[i] = amp;
-    }
-    framesBuffer.pop();
-    framesBuffer.unshift(frame);
-  }
-
-  function updateGeometry(){
-    if(!positions) return;
-    const X_RANGE = 100;
-    const Z_SPACING = 0.6;
-
-    let idx = 0;
-    for(let z=0; z<DEPTH; z++){
-      const frame = framesBuffer[z];
-      for(let x=0; x<BINS; x++){
-        const baseIdx = idx*3;
-        positions[baseIdx+0] = (x / (BINS-1) - 0.5) * X_RANGE;
-        const a = frame ? frame[x] : 0;
-        positions[baseIdx+1] = a * 60 - 10;
-        positions[baseIdx+2] = z * Z_SPACING;
-
-        const t = x / Math.max(1,BINS-1);
-        const hue = 0.65 - 0.6 * t;
-        const light = Math.min(1, 0.35 + a*0.7);
-        const rgb = hslToRgb(hue, 0.8, light);
-        colors[baseIdx+0] = rgb[0];
-        colors[baseIdx+1] = rgb[1];
-        colors[baseIdx+2] = rgb[2];
-
-        idx++;
-      }
     }
 
-    particleSystem.geometry.attributes.position.needsUpdate = true;
-    particleSystem.geometry.attributes.customColor.needsUpdate = true;
-  }
-
-  function hslToRgb(h, s, l){
-    if(s==0) return [l,l,l];
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    const hk = (n) => {
-      let t = n;
-      if(t<0) t+=1; if(t>1) t-=1;
-      if(t < 1/6) return p + (q-p)*6*t;
-      if(t < 1/2) return q;
-      if(t < 2/3) return p + (q-p)*(2/3 - t)*6;
-      return p;
-    };
-    return [hk(h+1/3), hk(h), hk(h-1/3)];
-  }
-
-  function animate(){
-    requestAnimationFrame(animate);
-    if(analyser){
-      pushFrame();
-      updateGeometry();
+    // Nadel folgt Audio-Position
+    if(audioBuffer){
+        let pos = currentSamplePos;
+        if(loop) pos = ((pos % audioBuffer.length) + audioBuffer.length) % audioBuffer.length;
+        needleX = pos / audioBuffer.length * sw;
+    } else {
+        needleX = 0;
     }
-    if (controls) controls.update();
-    renderer.render(scene, camera);
-  }
+    ctx.strokeStyle="red";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(needleX,0);
+    ctx.lineTo(needleX,waveformH);
+    ctx.stroke();
 
-  document.getElementById('startBtn').addEventListener('click', async ()=>{
-    const fftVal = parseInt(document.getElementById('fftSelect').value,10);
-    BINS = parseInt(document.getElementById('binsRange').value,10);
-    DEPTH = parseInt(document.getElementById('depthRange').value,10);
-    POINT_SIZE = parseFloat(document.getElementById('sizeRange').value);
+    // Disk
+    const centerX = sw/2;
+    const centerY = sh*0.55;
+    const size = Math.min(sw,sh)*0.6;
+    ctx.save();
+    ctx.translate(centerX,centerY);
+    ctx.rotate(rotation*Math.PI/180);
+    // Platte zeichnen
+    ctx.drawImage(diskImg,-size/2,-size/2,size,size);
 
-    if(!audioContext){
-      try{
-        await initAudio();
-      }catch(e){
-        alert('Konnte Mikrofon nicht öffnen: ' + e.message);
-        return;
-      }
+    // Schwarze "Wolke"-Mund: nur anzeigen, wenn micLevel > 0.5
+    if(micLevel > 0.5){
+        const mouthWidth = size * (0.25 + (micLevel-0.5)*0.75); // variabel
+        const mouthHeight = mouthWidth * 0.55;
+        const mouthY = size * 0.18; // leicht unter Zentrum der Platte
+        drawCloudMouth(ctx, 0, mouthY, mouthWidth, mouthHeight);
     }
-    analyser.fftSize = fftVal;
-    freqData = new Float32Array(analyser.frequencyBinCount);
+    ctx.restore();
 
-    framesBuffer = new Array(DEPTH);
-    for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
+    // Rotation
+    if(!paused){
+        if(manualControl){
+            // Scratch steuert Rotation
+            rotation += rotationSpeed;
+            rotationSpeed *= 0.9; // etwas mehr Dämpfung für Kontrolle
+        } else {
+            // Auto-Loop / Gamepad
+            if(gamepadIndex!==null && Math.abs(zAxis)>0.01){
+                rotationSpeed = zAxis * 150;
+            } else if(autoplay && audioBuffer){
+                rotationSpeed = 360 / (audioBuffer.duration * 60);
+            }
+            rotation += rotationSpeed;
+            rotationSpeed *= friction;
+        }
+    }
 
-    createPointCloud();
-  });
+    // Buttons Feedback
+    fadeBtn.classList.toggle('active', fadeActive);
+    invertBtn.classList.toggle('active', reverseFadeLogic);
 
-  document.getElementById('binsRange').addEventListener('change', ()=>{
-    BINS = parseInt(document.getElementById('binsRange').value,10);
-    framesBuffer = new Array(DEPTH);
-    for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
-    createPointCloud();
-  });
+    // optional: kleine mic-level UI (dezent) — nur für Debug / Anzeige
+    drawMicMeter(ctx, 12, sh-80, 12, 60, micLevel);
 
-  document.getElementById('depthRange').addEventListener('change', ()=>{
-    DEPTH = parseInt(document.getElementById('depthRange').value,10);
-    framesBuffer = new Array(DEPTH);
-    for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
-    createPointCloud();
-  });
+    requestAnimationFrame(draw);
+}
 
-  document.getElementById('sizeRange').addEventListener('input', ()=>{
-    POINT_SIZE = parseFloat(document.getElementById('sizeRange').value);
-    if(particleSystem) particleSystem.material.uniforms.uSize.value = POINT_SIZE;
-  });
+// Hilfsfunktion: zeichne eine "Wolke" als Mund bei (x,y) relativ zu aktueller transform
+function drawCloudMouth(ctxLocal, x, y, w, h){
+    ctxLocal.save();
+    ctxLocal.translate(x, y);
+    ctxLocal.fillStyle = "#000"; // schwarzer Mund
+    ctxLocal.beginPath();
+    // mehrere Bögen für Wolkenform
+    const rx = w / 6;
+    const spacing = w / 4;
+    ctxLocal.arc(-spacing, 0, rx*1.05, Math.PI*0.5, Math.PI*1.6);
+    ctxLocal.arc(-spacing/2, -h*0.15, rx*1.1, Math.PI*0.5, Math.PI*1.6);
+    ctxLocal.arc(0, -h*0.25, rx*1.3, Math.PI*0.4, Math.PI*1.7);
+    ctxLocal.arc(spacing/2, -h*0.15, rx*1.1, Math.PI*0.4, Math.PI*1.7);
+    ctxLocal.arc(spacing, 0, rx*0.95, Math.PI*0.4, Math.PI*1.7);
+    // untere glatte Linie
+    ctxLocal.lineTo(w/2, h*0.6);
+    ctxLocal.quadraticCurveTo(0, h*1.05, -w/2, h*0.6);
+    ctxLocal.closePath();
+    ctxLocal.fill();
+    ctxLocal.restore();
+}
 
-  initThree();
-  framesBuffer = new Array(DEPTH);
-  for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
-  createPointCloud();
-  animate();
-  </script>
+// kleine Mic-Meter-Anzeige (unten links), dezent
+function drawMicMeter(ctxLocal, x, y, w, h, level){
+    ctxLocal.save();
+    ctxLocal.globalAlpha = 0.9;
+    ctxLocal.fillStyle = "#111";
+    ctxLocal.fillRect(x-2, y-2, w+4, h+4);
+    ctxLocal.fillStyle = "#222";
+    ctxLocal.fillRect(x, y, w, h);
+    // füllung von unten
+    const filled = Math.max(0, Math.min(1, level));
+    ctxLocal.fillStyle = "#0f0";
+    ctxLocal.fillRect(x, y + h*(1-filled), w, h*filled);
+    ctxLocal.strokeStyle = "#444";
+    ctxLocal.strokeRect(x, y, w, h);
+    ctxLocal.globalAlpha = 1;
+    ctxLocal.restore();
+}
+
+// --- Gamepad Polling ---
+function pollGamepad(){
+    if(gamepadIndex!==null){
+        const gp = navigator.getGamepads()[gamepadIndex];
+        if(gp){
+            zAxis = gp.axes[2]; // Z-Achse
+            paused = gp.buttons[0].pressed; // Button A
+            fadeActive = gp.buttons[2].pressed; // Button Y
+        }
+    }
+    requestAnimationFrame(pollGamepad);
+}
+
+draw();
+pollGamepad();
+</script>
+
 </body>
-</html>
+  </html>
+  
