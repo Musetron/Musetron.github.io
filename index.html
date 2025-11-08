@@ -1,57 +1,64 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>Mikrofon zu Text (empfindlich)</title>
-<style>
-  body { font-family: sans-serif; padding: 20px; }
-  #text { white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
-</style>
+  <meta charset="UTF-8">
+  <title>Offline Speech-to-Text mit Vosk</title>
+  <script src="https://unpkg.com/vosk-browser/dist/worker.js"></script>
+  <script src="https://unpkg.com/vosk-browser/dist/vosk.js"></script>
 </head>
 <body>
+  <h1>Offline Speech-to-Text mit Vosk</h1>
+  <button id="start">Start Aufnahme</button>
+  <button id="stop">Stop Aufnahme</button>
+  <p id="output">Erkannter Text erscheint hier...</p>
 
-<h2>Live Mikrofon zu Text</h2>
-<button id="startBtn">Start</button>
-<div id="text"></div>
+  <script>
+    let recognizer;
+    let micStream;
 
-<script type="module">
-import { createWorker } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.7/dist/ffmpeg.min.js";
-
-const startBtn = document.getElementById("startBtn");
-const textDiv = document.getElementById("text");
-
-startBtn.onclick = async () => {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("Mikrofon nicht verfügbar");
-        return;
+    async function initRecognizer() {
+      // Lade das deutsche Modell (offline)
+      const model = new Vosk.Model("https://alphacephei.com/vosk/models/vosk-model-small-de-0.15.zip");
+      recognizer = new Vosk.Recognizer({model: model, sampleRate: 16000});
+      console.log("Recognizer bereit!");
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioContext.createMediaStreamSource(stream);
-    
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
-    source.connect(analyser);
-    
-    const dataArray = new Float32Array(analyser.fftSize);
+    async function startRecording() {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(micStream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-    function detectAudio() {
-        analyser.getFloatTimeDomainData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-            sum += Math.abs(dataArray[i]);
-        }
-        const volume = sum / dataArray.length;
-        if (volume > 0.01) { // sehr empfindlich
-            textDiv.textContent += `[Audio erkannt: ${volume.toFixed(3)}]\n`;
-        }
-        requestAnimationFrame(detectAudio);
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      processor.onaudioprocess = (e) => {
+        const inputData = e.inputBuffer.getChannelData(0);
+        const int16Data = Float32ToInt16(inputData);
+        recognizer.acceptWaveform(int16Data);
+        document.getElementById("output").innerText = recognizer.result().text;
+      };
     }
 
-    detectAudio();
-};
-</script>
+    function stopRecording() {
+      if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
+      }
+      document.getElementById("output").innerText = recognizer.finalResult().text;
+    }
 
+    function Float32ToInt16(float32Array) {
+      const int16Array = new Int16Array(float32Array.length);
+      for (let i = 0; i < float32Array.length; i++) {
+        int16Array[i] = Math.max(-1, Math.min(1, float32Array[i])) * 32767;
+      }
+      return int16Array;
+    }
+
+    document.getElementById("start").onclick = startRecording;
+    document.getElementById("stop").onclick = stopRecording;
+
+    initRecognizer();
+  </script>
 </body>
 </html>
