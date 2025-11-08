@@ -3,200 +3,83 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Mikrofon Rausch-zu-Text (Live)</title>
+  <title>Mikrofon Decoder</title>
   <style>
-    :root{--bg:#0f1724;--card:#0b1220;--accent:#60a5fa;--muted:#94a3b8}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;margin:0;background:linear-gradient(180deg,#041022, #071425);color:#e6eef8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-    .card{background:rgba(255,255,255,0.03);border-radius:12px;padding:18px;max-width:880px;width:100%;box-shadow:0 6px 30px rgba(2,6,23,0.6)}
-    h1{margin:.2rem 0 .8rem;font-size:1.25rem}
-    .controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-    button{background:var(--accent);border:none;padding:10px 14px;border-radius:8px;color:#022039;font-weight:600;cursor:pointer}
-    button.secondary{background:rgba(255,255,255,0.06);color:var(--muted)}
-    label{font-size:.85rem;color:var(--muted)}
-    .row{display:flex;gap:10px;align-items:center}
-    .meter{height:12px;background:rgba(255,255,255,0.04);border-radius:8px;overflow:hidden;flex:1}
-    .meter > i{display:block;height:100%;width:0%;background:linear-gradient(90deg, #60a5fa, #3b82f6)}
-    textarea{width:100%;min-height:180px;background:#011022;border:none;color:#cfe9ff;padding:12px;border-radius:8px;resize:vertical;font-family:monospace}
-    .small{font-size:.8rem;color:var(--muted)}
-    .meta{display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap}
-    input[type=range]{width:160px}
-    .kbd{background:rgba(255,255,255,0.03);padding:6px 8px;border-radius:6px;font-family:monospace}
+    body { font-family: sans-serif; background: #0d1117; color: #e6edf3; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    button { background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; }
+    button:disabled { opacity: 0.5; }
+    #level { width: 300px; height: 10px; background: #30363d; border-radius: 5px; margin: 10px 0; overflow: hidden; }
+    #bar { height: 100%; width: 0%; background: #58a6ff; transition: width 0.1s linear; }
+    #output { font-size: 20px; background: #161b22; padding: 10px; border-radius: 6px; width: 320px; min-height: 100px; text-align: center; }
   </style>
 </head>
 <body>
-  <main class="card">
-    <h1>Mikrofon → Rauschen live in Text</h1>
-    <p class="small">Pegel &le; 50% = Leerlauf. 51% = „–“ (Strich), 52% = „." (Punkt), 53% = „–" usw. Live-Erkennung mit einstellbarer Empfindlichkeit.</p>
+  <h2>Mikrofon Decoder</h2>
+  <button id="start">Start</button>
+  <div id="level"><div id="bar"></div></div>
+  <div id="output">(Warte auf Ton...)</div>
 
-    <div class="controls">
-      <button id="startBtn">Start</button>
-      <button id="stopBtn" class="secondary" disabled>Stop</button>
-      <button id="calibrateBtn" class="secondary">Kalibrieren (Umgebungsrauschen)</button>
-      <button id="clearBtn" class="secondary">Ausgabe leeren</button>
-      <button id="downloadBtn" class="secondary">Text herunterladen</button>
-    </div>
+  <script>
+  let ctx, analyser, src, micStream, anim;
+  let ambient = 0, calibrated = false;
+  let symbols = '', decoded = '';
 
-    <div class="row">
-      <label>Sensitivität</label>
-      <input id="sensitivity" type="range" min="0.01" max="0.6" step="0.01" value="0.12">
-      <span class="small kbd" id="sensVal">0.12</span>
-    </div>
+  document.getElementById('start').onclick = async () => {
+    if(ctx){ stop(); return; }
+    await start();
+  };
 
-    <div style="margin-top:10px" class="row">
-      <label>Live-Pegel</label>
-      <div class="meter" aria-hidden="true"><i id="meterBar"></i></div>
-      <div class="small kbd" id="percent">0%</div>
-    </div>
-
-    <div class="meta">
-      <div class="small">Status: <span id="status">stopped</span></div>
-      <div class="small">Gerät: <span id="device">-</span></div>
-    </div>
-
-    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
-
-    <textarea id="output" placeholder="Hier erscheint der konvertierte Text..."></textarea>
-
-    <p class="small" style="margin-top:8px">Hinweis: Du musst dem Browser erlauben, das Mikrofon zu verwenden. Passe <em>Sensitivität</em> an oder nutze <em>Kalibrieren</em>, um Hintergrundgeräusche als Leerlauf zu setzen.</p>
-  </main>
-
-<script>
-(async function(){
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const calibrateBtn = document.getElementById('calibrateBtn');
-  const clearBtn = document.getElementById('clearBtn');
-  const downloadBtn = document.getElementById('downloadBtn');
-  const meterBar = document.getElementById('meterBar');
-  const percentLabel = document.getElementById('percent');
-  const status = document.getElementById('status');
-  const deviceLabel = document.getElementById('device');
-  const output = document.getElementById('output');
-  const sens = document.getElementById('sensitivity');
-  const sensVal = document.getElementById('sensVal');
-
-  let audioCtx, analyser, source, stream;
-  let rafId;
-  let ambientRms = 0; // für Kalibrierung
-  let maxRms = parseFloat(sens.value); // je größer, desto weniger empfindlich
-  let lastAppendTime = 0;
-  let appendInterval = 120; // ms, wie oft Zeichen angehängt werden
-
-  sens.addEventListener('input', ()=>{ maxRms = parseFloat(sens.value); sensVal.textContent = maxRms.toFixed(2); });
-
-  clearBtn.addEventListener('click', ()=>{ output.value = ''; });
-
-  downloadBtn.addEventListener('click', ()=>{
-    const blob = new Blob([output.value], {type: 'text/plain;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'mic-text.txt'; a.click();
-    URL.revokeObjectURL(url);
-  });
-
-  calibrateBtn.addEventListener('click', async ()=>{
-    calibrateBtn.disabled = true; calibrateBtn.textContent = 'Kalibriere... (3s)';
-    if(!audioCtx) await startAudio();
-    const rmsVals = [];
-    const t0 = performance.now();
-    while(performance.now() - t0 < 3000){
-      const rms = getRms();
-      if(rms !== null) rmsVals.push(rms);
-      await new Promise(r=>setTimeout(r, 100));
-    }
-    // median um Ausreißer zu reduzieren
-    rmsVals.sort((a,b)=>a-b);
-    const mid = Math.floor(rmsVals.length/2);
-    ambientRms = rmsVals.length? rmsVals[mid] : 0;
-    calibrateBtn.textContent = 'Kalibrieren (Umgebungsrauschen)';
-    calibrateBtn.disabled = false;
-    console.log('Ambient RMS set to', ambientRms);
-  });
-
-  startBtn.addEventListener('click', startAudio);
-  stopBtn.addEventListener('click', stopAudio);
-
-  async function startAudio(){
-    try{
-      stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    }catch(err){ alert('Zugriff auf Mikrofon verweigert oder nicht verfügbar.'); return }
-
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.3;
-    source = audioCtx.createMediaStreamSource(stream);
-    source.connect(analyser);
-
-    // Geräte-Info anzeigen (falls vorhanden)
-    try{
-      const tracks = stream.getAudioTracks();
-      deviceLabel.textContent = tracks[0]?.label || 'interne Quelle';
-    }catch(e){ deviceLabel.textContent = '-'; }
-
-    status.textContent = 'running';
-    startBtn.disabled = true; stopBtn.disabled = false;
+  async function start(){
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = ctx.createAnalyser();
+    src = ctx.createMediaStreamSource(micStream);
+    src.connect(analyser);
+    analyser.fftSize = 1024;
+    document.getElementById('start').textContent = 'Stop';
     loop();
   }
 
-  function stopAudio(){
-    if(rafId) cancelAnimationFrame(rafId);
-    if(source) source.disconnect();
-    if(analyser) analyser.disconnect();
-    if(stream){ stream.getTracks().forEach(t=>t.stop()); }
-    if(audioCtx){ audioCtx.close(); audioCtx = null; }
-    status.textContent = 'stopped';
-    startBtn.disabled = false; stopBtn.disabled = true;
-    meterBar.style.width = '0%'; percentLabel.textContent = '0%';
+  function stop(){
+    cancelAnimationFrame(anim);
+    micStream.getTracks().forEach(t => t.stop());
+    ctx.close();
+    ctx = null;
+    document.getElementById('start').textContent = 'Start';
   }
 
-  function getRms(){
-    if(!analyser) return null;
+  function getLevel(){
     const buf = new Float32Array(analyser.fftSize);
     analyser.getFloatTimeDomainData(buf);
     let sum = 0;
-    for(let i=0;i<buf.length;i++){ sum += buf[i]*buf[i]; }
-    const rms = Math.sqrt(sum / buf.length);
-    return rms;
+    for(let i=0;i<buf.length;i++) sum += buf[i]*buf[i];
+    return Math.sqrt(sum / buf.length);
   }
 
   function loop(){
-    const rms = getRms();
-    if(rms !== null){
-      // Normieren: subtract ambientRms (Kalibrierung), dann in Prozent basierend auf maxRms
-      const adjusted = Math.max(0, rms - ambientRms);
-      const pct = Math.round(Math.max(0, Math.min(100, (adjusted / maxRms) * 100)));
-      meterBar.style.width = pct + '%';
-      percentLabel.textContent = pct + '%';
+    const level = getLevel();
+    if(!calibrated){ ambient = level; calibrated = true; }
+    const adj = Math.max(0, level - ambient);
+    const pct = Math.min(100, adj * 2000);
+    document.getElementById('bar').style.width = pct + '%';
 
-      const now = performance.now();
-      if(now - lastAppendTime >= appendInterval){
-        lastAppendTime = now;
-        // Mapping: <=50 => Leerlauf (kein Zeichen). >50: gerade/ungerade Prozent => Strich/Punkt
-        if(pct > 50){
-          const parity = Math.floor(pct) % 2; // 51 -> 1 -> strich
-          const char = (parity === 1) ? '\u2013' : '.'; // en-dash for better glyph
-          output.value += char;
-          // Autoscroll
-          output.scrollTop = output.scrollHeight;
-        } else {
-          // optional: add space for leerlauf
-          // output.value += ' ';
-        }
-      }
+    if(pct > 50){
+      const idx = Math.floor(pct) % 2;
+      const symbol = idx ? '-' : '.';
+      symbols += symbol;
+      decoded = decode(symbols);
+      document.getElementById('output').textContent = decoded;
     }
-    rafId = requestAnimationFrame(loop);
+
+    anim = requestAnimationFrame(loop);
   }
 
-  // Hilfs-Feature: Tab / Copy Shortcuts
-  document.addEventListener('keydown', (e)=>{
-    if(e.key === 'c' && (e.ctrlKey||e.metaKey)){
-      // Ctrl/Cmd+C kopiert nicht automatisch; Nutzer weiß vermutlich selbst wie
-    }
-  });
-
-})();
-</script>
+  function decode(seq){
+    // sehr einfache Decodierung: Morse-artig
+    const map = {'.-':'A','-...':'B','-.-.':'C','-..':'D','.':'E','..-.':'F','--.':'G','....':'H','..':'I','.---':'J','-.-':'K','.-..':'L','--':'M','-.':'N','---':'O','.--.':'P','--.-':'Q','.-.':'R','...':'S','-':'T','..-':'U','...-':'V','.--':'W','-..-':'X','-.--':'Y','--..':'Z'};
+    const parts = seq.split(' ');
+    return parts.map(p=>map[p]||'').join('');
+  }
+  </script>
 </body>
-  </html>
-  
+</html>
