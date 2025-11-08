@@ -2,74 +2,67 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Rausch zu Sätzen</title>
+<title>Mikrofon Rausch zu Text</title>
 <style>
-  body { font-family: Arial, sans-serif; padding: 20px; }
-  #output { margin-top: 20px; white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; min-height: 100px; }
+  body { font-family: monospace; background: #222; color: #0f0; padding: 20px; }
+  #output { white-space: pre-wrap; line-height: 1.5; }
 </style>
 </head>
 <body>
-<h1>Mikrofon Rausch → Buchstaben → Deutsche Sätze</h1>
-<p>Sprich ins Mikrofon. Bei Pegel über 50% werden Buchstaben erzeugt.</p>
-<button id="startBtn">Start</button>
+<h2>Mikrofon Rausch zu Buchstaben</h2>
 <div id="output"></div>
-
 <script>
-// Variablen
-let audioContext, analyser, microphone;
-let dataArray, bufferLength;
+const output = document.getElementById("output");
 
-// Funktion: Mikrofon starten
-async function startMicrophone() {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    microphone = audioContext.createMediaStreamSource(stream);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
-    bufferLength = analyser.fftSize;
-    dataArray = new Uint8Array(bufferLength);
-    microphone.connect(analyser);
-    analyzeAudio();
-}
+// Audio-Setup
+navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
 
-// Funktion: Pegel analysieren
-function analyzeAudio() {
-    analyser.getByteTimeDomainData(dataArray);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    let lastSoundTime = Date.now();
+    let currentMessage = "";
 
-    // RMS (Root Mean Square) für Lautstärke
-    let sum = 0;
-    for(let i = 0; i < bufferLength; i++){
-        let val = (dataArray[i] - 128) / 128;
-        sum += val * val;
+    function mapLoudnessToChar(level) {
+        // Mappt Pegel 50-100% auf Buchstaben und Leerzeichen
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
+        const index = Math.floor((level - 0.5) / 0.5 * (chars.length - 1));
+        return chars[index] || " ";
     }
-    let rms = Math.sqrt(sum / bufferLength); // 0 bis ~1
-    let level = rms * 100; // in Prozent
 
-    if(level > 50) {
-        // Erzeuge zufällige Buchstaben und Leerzeichen
-        let chars = 'abcdefghijklmnopqrstuvwxyzäöüß ';
-        let noiseText = '';
-        for(let i = 0; i < 20; i++){
-            noiseText += chars[Math.floor(Math.random() * chars.length)];
+    function processAudio() {
+        analyser.getByteTimeDomainData(dataArray);
+        // RMS berechnen (Lautstärke)
+        let sum = 0;
+        for(let i=0; i<dataArray.length; i++) {
+            const val = (dataArray[i] - 128) / 128;
+            sum += val * val;
         }
-        document.getElementById('output').textContent = noiseText;
+        const rms = Math.sqrt(sum / dataArray.length);
 
-        // Optional: hier kann die Korrektur-API aufgerufen werden
-        correctText(noiseText);
+        if(rms > 0.5) { // ab 50% Pegel
+            lastSoundTime = Date.now();
+            currentMessage += mapLoudnessToChar(rms);
+            output.textContent = currentMessage;
+        } else {
+            // Prüfen, ob >1 Sekunde Leerlauf
+            if(Date.now() - lastSoundTime > 1000 && currentMessage) {
+                currentMessage += "\n--- Nachricht Ende ---\n";
+                output.textContent = currentMessage;
+                currentMessage = "";
+            }
+        }
+
+        requestAnimationFrame(processAudio);
     }
 
-    requestAnimationFrame(analyzeAudio);
-}
-
-// Beispiel-Funktion: Buchstaben → Satz (Platzhalter für API)
-async function correctText(text) {
-    // Hier würdest du eine API wie Google oder OpenAI aufrufen, z.B.:
-    // fetch('/api/correct', { method:'POST', body: JSON.stringify({ text }) })
-    // Für Demo:
-    console.log("Zu korrigierender Text:", text);
-}
-
-document.getElementById('startBtn').addEventListener('click', startMicrophone);
+    processAudio();
+}).catch(err => {
+    console.error("Mikrofon nicht verfügbar:", err);
+});
 </script>
 </body>
 </html>
