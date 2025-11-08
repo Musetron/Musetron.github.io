@@ -2,75 +2,56 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Mikrofon → Buchstaben Chat</title>
+<title>Mikrofon zu Text (empfindlich)</title>
 <style>
-  body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
-  #chat { white-space: pre-wrap; line-height: 1.5; max-width: 600px; margin: auto; }
-  .message { margin-bottom: 1em; }
+  body { font-family: sans-serif; padding: 20px; }
+  #text { white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
 </style>
 </head>
 <body>
-<h2>Mikrofon → Buchstaben Chat</h2>
-<div id="chat"></div>
 
-<script>
-const chat = document.getElementById("chat");
+<h2>Live Mikrofon zu Text</h2>
+<button id="startBtn">Start</button>
+<div id="text"></div>
 
-navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioCtx.createMediaStreamSource(stream);
-    const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 1024;
+<script type="module">
+import { createWorker } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.7/dist/ffmpeg.min.js";
+
+const startBtn = document.getElementById("startBtn");
+const textDiv = document.getElementById("text");
+
+startBtn.onclick = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("Mikrofon nicht verfügbar");
+        return;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioContext.createMediaStreamSource(stream);
+    
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
     source.connect(analyser);
-
+    
     const dataArray = new Float32Array(analyser.fftSize);
-    let currentMessage = "";
-    let lastSoundTime = Date.now();
-    const MESSAGE_TIMEOUT = 3000; // 3 Sekunden Inaktivität
-    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    function getRMS(data) {
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) {
-            sum += data[i] * data[i];
-        }
-        return Math.sqrt(sum / data.length);
-    }
-
-    function rmsToChar(rms) {
-        if(rms < 0.02) return ""; // Threshold
-        const index = Math.floor(Math.min(rms * 50, 25)); // skaliert auf 0–25
-        return letters[index] || " ";
-    }
-
-    function processAudio() {
+    function detectAudio() {
         analyser.getFloatTimeDomainData(dataArray);
-        const rms = getRMS(dataArray);
-
-        if(rms > 0.02) {
-            lastSoundTime = Date.now();
-            // mehrere Buchstaben pro Frame für dichteres Ergebnis
-            for(let i=0; i<5; i++) {
-                currentMessage += rmsToChar(rms);
-            }
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+            sum += Math.abs(dataArray[i]);
         }
-
-        // Nachricht nach 3 Sekunden Inaktivität
-        if(currentMessage && Date.now() - lastSoundTime > MESSAGE_TIMEOUT) {
-            const messageDiv = document.createElement("div");
-            messageDiv.className = "message";
-            messageDiv.textContent = currentMessage;
-            chat.appendChild(messageDiv);
-            currentMessage = "";
+        const volume = sum / dataArray.length;
+        if (volume > 0.01) { // sehr empfindlich
+            textDiv.textContent += `[Audio erkannt: ${volume.toFixed(3)}]\n`;
         }
-
-        requestAnimationFrame(processAudio);
+        requestAnimationFrame(detectAudio);
     }
 
-    processAudio();
-}).catch(err => {
-    console.error("Mikrofon nicht verfügbar:", err);
-});
+    detectAudio();
+};
 </script>
+
 </body>
 </html>
