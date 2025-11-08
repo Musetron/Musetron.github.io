@@ -1,160 +1,125 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Spirit Chat Box – Deutsch (mit Wortliste)</title>
-  <style>
-    body {
-      background: #111;
-      color: #eee;
-      font-family: Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 20px;
-    }
-    #chat {
-      width: 100%;
-      max-width: 500px;
-      height: 350px;
-      border: 2px solid #444;
-      border-radius: 10px;
-      padding: 10px;
-      overflow-y: auto;
-      background: #222;
-      margin-bottom: 20px;
-    }
-    .message { margin: 5px 0; }
-    .user { color: #4caf50; }
-    .spirit { color: #ff9800; }
-    #volume‑meter {
-      width: 300px;
-      height: 20px;
-      background: #333;
-      border-radius: 10px;
-      overflow: hidden;
-      margin-bottom: 20px;
-    }
-    #volume‑level {
-      height: 100%;
-      width: 0%;
-      background: #4caf50;
-      border-radius: 10px;
-      transition: width 0.1s;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      background: #4caf50;
-      color: white;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spirit Chat Box – Rausch zu Satz</title>
+<style>
+body { background:#111; color:#eee; font-family:Arial,sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+#chat { width:100%; max-width:500px; height:350px; border:2px solid #444; border-radius:10px; padding:10px; overflow-y:auto; background:#222; margin-bottom:20px;}
+.message{margin:5px 0;}
+.user{color:#4caf50;}
+.spirit{color:#ff9800;}
+#volume-meter{width:300px;height:20px;background:#333;border-radius:10px;overflow:hidden;margin-bottom:20px;}
+#volume-level{height:100%;width:0%;background:#4caf50;border-radius:10px;transition:width 0.1s;}
+button{padding:10px 20px;font-size:16px;border:none;border-radius:5px;cursor:pointer;background:#4caf50;color:white;}
+</style>
 </head>
 <body>
 
-  <h1>Spirit Chat Box – Deutsch</h1>
-  <div id="chat"></div>
-  <div id="volume‑meter">
-    <div id="volume‑level"></div>
-  </div>
-  <button id="startBtn">Mikrofon starten</button>
+<h1>Spirit Chat Box – Rausch zu Satz</h1>
+<div id="chat"></div>
+<div id="volume-meter"><div id="volume-level"></div></div>
+<button id="startBtn">Mikrofon starten</button>
 
-  <script>
-    const chat = document.getElementById('chat');
-    const volumeLevel = document.getElementById('volume‑level');
-    const startBtn = document.getElementById('startBtn');
+<script>
+// --- Setup ---
+const chat = document.getElementById('chat');
+const volumeLevel = document.getElementById('volume-level');
+const startBtn = document.getElementById('startBtn');
 
-    let audioContext, analyser, microphone, dataArray;
-    let spiritInterval;
-    let wordList = [];
+let audioContext, analyser, microphone, dataArray;
+let spiritInterval;
 
-    // Text‑zu‑Sprache Funktion
-    function speak(text) {
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'de‑DE';
-        utterance.rate = 1;
-        utterance.pitch = 1;
-        window.speechSynthesis.speak(utterance);
-      }
+// --- Text zu Sprache ---
+function speak(text){
+    if('speechSynthesis' in window){
+        const u=new SpeechSynthesisUtterance(text);
+        u.lang='de-DE';
+        u.rate=1; u.pitch=1;
+        window.speechSynthesis.speak(u);
     }
+}
 
-    function addMessage(text, sender) {
-      const msgDiv = document.createElement('div');
-      msgDiv.className = 'message ' + sender;
-      msgDiv.textContent = text;
-      chat.appendChild(msgDiv);
-      chat.scrollTop = chat.scrollHeight;
-      if (sender === 'spirit') {
-        speak(text);
-      }
+// --- Nachricht hinzufügen ---
+function addMessage(text,sender){
+    const msg=document.createElement('div');
+    msg.className='message '+sender;
+    msg.textContent=text;
+    chat.appendChild(msg);
+    chat.scrollTop=chat.scrollHeight;
+    if(sender==='spirit') speak(text);
+}
+
+// --- Zufälliger Rauschtext (Buchstaben + Leerzeichen) ---
+function randomNoise(length){
+    const chars='abcdefghijklmnopqrstuvwxyzäöüß ';
+    let str='';
+    for(let i=0;i<length;i++){
+        str+=chars.charAt(Math.floor(Math.random()*chars.length));
     }
+    return str;
+}
 
-    // Wortliste laden
-    async function loadWordList() {
-      try {
-        const resp = await fetch('https://raw.githubusercontent.com/creativecouple/all‑the‑german‑words/master/index.json');
-        wordList = await resp.json();
-        console.log('Wortliste geladen, Wörteranzahl:', wordList.length);
-      } catch (err) {
-        console.warn('Fehler beim Laden der Wortliste:', err);
-        wordList = ['Geist','Spuk','Antwort','Geheimnis']; // Fallback‑Liste
-      }
-    }
+// --- Rausch decodieren zu korrektem deutschen Satz ---
+function decodeNoiseToSentence(noise){
+    // Simulierter Autokorrektur-Algorithmus
+    // Schritt 1: entferne mehrfach Leerzeichen
+    noise=noise.replace(/\s+/g,' ');
+    // Schritt 2: jeder „Wortfragment“ wird zu einem echten Wort ersetzt (kleine Beispielsammlung)
+    const dict=["ich","du","er","sie","es","wir","ihr","Hallo","Geist","Geheimnis","Antwort","Hilfe","jetzt","Ja","Nein","sehen","gehen","kommen","sprechen"];
+    const words=noise.split(' ').map(f=>{
+        if(f.length===0) return '';
+        // nimm zufälliges echtes Wort aus dict
+        return dict[Math.floor(Math.random()*dict.length)];
+    });
+    return words.join(' ');
+}
 
-    async function startMic() {
-      await loadWordList();
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        analyser = audioContext.createAnalyser();
-        microphone = audioContext.createMediaStreamSource(stream);
+// --- Mikrofon starten ---
+async function startMic(){
+    try{
+        const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+        audioContext=new (window.AudioContext||window.webkitAudioContext)();
+        analyser=audioContext.createAnalyser();
+        microphone=audioContext.createMediaStreamSource(stream);
         microphone.connect(analyser);
-        analyser.fftSize = 256;
-        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.fftSize=256;
+        dataArray=new Uint8Array(analyser.frequencyBinCount);
 
         updateVolume();
         startSpiritBox();
-        startBtn.disabled = true;
-      } catch (err) {
-        alert('Mikrofonzugriff verweigert oder nicht verfügbar: ' + err);
-      }
+        startBtn.disabled=true;
+    }catch(e){
+        alert("Mikrofonzugriff verweigert: "+e);
     }
+}
 
-    function updateVolume() {
-      analyser.getByteFrequencyData(dataArray);
-      const avg = dataArray.reduce((a,b) => a + b, 0) / dataArray.length;
-      const percent = Math.min(100, (avg / 128) * 100);
-      volumeLevel.style.width = percent + '%';
+// --- Pegelanzeige ---
+function updateVolume(){
+    analyser.getByteFrequencyData(dataArray);
+    const avg=dataArray.reduce((a,b)=>a+b,0)/dataArray.length;
+    const percent=Math.min(100,(avg/128)*100);
+    volumeLevel.style.width=percent+'%';
+    requestAnimationFrame(updateVolume);
+}
 
-      requestAnimationFrame(updateVolume);
-    }
-
-    function startSpiritBox() {
-      spiritInterval = setInterval(() => {
+// --- Spirit Box Logik ---
+function startSpiritBox(){
+    spiritInterval=setInterval(()=>{
         analyser.getByteFrequencyData(dataArray);
-        const avg = dataArray.reduce((a,b) => a + b, 0) / dataArray.length;
-
-        if (avg > 30 && wordList.length > 0) {
-          const count = Math.max(1, Math.floor(avg / 30));
-          let msg = [];
-          for (let i = 0; i < count; i++) {
-            const w = wordList[Math.floor(Math.random() * wordList.length)];
-            msg.push(w);
-          }
-          const text = msg.join(' ');
-          addMessage(text, 'spirit');
+        const avg=dataArray.reduce((a,b)=>a+b,0)/dataArray.length;
+        if(avg>25){ // hoher Pegel = Rausch wird erzeugt
+            const noise=randomNoise(Math.max(5,Math.floor(avg/10)));
+            const sentence=decodeNoiseToSentence(noise);
+            addMessage(sentence,'spirit');
         }
-      }, 800);
-    }
+    },800);
+}
 
-    startBtn.addEventListener('click', startMic);
-  </script>
+startBtn.addEventListener('click',startMic);
+</script>
 
 </body>
-</html>
+  </html>
+  
