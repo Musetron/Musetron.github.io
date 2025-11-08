@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Spirit Chat Box – Deutsch</title>
+  <title>Spirit Chat Box – Deutsch (mit grosser Wortliste)</title>
   <style>
     body {
       background: #111;
@@ -55,6 +55,7 @@
   </style>
 </head>
 <body>
+
   <h1>Spirit Chat Box – Deutsch</h1>
   <div id="chat"></div>
   <div id="volume‑meter">
@@ -71,14 +72,13 @@
     let spiritInterval;
     let wordList = [];
 
-    // Funktion zum Ausgabe von Text zu Sprache
+    // Text‑zu‑Sprache Funktion
     function speak(text) {
       if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'de‑DE';
-        // Optionale Einstellungen:
-        utterance.rate = 1;  // Geschwindigkeit
-        utterance.pitch = 1; // Tonhöhe
+        utterance.rate = 1;
+        utterance.pitch = 1;
         window.speechSynthesis.speak(utterance);
       }
     }
@@ -94,15 +94,15 @@
       }
     }
 
-    // Wortliste laden (z. B. von GitHub gist)  
+    // Wortliste laden
     async function loadWordList() {
       try {
-        const resp = await fetch('https://gist.githubusercontent.com/MarvinJWendt/2f4f4154b8ae218600eb4/raw/wordlist-german.txt');
-        const txt = await resp.text();
-        wordList = txt.split(/\r?\n/).filter(w => w.trim().length > 0);
-        console.log('Wortliste geladen, Anzahl Wörter:', wordList.length);
+        const resp = await fetch('https://raw.githubusercontent.com/Jonny‑exe/German‑Words‑Library/master/German‑words‑1600000‑words.json');
+        wordList = await resp.json();
+        console.log('Wortliste geladen, Wörteranzahl:', wordList.length);
       } catch (err) {
         console.warn('Fehler beim Laden der Wortliste:', err);
+        wordList = ['Geist','Geheimnis','Antwort','Spuk']; // Fallback‑Liste
       }
     }
 
@@ -141,7 +141,6 @@
         const avg = dataArray.reduce((a,b) => a + b, 0) / dataArray.length;
 
         if (avg > 30 && wordList.length > 0) {
-          // je größer avg, desto mehr Wörter
           const count = Math.max(1, Math.floor(avg / 30));
           let msg = [];
           for (let i = 0; i < count; i++) {
@@ -156,5 +155,6 @@
 
     startBtn.addEventListener('click', startMic);
   </script>
+
 </body>
 </html>
