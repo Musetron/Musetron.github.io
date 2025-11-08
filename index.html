@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Spirit Chat Box – Deutsch (mit grosser Wortliste)</title>
+  <title>Spirit Chat Box – Deutsch (mit Wortliste)</title>
   <style>
     body {
       background: #111;
@@ -97,12 +97,12 @@
     // Wortliste laden
     async function loadWordList() {
       try {
-        const resp = await fetch('https://raw.githubusercontent.com/Jonny‑exe/German‑Words‑Library/master/German‑words‑1600000‑words.json');
+        const resp = await fetch('https://raw.githubusercontent.com/creativecouple/all‑the‑german‑words/master/index.json');
         wordList = await resp.json();
         console.log('Wortliste geladen, Wörteranzahl:', wordList.length);
       } catch (err) {
         console.warn('Fehler beim Laden der Wortliste:', err);
-        wordList = ['Geist','Geheimnis','Antwort','Spuk']; // Fallback‑Liste
+        wordList = ['Geist','Spuk','Antwort','Geheimnis']; // Fallback‑Liste
       }
     }
 
