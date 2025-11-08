@@ -1,1 +1,130 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mikrofon Decoder</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    button {
+      background: #238636;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    #level { width: 300px; height: 10px; background: #30363d; border-radius: 5px; margin: 10px 0; overflow: hidden; }
+    #bar { height: 100%; width: 0%; background: #58a6ff; transition: width 0.1s linear; }
+    #output {
+      font-size: 20px;
+      background: #161b22;
+      padding: 10px;
+      border-radius: 6px;
+      width: 320px;
+      min-height: 120px;
+      text-align: center;
+      word-wrap: break-word;
+    }
+  </style>
+</head>
+<body>
+  <h2>Mikrofon Decoder</h2>
+  <button id="start">Start</button>
+  <div id="level"><div id="bar"></div></div>
+  <div id="output">(Warte auf Ton...)</div>
 
+  <script>
+  let ctx, analyser, src, micStream, anim;
+  let ambient = 0, calibrated = false;
+  let symbols = '', decoded = '';
+  let lastAbove = 0, lastBelow = performance.now();
+
+  const THRESH = 50;       // Schwelle für Aktivität
+  const END_LETTER = 1000; // ms unterhalb -> Buchstabenende
+  const END_WORD = 2000;   // ms unterhalb -> Leerzeichen
+
+  document.getElementById('start').onclick = async () => {
+    if (ctx) { stop(); return; }
+    await start();
+  };
+
+  async function start() {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = ctx.createAnalyser();
+    src = ctx.createMediaStreamSource(micStream);
+    src.connect(analyser);
+    analyser.fftSize = 1024;
+    document.getElementById('start').textContent = 'Stop';
+    loop();
+  }
+
+  function stop() {
+    cancelAnimationFrame(anim);
+    micStream.getTracks().forEach(t => t.stop());
+    ctx.close();
+    ctx = null;
+    document.getElementById('start').textContent = 'Start';
+  }
+
+  function getLevel() {
+    const buf = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    return Math.sqrt(sum / buf.length);
+  }
+
+  function loop() {
+    const level = getLevel();
+    if (!calibrated) { ambient = level; calibrated = true; }
+    const adj = Math.max(0, level - ambient);
+    const pct = Math.min(100, adj * 2000);
+    document.getElementById('bar').style.width = pct + '%';
+
+    const now = performance.now();
+
+    if (pct > THRESH) {
+      // Ton erkannt → symbolisieren
+      lastAbove = now;
+      const idx = Math.floor(pct) % 2;
+      symbols += idx ? '-' : '.';
+    } else {
+      // Stille erkannt
+      if (now - lastAbove > END_LETTER && symbols.length > 0) {
+        decoded += decode(symbols);
+        symbols = '';
+        document.getElementById('output').textContent = decoded;
+      }
+      if (now - lastAbove > END_WORD && !decoded.endsWith(' ')) {
+        decoded += ' ';
+        document.getElementById('output').textContent = decoded;
+      }
+    }
+
+    anim = requestAnimationFrame(loop);
+  }
+
+  function decode(seq) {
+    const map = {
+      '.-':'A','-...':'B','-.-.':'C','-..':'D','.':'E','..-.':'F','--.':'G','....':'H','..':'I',
+      '.---':'J','-.-':'K','.-..':'L','--':'M','-.':'N','---':'O','.--.':'P','--.-':'Q','.-.':'R',
+      '...':'S','-':'T','..-':'U','...-':'V','.--':'W','-..-':'X','-.--':'Y','--..':'Z'
+    };
+    return map[seq] || '?';
+  }
+  </script>
+</body>
+</html>
