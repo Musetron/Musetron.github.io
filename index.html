@@ -2,129 +2,74 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Spirit Chat Box – Mikrofon Rausch</title>
+<title>Rausch zu Sätzen</title>
 <style>
-body { background:#111; color:#eee; font-family:Arial,sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px;}
-#chat { width:100%; max-width:500px; height:350px; border:2px solid #444; border-radius:10px; padding:10px; overflow-y:auto; background:#222; margin-bottom:20px;}
-.message{margin:5px 0;}
-.user{color:#4caf50;}
-.spirit{color:#ff9800;}
-#volume-meter{width:300px;height:20px;background:#333;border-radius:10px;overflow:hidden;margin-bottom:20px;}
-#volume-level{height:100%;width:0%;background:#4caf50;border-radius:10px;transition:width 0.1s;}
-button{padding:10px 20px;font-size:16px;border:none;border-radius:5px;cursor:pointer;background:#4caf50;color:white;}
+  body { font-family: Arial, sans-serif; padding: 20px; }
+  #output { margin-top: 20px; white-space: pre-wrap; border: 1px solid #ccc; padding: 10px; min-height: 100px; }
 </style>
 </head>
 <body>
-
-<h1>Spirit Chat Box – Mikrofon Rausch</h1>
-<div id="chat"></div>
-<div id="volume-meter"><div id="volume-level"></div></div>
-<button id="startBtn">Mikrofon starten</button>
+<h1>Mikrofon Rausch → Buchstaben → Deutsche Sätze</h1>
+<p>Sprich ins Mikrofon. Bei Pegel über 50% werden Buchstaben erzeugt.</p>
+<button id="startBtn">Start</button>
+<div id="output"></div>
 
 <script>
-const chat=document.getElementById('chat');
-const volumeLevel=document.getElementById('volume-level');
-const startBtn=document.getElementById('startBtn');
+// Variablen
+let audioContext, analyser, microphone;
+let dataArray, bufferLength;
 
-let audioContext, analyser, microphone, dataArray;
-let spiritInterval;
+// Funktion: Mikrofon starten
+async function startMicrophone() {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    microphone = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    bufferLength = analyser.fftSize;
+    dataArray = new Uint8Array(bufferLength);
+    microphone.connect(analyser);
+    analyzeAudio();
+}
 
-// Kleine deutsche Wortliste zur Decodierung
-const dictionary=["ich","du","er","sie","es","wir","ihr","Hallo","Geist","Geheimnis","Antwort","Hilfe","jetzt","Ja","Nein","sehen","gehen","kommen","sprechen"];
+// Funktion: Pegel analysieren
+function analyzeAudio() {
+    analyser.getByteTimeDomainData(dataArray);
 
-// TTS Funktion
-function speak(text){
-    if('speechSynthesis' in window){
-        const u=new SpeechSynthesisUtterance(text);
-        u.lang='de-DE';
-        u.rate=1; u.pitch=1;
-        window.speechSynthesis.speak(u);
+    // RMS (Root Mean Square) für Lautstärke
+    let sum = 0;
+    for(let i = 0; i < bufferLength; i++){
+        let val = (dataArray[i] - 128) / 128;
+        sum += val * val;
     }
-}
+    let rms = Math.sqrt(sum / bufferLength); // 0 bis ~1
+    let level = rms * 100; // in Prozent
 
-// Chat Nachricht hinzufügen
-function addMessage(text,sender){
-    const msg=document.createElement('div');
-    msg.className='message '+sender;
-    msg.textContent=text;
-    chat.appendChild(msg);
-    chat.scrollTop=chat.scrollHeight;
-    if(sender==='spirit') speak(text);
-}
-
-// Mikrofon starten
-async function startMic(){
-    try{
-        const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-        audioContext=new (window.AudioContext||window.webkitAudioContext)();
-        analyser=audioContext.createAnalyser();
-        analyser.fftSize=2048; // höhere Auflösung für Rausch-Analyse
-        microphone=audioContext.createMediaStreamSource(stream);
-        microphone.connect(analyser);
-        dataArray=new Float32Array(analyser.fftSize);
-
-        updateVolume();
-        startSpiritBox();
-        startBtn.disabled=true;
-    }catch(e){
-        alert("Mikrofonzugriff verweigert: "+e);
-    }
-}
-
-// Pegelanzeige
-function updateVolume(){
-    analyser.getFloatTimeDomainData(dataArray);
-    let sum=0;
-    for(let i=0;i<dataArray.length;i++){
-        sum+=dataArray[i]*dataArray[i];
-    }
-    const rms=Math.sqrt(sum/dataArray.length);
-    const percent=Math.min(100,rms*500);
-    volumeLevel.style.width=percent+"%";
-    requestAnimationFrame(updateVolume);
-}
-
-// Mappe Rauschsignal zu Buchstaben
-function noiseToLetters(){
-    analyser.getFloatTimeDomainData(dataArray);
-    let letters="";
-    for(let i=0;i<dataArray.length;i+=100){ // Sample-Intervall
-        const amp=Math.abs(dataArray[i]);
-        if(amp>0.02){ // Schwellenwert
-            const chars="abcdefghijklmnopqrstuvwxyzäöüß ";
-            const index=Math.floor(Math.min(amp*100,chars.length-1));
-            letters+=chars[index];
+    if(level > 50) {
+        // Erzeuge zufällige Buchstaben und Leerzeichen
+        let chars = 'abcdefghijklmnopqrstuvwxyzäöüß ';
+        let noiseText = '';
+        for(let i = 0; i < 20; i++){
+            noiseText += chars[Math.floor(Math.random() * chars.length)];
         }
+        document.getElementById('output').textContent = noiseText;
+
+        // Optional: hier kann die Korrektur-API aufgerufen werden
+        correctText(noiseText);
     }
-    return letters;
+
+    requestAnimationFrame(analyzeAudio);
 }
 
-// Decodierung in Wörter/Sätze
-function decodeLettersToSentence(letters){
-    letters=letters.replace(/\s+/g,' ');
-    const fragments=letters.split(' ');
-    const words=fragments.map(f=>{
-        if(f.length===0) return '';
-        return dictionary[Math.floor(Math.random()*dictionary.length)];
-    });
-    return words.join(' ');
+// Beispiel-Funktion: Buchstaben → Satz (Platzhalter für API)
+async function correctText(text) {
+    // Hier würdest du eine API wie Google oder OpenAI aufrufen, z.B.:
+    // fetch('/api/correct', { method:'POST', body: JSON.stringify({ text }) })
+    // Für Demo:
+    console.log("Zu korrigierender Text:", text);
 }
 
-// Spirit Box Logik
-function startSpiritBox(){
-    spiritInterval=setInterval(()=>{
-        const letters=noiseToLetters();
-        if(letters.length>0){
-            const sentence=decodeLettersToSentence(letters);
-            addMessage(sentence,'spirit');
-        }
-    },800);
-}
-
-startBtn.addEventListener('click',startMic);
+document.getElementById('startBtn').addEventListener('click', startMicrophone);
 </script>
-
 </body>
-    </html>
-    
+</html>
