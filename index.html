@@ -3,128 +3,327 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Mikrofon Decoder</title>
+  <title>3D Pointcloud Spectrogram Visualizer — Live Mikrofon</title>
   <style>
-    body {
-      font-family: sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
-    }
-    button {
-      background: #238636;
-      color: white;
-      border: none;
-      padding: 10px 20px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 16px;
-    }
-    #level { width: 300px; height: 10px; background: #30363d; border-radius: 5px; margin: 10px 0; overflow: hidden; }
-    #bar { height: 100%; width: 0%; background: #58a6ff; transition: width 0.1s linear; }
-    #output {
-      font-size: 20px;
-      background: #161b22;
-      padding: 10px;
-      border-radius: 6px;
-      width: 320px;
-      min-height: 120px;
-      text-align: center;
-      word-wrap: break-word;
-    }
+    html,body{height:100%;margin:0;background:#0b0b0f;color:#ddd;font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+    #ui{position:fixed;left:12px;top:12px;z-index:5;background:rgba(0,0,0,0.4);padding:8px;border-radius:8px}
+    label{display:block;font-size:12px;margin-bottom:6px}
+    .btn{padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.02);color:#fff;cursor:pointer}
+    #credits{position:fixed;right:12px;bottom:12px;font-size:12px;opacity:0.7}
   </style>
 </head>
 <body>
-  <h2>Mikrofon Decoder</h2>
-  <button id="start">Start</button>
-  <div id="level"><div id="bar"></div></div>
-  <div id="output">(Warte auf Ton...)</div>
+  <div id="ui">
+    <button id="startBtn" class="btn">Mikrofon starten</button>
+    <label>FFT Größe: <select id="fftSelect"><option>1024</option><option selected>2048</option><option>4096</option></select></label>
+    <label>Punkte pro Frame: <input id="binsRange" type="range" min="64" max="2048" value="512"></label>
+    <label>Depth (Zeit): <input id="depthRange" type="range" min="16" max="512" value="128"></label>
+    <label>Point Size: <input id="sizeRange" type="range" min="0.5" max="6" step="0.1" value="1.8"></label>
+  </div>
+  <div id="credits">3D Pointcloud Spectrogram — live from your microphone</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
 
   <script>
-  let ctx, analyser, src, micStream, anim;
-  let ambient = 0, calibrated = false;
-  let symbols = '', decoded = '';
-  let lastAbove = 0, lastBelow = performance.now();
+  // Hauptidee:
+  // - WebAudio AnalyserNode liefert Frequenzdaten (linear magnitude)
+  // - Wir speichern die letzten N Frames (depth) und erstellen daraus eine 3D pointcloud
+  // - x = Frequenzindex (low -> high), y = Amplitude, z = time (neueste z=0, ältere z->positive)
+  // - BufferGeometry mit dynamischen Positionen wird jedes frame aktualisiert
 
-  const THRESH = 50;       // Schwelle für Aktivität
-  const END_LETTER = 1000; // ms unterhalb -> Buchstabenende
-  const END_WORD = 2000;   // ms unterhalb -> Leerzeichen
+  let renderer, scene, camera, controls;
+  let particleSystem, positions, colors, sizesAttr;
+  let WIDTH = window.innerWidth, HEIGHT = window.innerHeight;
 
-  document.getElementById('start').onclick = async () => {
-    if (ctx) { stop(); return; }
-    await start();
-  };
+  let audioContext, analyser, sourceNode;
+  let freqData;
 
-  async function start() {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = ctx.createAnalyser();
-    src = ctx.createMediaStreamSource(micStream);
-    src.connect(analyser);
-    analyser.fftSize = 1024;
-    document.getElementById('start').textContent = 'Stop';
-    loop();
+  // Visual settings (will be updated from UI)
+  let BINS = 512;      // Punkte pro Frame (x-resolution)
+  let DEPTH = 128;     // wie viele zeit-Frames im Z
+  let POINT_SIZE = 1.8;
+
+  // internal buffers
+  let framesBuffer; // Float32Array[DEPTH][BINS]
+
+  // Start Three.js Szene
+  function initThree(){
+    renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(WIDTH, HEIGHT);
+    document.body.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05050b);
+
+    camera = new THREE.PerspectiveCamera(60, WIDTH/HEIGHT, 0.1, 1000);
+    camera.position.set(0, 30, 120);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // ambient lighting for subtle effect
+    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+    dir.position.set(10,30,10);
+    scene.add(dir);
+
+    window.addEventListener('resize', onWindowResize);
   }
 
-  function stop() {
-    cancelAnimationFrame(anim);
-    micStream.getTracks().forEach(t => t.stop());
-    ctx.close();
-    ctx = null;
-    document.getElementById('start').textContent = 'Start';
+  function onWindowResize(){
+    WIDTH = window.innerWidth; HEIGHT = window.innerHeight;
+    camera.aspect = WIDTH/HEIGHT; camera.updateProjectionMatrix();
+    renderer.setSize(WIDTH, HEIGHT);
   }
 
-  function getLevel() {
-    const buf = new Float32Array(analyser.fftSize);
-    analyser.getFloatTimeDomainData(buf);
-    let sum = 0;
-    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-    return Math.sqrt(sum / buf.length);
-  }
+  // Create particle system with BINS*DEPTH points
+  function createPointCloud(){
+    if (particleSystem) scene.remove(particleSystem);
 
-  function loop() {
-    const level = getLevel();
-    if (!calibrated) { ambient = level; calibrated = true; }
-    const adj = Math.max(0, level - ambient);
-    const pct = Math.min(100, adj * 2000);
-    document.getElementById('bar').style.width = pct + '%';
+    const total = BINS * DEPTH;
+    const geometry = new THREE.BufferGeometry();
 
-    const now = performance.now();
+    positions = new Float32Array(total * 3);
+    colors = new Float32Array(total * 3);
+    const sizes = new Float32Array(total);
 
-    if (pct > THRESH) {
-      // Ton erkannt → symbolisieren
-      lastAbove = now;
-      const idx = Math.floor(pct) % 2;
-      symbols += idx ? '-' : '.';
-    } else {
-      // Stille erkannt
-      if (now - lastAbove > END_LETTER && symbols.length > 0) {
-        decoded += decode(symbols);
-        symbols = '';
-        document.getElementById('output').textContent = decoded;
-      }
-      if (now - lastAbove > END_WORD && !decoded.endsWith(' ')) {
-        decoded += ' ';
-        document.getElementById('output').textContent = decoded;
+    // coordinate mapping: x in [-Xrange/2, Xrange/2], y scaled amplitude, z in [0, DepthSpacing]
+    const X_RANGE = 100;
+    const Z_SPACING = 0.6;
+
+    let idx = 0;
+    for(let z=0; z<DEPTH; z++){
+      for(let x=0; x<BINS; x++){
+        const px = (x / (BINS-1) - 0.5) * X_RANGE;
+        const py = -10; // start low (will be updated)
+        const pz = z * Z_SPACING;
+        positions[idx*3+0] = px;
+        positions[idx*3+1] = py;
+        positions[idx*3+2] = pz;
+
+        // initial color gradient from cool -> warm
+        const t = x / Math.max(1,BINS-1);
+        const c = new THREE.Color();
+        c.setHSL(0.6 - 0.5 * t, 0.85, 0.5);
+        colors[idx*3+0] = c.r;
+        colors[idx*3+1] = c.g;
+        colors[idx*3+2] = c.b;
+
+        sizes[idx] = POINT_SIZE;
+        idx++;
       }
     }
 
-    anim = requestAnimationFrame(loop);
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('customColor', new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1).setUsage(THREE.DynamicDrawUsage));
+
+    // shader material for point sprites
+    const material = new THREE.ShaderMaterial({
+      transparent: true,
+      depthTest: true,
+      uniforms: {
+        uPixelRatio: { value: window.devicePixelRatio },
+        uSize: { value: POINT_SIZE }
+      },
+      vertexShader: `
+        attribute float size;
+        attribute vec3 customColor;
+        varying vec3 vColor;
+        uniform float uPixelRatio;
+        uniform float uSize;
+        void main(){
+          vColor = customColor;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = max(1.0, size * uPixelRatio * (uSize));
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vColor;
+        void main(){
+          float r = length(gl_PointCoord - vec2(0.5));
+          float alpha = smoothstep(0.5, 0.45, r);
+          gl_FragColor = vec4(vColor, alpha);
+        }
+      `
+    });
+
+    particleSystem = new THREE.Points(geometry, material);
+    // rotate so time grows away from camera
+    particleSystem.rotation.x = -Math.PI/12;
+    scene.add(particleSystem);
   }
 
-  function decode(seq) {
-    const map = {
-      '.-':'A','-...':'B','-.-.':'C','-..':'D','.':'E','..-.':'F','--.':'G','....':'H','..':'I',
-      '.---':'J','-.-':'K','.-..':'L','--':'M','-.':'N','---':'O','.--.':'P','--.-':'Q','.-.':'R',
-      '...':'S','-':'T','..-':'U','...-':'V','.--':'W','-..-':'X','-.--':'Y','--..':'Z'
-    };
-    return map[seq] || '?';
+  // Initialize audio: getUserMedia -> analyser
+  async function initAudio(){
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    sourceNode = audioContext.createMediaStreamSource(stream);
+
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048; // default, will be overridden by UI
+    analyser.smoothingTimeConstant = 0.3;
+    sourceNode.connect(analyser);
+
+    freqData = new Float32Array(analyser.frequencyBinCount);
+
+    // prepare framesBuffer
+    DEPTH = parseInt(document.getElementById('depthRange').value,10);
+    BINS = parseInt(document.getElementById('binsRange').value,10);
+    framesBuffer = new Array(DEPTH);
+    for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
+
+    createPointCloud();
+
+    animate();
   }
+
+  // read analyser, push newest frame at index 0, shift older frames down
+  function pushFrame(){
+    // read magnitude in dB -> convert to linear-ish value
+    const rawBins = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(rawBins); // dB values (negative)
+
+    // we want exactly BINS values -> resample by picking roughly evenly spaced indices
+    const step = Math.max(1, Math.floor(rawBins.length / BINS));
+    const frame = new Float32Array(BINS);
+    for(let i=0, j=0; i<BINS; i++, j+=step){
+      const v = rawBins[Math.min(j, rawBins.length-1)];
+      // convert dB (-100..0) to 0..1
+      const amp = Math.max(0, (v + 100) / 100);
+      frame[i] = amp;
+    }
+
+    // rotate framesBuffer: drop last, unshift new
+    framesBuffer.pop();
+    framesBuffer.unshift(frame);
+  }
+
+  // update positions/colors based on framesBuffer
+  function updateGeometry(){
+    if(!positions) return;
+    const X_RANGE = 100;
+    const Z_SPACING = 0.6;
+
+    let idx = 0;
+    for(let z=0; z<DEPTH; z++){
+      const frame = framesBuffer[z];
+      for(let x=0; x<BINS; x++){
+        const baseIdx = idx*3;
+        // x coord stays constant
+        // x already set initially, but recompute to support BINS change
+        positions[baseIdx+0] = (x / (BINS-1) - 0.5) * X_RANGE;
+        // map amplitude to y (scale and add slight offset so spectrogram looks nice)
+        const a = frame ? frame[x] : 0;
+        positions[baseIdx+1] = a * 60 - 10; // scale to scene
+        positions[baseIdx+2] = z * Z_SPACING;
+
+        // color can react to amplitude (shift HSL)
+        const t = x / Math.max(1,BINS-1);
+        const hue = 0.65 - 0.6 * t; // bluish->reddish
+        // convert HSL approx to RGB quickly
+        const light = Math.min(1, 0.35 + a*0.7);
+        const rgb = hslToRgb(hue, 0.8, light);
+        colors[baseIdx+0] = rgb[0];
+        colors[baseIdx+1] = rgb[1];
+        colors[baseIdx+2] = rgb[2];
+
+        idx++;
+      }
+    }
+
+    // mark attributes as updated
+    particleSystem.geometry.attributes.position.needsUpdate = true;
+    particleSystem.geometry.attributes.customColor.needsUpdate = true;
+  }
+
+  // tiny utility: convert HSL to RGB (returns array [r,g,b])
+  function hslToRgb(h, s, l){
+    // h 0..1, s 0..1, l 0..1
+    if(s==0) return [l,l,l];
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const hk = (n) => {
+      let t = n;
+      if(t<0) t+=1; if(t>1) t-=1;
+      if(t < 1/6) return p + (q-p)*6*t;
+      if(t < 1/2) return q;
+      if(t < 2/3) return p + (q-p)*(2/3 - t)*6;
+      return p;
+    };
+    return [hk(h+1/3), hk(h), hk(h-1/3)];
+  }
+
+  // render loop
+  function animate(){
+    requestAnimationFrame(animate);
+    if(analyser){
+      pushFrame();
+      updateGeometry();
+    }
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  // UI wiring
+  document.getElementById('startBtn').addEventListener('click', async ()=>{
+    // read fft selection
+    const fftVal = parseInt(document.getElementById('fftSelect').value,10);
+    BINS = parseInt(document.getElementById('binsRange').value,10);
+    DEPTH = parseInt(document.getElementById('depthRange').value,10);
+    POINT_SIZE = parseFloat(document.getElementById('sizeRange').value);
+
+    if(!audioContext){
+      try{
+        await initAudio();
+      }catch(e){
+        alert('Konnte Mikrofon nicht öffnen: ' + e.message);
+        return;
+      }
+    }
+    // apply FFT size
+    analyser.fftSize = fftVal;
+    freqData = new Float32Array(analyser.frequencyBinCount);
+
+    // rebuild frames buffer & pointcloud with new BINS/DEPTH
+    framesBuffer = new Array(DEPTH);
+    for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
+
+    // recreate geometry with updated sizes
+    createPointCloud();
+  });
+
+  // sliders update live
+  document.getElementById('binsRange').addEventListener('change', ()=>{
+    BINS = parseInt(document.getElementById('binsRange').value,10);
+    // rebuild
+    framesBuffer = new Array(DEPTH);
+    for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
+    createPointCloud();
+  });
+  document.getElementById('depthRange').addEventListener('change', ()=>{
+    DEPTH = parseInt(document.getElementById('depthRange').value,10);
+    framesBuffer = new Array(DEPTH);
+    for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
+    createPointCloud();
+  });
+  document.getElementById('sizeRange').addEventListener('input', ()=>{
+    POINT_SIZE = parseFloat(document.getElementById('sizeRange').value);
+    if(particleSystem) particleSystem.material.uniforms.uSize.value = POINT_SIZE;
+  });
+
+  // initialize three
+  initThree();
+
+  // warm empty buffer so we see something before audio
+  framesBuffer = new Array(DEPTH);
+  for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
+  createPointCloud();
+  animate();
   </script>
 </body>
 </html>
+
