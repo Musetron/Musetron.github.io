@@ -1,253 +1,160 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>DJ Vinyl</title>
-<style>
-body { margin:0; background:#111; font-family:sans-serif; user-select:none; overflow:hidden;}
-canvas { display:block; margin:0 auto; background:#222; }
-#ui { position:absolute; bottom:10px; width:100%; display:flex; justify-content:center; gap:20px;}
-button { padding:10px 20px; font-size:16px; background:#333; color:#fff; border:2px solid #ccc; cursor:pointer;}
-button.active { background:#0f0; color:#000;}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spirit Chat Box – Deutsch</title>
+  <style>
+    body {
+      background: #111;
+      color: #eee;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    #chat {
+      width: 100%;
+      max-width: 500px;
+      height: 350px;
+      border: 2px solid #444;
+      border-radius: 10px;
+      padding: 10px;
+      overflow-y: auto;
+      background: #222;
+      margin-bottom: 20px;
+    }
+    .message { margin: 5px 0; }
+    .user { color: #4caf50; }
+    .spirit { color: #ff9800; }
+    #volume‑meter {
+      width: 300px;
+      height: 20px;
+      background: #333;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    #volume‑level {
+      height: 100%;
+      width: 0%;
+      background: #4caf50;
+      border-radius: 10px;
+      transition: width 0.1s;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      background: #4caf50;
+      color: white;
+    }
+  </style>
 </head>
 <body>
+  <h1>Spirit Chat Box – Deutsch</h1>
+  <div id="chat"></div>
+  <div id="volume‑meter">
+    <div id="volume‑level"></div>
+  </div>
+  <button id="startBtn">Mikrofon starten</button>
 
-<input type="file" id="fileInput" accept=".wav" style="display:none">
-<canvas id="canvas" width="800" height="600"></canvas>
-<div id="ui">
-  <button id="loadBtn">Load</button>
-  <button id="fadeBtn">Fade</button>
-  <button id="invertBtn">Normal</button>
-</div>
+  <script>
+    const chat = document.getElementById('chat');
+    const volumeLevel = document.getElementById('volume‑level');
+    const startBtn = document.getElementById('startBtn');
 
-<script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const loadBtn = document.getElementById('loadBtn');
-const fadeBtn = document.getElementById('fadeBtn');
-const invertBtn = document.getElementById('invertBtn');
-const fileInput = document.getElementById('fileInput');
+    let audioContext, analyser, microphone, dataArray;
+    let spiritInterval;
+    let wordList = [];
 
-let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-let gainNode = audioCtx.createGain();
-gainNode.connect(audioCtx.destination);
-
-let audioBuffer = null;
-let currentSamplePos = 0;
-let rotation = 0;
-let rotationSpeed = 0;
-let friction = 0.98;
-let autoplay = true;
-let loop = true;
-let fadeSpeed = 0.7;
-let volume = 1.0;
-let reverseFadeLogic = false;
-let fadeActive = false;
-let paused = false;
-
-let diskImg = new Image();
-diskImg.src = 'https://i.ibb.co/1tMTRJWZ/disc.png';
-
-let mouseDown = false;
-let lastMouseX = 0;
-let needleX = 0;
-let manualControl = false;
-
-// 🔧 Scratch-bezogene Variablen
-let scratchStart = 0;
-let scratchEnd = 0;
-let scratchBufferActive = false;
-let scratchRangeSamples = 0;
-
-// --- WAV Laden ---
-loadBtn.addEventListener('click', ()=> {
-    fileInput.click();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-});
-fileInput.addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const arrayBuffer = await file.arrayBuffer();
-    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-    currentSamplePos = 0;
-    rotation = 0;
-});
-
-// --- Buttons ---
-fadeBtn.addEventListener('click', ()=> fadeActive = !fadeActive);
-invertBtn.addEventListener('click', ()=> reverseFadeLogic = !reverseFadeLogic);
-
-// --- Maus Scratching ---
-canvas.addEventListener('mousedown', e => { 
-    mouseDown = true; 
-    manualControl = true;
-    lastMouseX = e.offsetX;
-
-    // 🔧 Kleines Scratch-Segment um aktuelle Position definieren
-    if(audioBuffer){
-        const segmentDuration = 0.2; // Sekunden
-        scratchRangeSamples = Math.floor(segmentDuration * audioCtx.sampleRate);
-        scratchStart = Math.max(0, Math.floor(currentSamplePos) - scratchRangeSamples / 2);
-        scratchEnd = Math.min(audioBuffer.length, scratchStart + scratchRangeSamples);
-        scratchBufferActive = true;
+    // Funktion zum Ausgabe von Text zu Sprache
+    function speak(text) {
+      if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'de‑DE';
+        // Optionale Einstellungen:
+        utterance.rate = 1;  // Geschwindigkeit
+        utterance.pitch = 1; // Tonhöhe
+        window.speechSynthesis.speak(utterance);
+      }
     }
-});
-canvas.addEventListener('mouseup', e => { 
-    mouseDown = false; 
-    setTimeout(()=>{
-        manualControl=false;
-        scratchBufferActive = false; // zurück zu normalem Audio
-    }, 300); 
-});
-canvas.addEventListener('mouseleave', e => { 
-    mouseDown = false; 
-    setTimeout(()=>{
-        manualControl=false;
-        scratchBufferActive = false;
-    }, 300); 
-});
-canvas.addEventListener('mousemove', e => {
-    if(mouseDown && audioBuffer){
-        const dx = e.offsetX - lastMouseX;
-        rotationSpeed = dx * 5;
-        lastMouseX = e.offsetX;
-        currentSamplePos = ((rotation % 360)/360) * audioBuffer.length;
+
+    function addMessage(text, sender) {
+      const msgDiv = document.createElement('div');
+      msgDiv.className = 'message ' + sender;
+      msgDiv.textContent = text;
+      chat.appendChild(msgDiv);
+      chat.scrollTop = chat.scrollHeight;
+      if (sender === 'spirit') {
+        speak(text);
+      }
     }
-});
 
-// --- Gamepad ---
-let gamepadIndex = null;
-let zAxis = 0.0;
-window.addEventListener("gamepadconnected", e=>gamepadIndex=e.gamepad.index);
-window.addEventListener("gamepaddisconnected", e=>gamepadIndex=null);
+    // Wortliste laden (z. B. von GitHub gist)  
+    async function loadWordList() {
+      try {
+        const resp = await fetch('https://gist.githubusercontent.com/MarvinJWendt/2f4f4154b8ae218600eb4/raw/wordlist-german.txt');
+        const txt = await resp.text();
+        wordList = txt.split(/\r?\n/).filter(w => w.trim().length > 0);
+        console.log('Wortliste geladen, Anzahl Wörter:', wordList.length);
+      } catch (err) {
+        console.warn('Fehler beim Laden der Wortliste:', err);
+      }
+    }
 
-// --- Audio ScriptProcessorNode ---
-let scriptNode = audioCtx.createScriptProcessor(1024, 1, 1);
-scriptNode.onaudioprocess = function(e){
-    if(!audioBuffer || paused) return;
-    const outData = e.outputBuffer.getChannelData(0);
-    const channelData = audioBuffer.getChannelData(0);
+    async function startMic() {
+      await loadWordList();
 
-    let normalSpeed = audioBuffer.length / audioBuffer.duration / audioCtx.sampleRate;
-    let rotationSpeedNormal = 360 / (audioBuffer.duration*60);
-    let speed = normalSpeed * (rotationSpeed / rotationSpeedNormal);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        analyser.fftSize = 256;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-    for(let i=0;i<outData.length;i++){
-        if(scratchBufferActive){
-            // 🔧 Scratch arbeitet nur im kleinen Segment
-            let idx = Math.floor(currentSamplePos);
-            if(idx < scratchStart) idx = scratchStart;
-            if(idx > scratchEnd) idx = scratchEnd;
-            outData[i] = channelData[idx] * volume;
+        updateVolume();
+        startSpiritBox();
+        startBtn.disabled = true;
+      } catch (err) {
+        alert('Mikrofonzugriff verweigert oder nicht verfügbar: ' + err);
+      }
+    }
 
-            currentSamplePos += speed;
-            if(currentSamplePos < scratchStart) currentSamplePos = scratchStart;
-            if(currentSamplePos > scratchEnd) currentSamplePos = scratchEnd;
-        } else {
-            // Normalbetrieb
-            let idx = Math.floor(currentSamplePos);
-            if(loop) idx = ((idx % channelData.length)+channelData.length)%channelData.length;
-            else idx = Math.min(idx, channelData.length-1);
-            outData[i] = channelData[idx]*volume;
-            currentSamplePos += speed;
+    function updateVolume() {
+      analyser.getByteFrequencyData(dataArray);
+      const avg = dataArray.reduce((a,b) => a + b, 0) / dataArray.length;
+      const percent = Math.min(100, (avg / 128) * 100);
+      volumeLevel.style.width = percent + '%';
+
+      requestAnimationFrame(updateVolume);
+    }
+
+    function startSpiritBox() {
+      spiritInterval = setInterval(() => {
+        analyser.getByteFrequencyData(dataArray);
+        const avg = dataArray.reduce((a,b) => a + b, 0) / dataArray.length;
+
+        if (avg > 30 && wordList.length > 0) {
+          // je größer avg, desto mehr Wörter
+          const count = Math.max(1, Math.floor(avg / 30));
+          let msg = [];
+          for (let i = 0; i < count; i++) {
+            const w = wordList[Math.floor(Math.random() * wordList.length)];
+            msg.push(w);
+          }
+          const text = msg.join(' ');
+          addMessage(text, 'spirit');
         }
+      }, 800);
     }
 
-    // Fade Logic
-    let targetVolume = (paused || fadeActive) ? (reverseFadeLogic?1:0) : (reverseFadeLogic?0:1);
-    volume += (targetVolume - volume) * fadeSpeed;
-};
-scriptNode.connect(gainNode);
-
-// --- Draw ---
-function draw(){
-    const sw = canvas.width;
-    const sh = canvas.height;
-    ctx.fillStyle="#111";
-    ctx.fillRect(0,0,sw,sh);
-
-    const waveformH = sh*0.2;
-    const midY = waveformH/2;
-    if(audioBuffer){
-        const data = audioBuffer.getChannelData(0);
-        const factor = Math.max(1, data.length/sw);
-        ctx.strokeStyle="#ccc";
-        for(let x=0;x<sw;x++){
-            const idx = Math.floor(x*factor);
-            const sample = data[idx]*volume;
-            const h = sample*(waveformH/2);
-            ctx.beginPath();
-            ctx.moveTo(x, midY-h);
-            ctx.lineTo(x, midY+h);
-            ctx.stroke();
-        }
-    }
-
-    // Nadel folgt Audio-Position
-    if(audioBuffer){
-        let pos = currentSamplePos;
-        if(loop) pos = ((pos % audioBuffer.length) + audioBuffer.length) % audioBuffer.length;
-        needleX = pos / audioBuffer.length * sw;
-    } else {
-        needleX = 0;
-    }
-    ctx.strokeStyle="red";
-    ctx.lineWidth=2;
-    ctx.beginPath();
-    ctx.moveTo(needleX,0);
-    ctx.lineTo(needleX,waveformH);
-    ctx.stroke();
-
-    // Disk
-    const centerX = sw/2;
-    const centerY = sh*0.55;
-    const size = Math.min(sw,sh)*0.6;
-    ctx.save();
-    ctx.translate(centerX,centerY);
-    ctx.rotate(rotation*Math.PI/180);
-    ctx.drawImage(diskImg,-size/2,-size/2,size,size);
-    ctx.restore();
-
-    // Rotation
-    if(!paused){
-        if(manualControl){
-            rotation += rotationSpeed;
-            rotationSpeed *= 0.8; // etwas mehr Dämpfung für Kontrolle
-        } else {
-            if(gamepadIndex!==null && Math.abs(zAxis)>0.01){
-                rotationSpeed = zAxis * 150;
-            } else if(autoplay && audioBuffer){
-                rotationSpeed = 360 / (audioBuffer.duration * 60);
-            }
-            rotation += rotationSpeed;
-            rotationSpeed *= friction;
-        }
-    }
-
-    // Buttons Feedback
-    fadeBtn.classList.toggle('active', fadeActive);
-    invertBtn.classList.toggle('active', reverseFadeLogic);
-
-    requestAnimationFrame(draw);
-}
-
-// --- Gamepad Polling ---
-function pollGamepad(){
-    if(gamepadIndex!==null){
-        const gp = navigator.getGamepads()[gamepadIndex];
-        if(gp){
-            zAxis = gp.axes[2];
-            paused = gp.buttons[0].pressed;
-            fadeActive = gp.buttons[2].pressed;
-        }
-    }
-    requestAnimationFrame(pollGamepad);
-}
-
-draw();
-pollGamepad();
-</script>
-
+    startBtn.addEventListener('click', startMic);
+  </script>
 </body>
 </html>
