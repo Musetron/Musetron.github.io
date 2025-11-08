@@ -38,6 +38,7 @@
 
   let framesBuffer;
   let particleOffsets;
+  let particleBaseOffsets;
 
   function initThree(){
     renderer = new THREE.WebGLRenderer({antialias:true});
@@ -47,7 +48,7 @@
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x222222);
-    scene.fog = new THREE.FogExp2(0x222222, 0.01); // Nebel für Blur-Effekt
+    scene.fog = new THREE.FogExp2(0x222222, 0.01);
 
     camera = new THREE.PerspectiveCamera(60, WIDTH/HEIGHT, 0.1, 1000);
     camera.position.set(0, 30, 120);
@@ -78,6 +79,7 @@
     positions = new Float32Array(total * 3);
     colors = new Float32Array(total * 3);
     particleOffsets = new Float32Array(total * 3);
+    particleBaseOffsets = new Float32Array(total * 3);
 
     const X_RANGE = 100;
     const Z_SPACING = 0.6;
@@ -91,6 +93,10 @@
         positions[idx*3+0] = px;
         positions[idx*3+1] = py;
         positions[idx*3+2] = pz;
+
+        particleBaseOffsets[idx*3+0] = px;
+        particleBaseOffsets[idx*3+1] = py;
+        particleBaseOffsets[idx*3+2] = pz;
 
         particleOffsets[idx*3+0] = (Math.random()-0.5)*0.5;
         particleOffsets[idx*3+1] = (Math.random()-0.5)*0.5;
@@ -184,18 +190,25 @@
       const frame = framesBuffer[z];
       for(let x=0; x<BINS; x++){
         const baseIdx = idx*3;
-        positions[baseIdx+0] = (x / (BINS-1) - 0.5) * X_RANGE + particleOffsets[baseIdx+0];
+
+        // Position mit Basis + kleiner zufälliger Partikelbewegung
+        particleOffsets[baseIdx+0] += (Math.random()-0.5)*0.1;
+        particleOffsets[baseIdx+1] += (Math.random()-0.5)*0.1;
+        particleOffsets[baseIdx+2] += (Math.random()-0.5)*0.1;
+
+        // Limitierte Distanz vom Basisort
+        particleOffsets[baseIdx+0] = Math.max(-0.5, Math.min(0.5, particleOffsets[baseIdx+0]));
+        particleOffsets[baseIdx+1] = Math.max(-0.5, Math.min(0.5, particleOffsets[baseIdx+1]));
+        particleOffsets[baseIdx+2] = Math.max(-0.5, Math.min(0.5, particleOffsets[baseIdx+2]));
+
+        positions[baseIdx+0] = particleBaseOffsets[baseIdx+0] + particleOffsets[baseIdx+0];
         const a = frame ? frame[x] : 0;
         positions[baseIdx+1] = a * 80 - 10 + particleOffsets[baseIdx+1];
-        positions[baseIdx+2] = z * Z_SPACING + particleOffsets[baseIdx+2];
+        positions[baseIdx+2] = particleBaseOffsets[baseIdx+2] + particleOffsets[baseIdx+2];
 
         colors[baseIdx+0] = 0;
         colors[baseIdx+1] = 0;
         colors[baseIdx+2] = 0;
-
-        particleOffsets[baseIdx+0] += (Math.random()-0.5)*0.1;
-        particleOffsets[baseIdx+1] += (Math.random()-0.5)*0.1;
-        particleOffsets[baseIdx+2] += (Math.random()-0.5)*0.1;
 
         idx++;
       }
