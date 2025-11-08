@@ -1,223 +1,202 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>DJ Vinyl</title>
-<style>
-body { margin:0; background:#111; font-family:sans-serif; user-select:none; overflow:hidden;}
-canvas { display:block; margin:0 auto; background:#222; }
-#ui { position:absolute; bottom:10px; width:100%; display:flex; justify-content:center; gap:20px;}
-button { padding:10px 20px; font-size:16px; background:#333; color:#fff; border:2px solid #ccc; cursor:pointer;}
-button.active { background:#0f0; color:#000;}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mikrofon Rausch-zu-Text (Live)</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#60a5fa;--muted:#94a3b8}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;margin:0;background:linear-gradient(180deg,#041022, #071425);color:#e6eef8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .card{background:rgba(255,255,255,0.03);border-radius:12px;padding:18px;max-width:880px;width:100%;box-shadow:0 6px 30px rgba(2,6,23,0.6)}
+    h1{margin:.2rem 0 .8rem;font-size:1.25rem}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+    button{background:var(--accent);border:none;padding:10px 14px;border-radius:8px;color:#022039;font-weight:600;cursor:pointer}
+    button.secondary{background:rgba(255,255,255,0.06);color:var(--muted)}
+    label{font-size:.85rem;color:var(--muted)}
+    .row{display:flex;gap:10px;align-items:center}
+    .meter{height:12px;background:rgba(255,255,255,0.04);border-radius:8px;overflow:hidden;flex:1}
+    .meter > i{display:block;height:100%;width:0%;background:linear-gradient(90deg, #60a5fa, #3b82f6)}
+    textarea{width:100%;min-height:180px;background:#011022;border:none;color:#cfe9ff;padding:12px;border-radius:8px;resize:vertical;font-family:monospace}
+    .small{font-size:.8rem;color:var(--muted)}
+    .meta{display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap}
+    input[type=range]{width:160px}
+    .kbd{background:rgba(255,255,255,0.03);padding:6px 8px;border-radius:6px;font-family:monospace}
+  </style>
 </head>
 <body>
+  <main class="card">
+    <h1>Mikrofon → Rauschen live in Text</h1>
+    <p class="small">Pegel &le; 50% = Leerlauf. 51% = „–“ (Strich), 52% = „." (Punkt), 53% = „–" usw. Live-Erkennung mit einstellbarer Empfindlichkeit.</p>
 
-<input type="file" id="fileInput" accept=".wav" style="display:none">
-<canvas id="canvas" width="800" height="600"></canvas>
-<div id="ui">
-  <button id="loadBtn">Load</button>
-  <button id="fadeBtn">Fade</button>
-  <button id="invertBtn">Normal</button>
-</div>
+    <div class="controls">
+      <button id="startBtn">Start</button>
+      <button id="stopBtn" class="secondary" disabled>Stop</button>
+      <button id="calibrateBtn" class="secondary">Kalibrieren (Umgebungsrauschen)</button>
+      <button id="clearBtn" class="secondary">Ausgabe leeren</button>
+      <button id="downloadBtn" class="secondary">Text herunterladen</button>
+    </div>
+
+    <div class="row">
+      <label>Sensitivität</label>
+      <input id="sensitivity" type="range" min="0.01" max="0.6" step="0.01" value="0.12">
+      <span class="small kbd" id="sensVal">0.12</span>
+    </div>
+
+    <div style="margin-top:10px" class="row">
+      <label>Live-Pegel</label>
+      <div class="meter" aria-hidden="true"><i id="meterBar"></i></div>
+      <div class="small kbd" id="percent">0%</div>
+    </div>
+
+    <div class="meta">
+      <div class="small">Status: <span id="status">stopped</span></div>
+      <div class="small">Gerät: <span id="device">-</span></div>
+    </div>
+
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
+
+    <textarea id="output" placeholder="Hier erscheint der konvertierte Text..."></textarea>
+
+    <p class="small" style="margin-top:8px">Hinweis: Du musst dem Browser erlauben, das Mikrofon zu verwenden. Passe <em>Sensitivität</em> an oder nutze <em>Kalibrieren</em>, um Hintergrundgeräusche als Leerlauf zu setzen.</p>
+  </main>
 
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const loadBtn = document.getElementById('loadBtn');
-const fadeBtn = document.getElementById('fadeBtn');
-const invertBtn = document.getElementById('invertBtn');
-const fileInput = document.getElementById('fileInput');
+(async function(){
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const calibrateBtn = document.getElementById('calibrateBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const meterBar = document.getElementById('meterBar');
+  const percentLabel = document.getElementById('percent');
+  const status = document.getElementById('status');
+  const deviceLabel = document.getElementById('device');
+  const output = document.getElementById('output');
+  const sens = document.getElementById('sensitivity');
+  const sensVal = document.getElementById('sensVal');
 
-let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-let gainNode = audioCtx.createGain();
-gainNode.connect(audioCtx.destination);
+  let audioCtx, analyser, source, stream;
+  let rafId;
+  let ambientRms = 0; // für Kalibrierung
+  let maxRms = parseFloat(sens.value); // je größer, desto weniger empfindlich
+  let lastAppendTime = 0;
+  let appendInterval = 120; // ms, wie oft Zeichen angehängt werden
 
-let audioBuffer = null;
-let currentSamplePos = 0;
-let rotation = 0;
-let rotationSpeed = 0;
-let friction = 0.98;
-let autoplay = true;
-let loop = true;
-let fadeSpeed = 0.7;
-let volume = 1.0;
-let reverseFadeLogic = false;
-let fadeActive = false;
-let paused = false;
+  sens.addEventListener('input', ()=>{ maxRms = parseFloat(sens.value); sensVal.textContent = maxRms.toFixed(2); });
 
-let diskImg = new Image();
-diskImg.src = 'https://i.ibb.co/VWxH96Ph/42625-six-o-clock-1024.png';
+  clearBtn.addEventListener('click', ()=>{ output.value = ''; });
 
-let mouseDown = false;
-let lastMouseX = 0;
-let needleX = 0;
-let manualControl = false; // NEU: Kontrolle durch Scratchen
+  downloadBtn.addEventListener('click', ()=>{
+    const blob = new Blob([output.value], {type: 'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'mic-text.txt'; a.click();
+    URL.revokeObjectURL(url);
+  });
 
-// --- WAV Laden ---
-loadBtn.addEventListener('click', ()=> {
-    fileInput.click();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-});
-fileInput.addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const arrayBuffer = await file.arrayBuffer();
-    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-    currentSamplePos = 0;
-    rotation = 0;
-});
+  calibrateBtn.addEventListener('click', async ()=>{
+    calibrateBtn.disabled = true; calibrateBtn.textContent = 'Kalibriere... (3s)';
+    if(!audioCtx) await startAudio();
+    const rmsVals = [];
+    const t0 = performance.now();
+    while(performance.now() - t0 < 3000){
+      const rms = getRms();
+      if(rms !== null) rmsVals.push(rms);
+      await new Promise(r=>setTimeout(r, 100));
+    }
+    // median um Ausreißer zu reduzieren
+    rmsVals.sort((a,b)=>a-b);
+    const mid = Math.floor(rmsVals.length/2);
+    ambientRms = rmsVals.length? rmsVals[mid] : 0;
+    calibrateBtn.textContent = 'Kalibrieren (Umgebungsrauschen)';
+    calibrateBtn.disabled = false;
+    console.log('Ambient RMS set to', ambientRms);
+  });
 
-// --- Buttons ---
-fadeBtn.addEventListener('click', ()=> fadeActive = !fadeActive);
-invertBtn.addEventListener('click', ()=> reverseFadeLogic = !reverseFadeLogic);
+  startBtn.addEventListener('click', startAudio);
+  stopBtn.addEventListener('click', stopAudio);
 
-// --- Maus Scratching ---
-canvas.addEventListener('mousedown', e => { 
-    mouseDown = true; 
-    manualControl = true; // <<< Scratch aktiv
-    lastMouseX = e.offsetX; 
-});
-canvas.addEventListener('mouseup', e => { 
-    mouseDown = false; 
-    // sanfter Übergang zurück zu Auto
-    setTimeout(()=>manualControl=false, 300); 
-});
-canvas.addEventListener('mouseleave', e => { 
-    mouseDown = false; 
-    setTimeout(()=>manualControl=false, 300); 
-});
-canvas.addEventListener('mousemove', e => {
-    if(mouseDown && audioBuffer){
-        const dx = e.offsetX - lastMouseX;
-        rotationSpeed = dx * 5;
-        lastMouseX = e.offsetX;
-        currentSamplePos = ((rotation % 360)/360) * audioBuffer.length;
-    }
-});
+  async function startAudio(){
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    }catch(err){ alert('Zugriff auf Mikrofon verweigert oder nicht verfügbar.'); return }
 
-// --- Gamepad ---
-let gamepadIndex = null;
-let zAxis = 0.0;
-window.addEventListener("gamepadconnected", e=>gamepadIndex=e.gamepad.index);
-window.addEventListener("gamepaddisconnected", e=>gamepadIndex=null);
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.3;
+    source = audioCtx.createMediaStreamSource(stream);
+    source.connect(analyser);
 
-// --- Audio ScriptProcessorNode ---
-let scriptNode = audioCtx.createScriptProcessor(1024, 1, 1);
-scriptNode.onaudioprocess = function(e){
-    if(!audioBuffer || paused) return;
-    const outData = e.outputBuffer.getChannelData(0);
-    const channelData = audioBuffer.getChannelData(0);
+    // Geräte-Info anzeigen (falls vorhanden)
+    try{
+      const tracks = stream.getAudioTracks();
+      deviceLabel.textContent = tracks[0]?.label || 'interne Quelle';
+    }catch(e){ deviceLabel.textContent = '-'; }
 
-    let normalSpeed = audioBuffer.length / audioBuffer.duration / audioCtx.sampleRate;
-    let rotationSpeedNormal = 360 / (audioBuffer.duration*60);
-    let speed = normalSpeed * (rotationSpeed / rotationSpeedNormal);
+    status.textContent = 'running';
+    startBtn.disabled = true; stopBtn.disabled = false;
+    loop();
+  }
 
-    for(let i=0;i<outData.length;i++){
-        let idx = Math.floor(currentSamplePos);
-        if(loop) idx = ((idx % channelData.length)+channelData.length)%channelData.length;
-        else idx = Math.min(idx, channelData.length-1);
-        outData[i] = channelData[idx]*volume;
-        currentSamplePos += speed;
-    }
+  function stopAudio(){
+    if(rafId) cancelAnimationFrame(rafId);
+    if(source) source.disconnect();
+    if(analyser) analyser.disconnect();
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+    if(audioCtx){ audioCtx.close(); audioCtx = null; }
+    status.textContent = 'stopped';
+    startBtn.disabled = false; stopBtn.disabled = true;
+    meterBar.style.width = '0%'; percentLabel.textContent = '0%';
+  }
 
-    // Fade Logic
-    let targetVolume = (paused || fadeActive) ? (reverseFadeLogic?1:0) : (reverseFadeLogic?0:1);
-    volume += (targetVolume - volume) * fadeSpeed;
-};
-scriptNode.connect(gainNode);
+  function getRms(){
+    if(!analyser) return null;
+    const buf = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for(let i=0;i<buf.length;i++){ sum += buf[i]*buf[i]; }
+    const rms = Math.sqrt(sum / buf.length);
+    return rms;
+  }
 
-// --- Draw ---
-function draw(){
-    const sw = canvas.width;
-    const sh = canvas.height;
-    ctx.fillStyle="#111";
-    ctx.fillRect(0,0,sw,sh);
+  function loop(){
+    const rms = getRms();
+    if(rms !== null){
+      // Normieren: subtract ambientRms (Kalibrierung), dann in Prozent basierend auf maxRms
+      const adjusted = Math.max(0, rms - ambientRms);
+      const pct = Math.round(Math.max(0, Math.min(100, (adjusted / maxRms) * 100)));
+      meterBar.style.width = pct + '%';
+      percentLabel.textContent = pct + '%';
 
-    const waveformH = sh*0.2;
-    const midY = waveformH/2;
-    if(audioBuffer){
-        const data = audioBuffer.getChannelData(0);
-        const factor = Math.max(1, data.length/sw);
-        ctx.strokeStyle="#ccc";
-        for(let x=0;x<sw;x++){
-            const idx = Math.floor(x*factor);
-            const sample = data[idx]*volume;
-            const h = sample*(waveformH/2);
-            ctx.beginPath();
-            ctx.moveTo(x, midY-h);
-            ctx.lineTo(x, midY+h);
-            ctx.stroke();
-        }
-    }
+      const now = performance.now();
+      if(now - lastAppendTime >= appendInterval){
+        lastAppendTime = now;
+        // Mapping: <=50 => Leerlauf (kein Zeichen). >50: gerade/ungerade Prozent => Strich/Punkt
+        if(pct > 50){
+          const parity = Math.floor(pct) % 2; // 51 -> 1 -> strich
+          const char = (parity === 1) ? '\u2013' : '.'; // en-dash for better glyph
+          output.value += char;
+          // Autoscroll
+          output.scrollTop = output.scrollHeight;
+        } else {
+          // optional: add space for leerlauf
+          // output.value += ' ';
+        }
+      }
+    }
+    rafId = requestAnimationFrame(loop);
+  }
 
-    // Nadel folgt Audio-Position
-    if(audioBuffer){
-        let pos = currentSamplePos;
-        if(loop) pos = ((pos % audioBuffer.length) + audioBuffer.length) % audioBuffer.length;
-        needleX = pos / audioBuffer.length * sw;
-    } else {
-        needleX = 0;
-    }
-    ctx.strokeStyle="red";
-    ctx.lineWidth=2;
-    ctx.beginPath();
-    ctx.moveTo(needleX,0);
-    ctx.lineTo(needleX,waveformH);
-    ctx.stroke();
+  // Hilfs-Feature: Tab / Copy Shortcuts
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'c' && (e.ctrlKey||e.metaKey)){
+      // Ctrl/Cmd+C kopiert nicht automatisch; Nutzer weiß vermutlich selbst wie
+    }
+  });
 
-    // Disk
-    const centerX = sw/2;
-    const centerY = sh*0.55;
-    const size = Math.min(sw,sh)*0.6;
-    ctx.save();
-    ctx.translate(centerX,centerY);
-    ctx.rotate(rotation*Math.PI/180);
-    ctx.drawImage(diskImg,-size/2,-size/2,size,size);
-    ctx.restore();
-
-    // Rotation
-    if(!paused){
-        if(manualControl){
-            // Scratch steuert Rotation
-            rotation += rotationSpeed;
-            rotationSpeed *= 0.9; // etwas mehr Dämpfung für Kontrolle
-        } else {
-            // Auto-Loop / Gamepad
-            if(gamepadIndex!==null && Math.abs(zAxis)>0.01){
-                rotationSpeed = zAxis * 150;
-            } else if(autoplay && audioBuffer){
-                rotationSpeed = 360 / (audioBuffer.duration * 60);
-            }
-            rotation += rotationSpeed;
-            rotationSpeed *= friction;
-        }
-    }
-
-    // Buttons Feedback
-    fadeBtn.classList.toggle('active', fadeActive);
-    invertBtn.classList.toggle('active', reverseFadeLogic);
-
-    requestAnimationFrame(draw);
-}
-
-// --- Gamepad Polling ---
-function pollGamepad(){
-    if(gamepadIndex!==null){
-        const gp = navigator.getGamepads()[gamepadIndex];
-        if(gp){
-            zAxis = gp.axes[2]; // Z-Achse
-            pau
-sed = gp.buttons[0].pressed; // Button A
-            fadeActive = gp.buttons[2].pressed; // Button Y
-        }
-    }
-    requestAnimationFrame(pollGamepad);
-}
-
-draw();
-pollGamepad();
+})();
 </script>
-
 </body>
-</html>
+  </html>
+  
