@@ -39,7 +39,7 @@ const blinkImg=new Image();
 blinkImg.crossOrigin='anonymous';
 blinkImg.src=BLINK_IMAGE_SRC;
 let blinkVisible=true;
-setInterval(()=>{blinkVisible=!blinkVisible;},1000); // 1 Sekunde Blink-Takt
+setInterval(()=>{blinkVisible=!blinkVisible;},1000);
 
 const LAYERS=[
   {count:6,speed:0.06,scaleRange:[1.0,1.5],alpha:0.4,depth:0.6},
@@ -70,7 +70,6 @@ img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(lo
 let last=performance.now(),accumulator=0;
 let masterAlpha=0;
 
-// Mikrofon Setup
 navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   const source=audioCtx.createMediaStreamSource(stream);
@@ -115,10 +114,10 @@ function loop(ts){
       p.z+=p.vz*1.5;
       p.rot+=p.rotSpeed;
 
-      const alphaFinal=p.alpha*masterAlpha;
       if(p.age<p.fadeDuration){p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;}
       else if(p.age>p.life-p.fadeDuration){p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));}
       else{p.alpha=p.targetAlpha;}
+      const alphaFinal=p.alpha*masterAlpha;
 
       const proj=project3D(p.x,p.y,p.z);
       const wP=img.width*p.scale*0.45*proj.scale;
@@ -135,10 +134,13 @@ function loop(ts){
     }
   }
 
-  // Blinkbild links unten, 1/4 Fenstergröße
+  // Blinkbild links unten, Originalgröße, 1/4 Fenster max
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const w=canvas.width/4;
-    const h=canvas.height/4;
+    const maxW=canvas.width/4;
+    const maxH=canvas.height/4;
+    const ratio=Math.min(maxW/blinkImg.width, maxH/blinkImg.height);
+    const w=blinkImg.width*ratio;
+    const h=blinkImg.height*ratio;
     ctx.drawImage(blinkImg,0,canvas.height-h,w,h);
   }
 
