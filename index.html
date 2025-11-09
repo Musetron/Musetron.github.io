@@ -11,7 +11,7 @@ html,body{height:100%;margin:0;overflow:hidden;}
   position:fixed;top:10px;left:10px;padding:10px 20px;font-size:16px;z-index:10;
 }
 #log{
-  position:fixed;top:10px;right:10px;width:280px;height:220px;overflow:auto;
+  position:fixed;top:10px;right:10px;width:320px;height:260px;overflow:auto;
   background:rgba(0,0,0,0.6);color:#0f0;font-family:monospace;font-size:14px;
   padding:5px;border-radius:5px;z-index:10;
 }
@@ -23,6 +23,35 @@ html,body{height:100%;margin:0;overflow:hidden;}
 <canvas id="cloudCanvas"></canvas>
 
 <script>
+// --- Geisterliste 1-100 ---
+const ghosts = [
+  "Domovoi (slawischer Hausgeist)","Brownie (schottischer Hausgeist)","Zashiki-warashi (japanischer Kindergeist)",
+  "Tomte / Nisse (skandinavischer Hausgeist)","Poltergeist (deutsch/modern)","Kitsune (japanischer Fuchsgeist)",
+  "Jinn / Djinn (arabische Folklore)","Churel (indische Folklore)","La Llorona (mexikanischer Geist)","Banshee (irischer Todesschrei)",
+  "Pontianak / Kuntilanak (südostasiatischer weiblicher Geist)","Vetala (indische untote Gestalt)","Dullahan (irischer kopfloser Reiter)",
+  "Revenant (europäischer Rachegeist)","Sylphen (Luftgeist, westliche Alchemie)","Undine (Wassergeist, mitteleuropäische Folklore)",
+  "Salamander (Feuergeist, Alchemie/Europa)","Kobold (deutsch/englische Folklore, schelmisch)","Onryō (japanischer Rachegeist)",
+  "Huli Jing (chinesischer Fuchsgeist)","La Mala Hora (mexikanische unheilvolle Gestalt)","Manananggal (philippinischer Vampir-Geist)",
+  "Jiangshi (chinesischer „hüpfender“ Zombie)","Gashadokuro (japanischer Riesen-Skelettgeist)","Wraith (britischer Todesgeist)",
+  "Bogle (schottischer Kobold/Poltergeist)","Teke Teke (japanischer Rachegeist)","Lutin (französischer Hausgeist/Kobold)",
+  "Tikoloshe (südafrikanischer Wasser-/Schabernackgeist)","Pishacha (indischer Dämon/Geist)","Elektromagnetische Resonanzfeldstörung",
+  "Quanteninferenz-Spur","Biophotonisches Energiefeld","Magnetische Aura-Anomalie","Ionisierte Luftspirale","Körperschall-Resonanz",
+  "Feldfluktuation im Infraschallbereich","Photonische Interferenzerscheinung","Elektrostatik-Wellenfront","Schumannresonanzveränderung",
+  "Vortex der Energiecluster","Plasma-Knoten","Infraschall-Oszillation","Kalte Lichtanomalie","Magnetfeld-Fluktuation",
+  "Quantum Flux-Spiegelung","Bioplasma-Kondensat","Energie-Gradientenwirbel","EMF-Spike","Neurofeld-Resonanz",
+  "Domovoi (zweites Haus)","Brownie (zweites Haus)","Poltergeist (sekundär)","Kitsune (trickreich)","Jinn / Djinn (zweite Form)",
+  "Onryō (zweiter Typ)","Revenant (regional)","Banshee (zweites Heulen)","Manananggal (regional)","Jiangshi (lokal)",
+  "Elektromagnetische Störung","Plasmawirbel","Ionische Resonanz","Feldanomalie","Vibration in Infraschall",
+  "Kalte Lichtspirale","Biophoton-Wirbel","Energieblase","EMF-Interferenz","Magnetfeld-Knoten",
+  "Quantenfeld-Spiegelung","Neurofeld-Wirbel","Photonische Welle","Feldfluktuation","Ionisierter Nebel",
+  "Elektrostatik-Resonanz","Plasma-Frequenzschwingung","Vortex der kalten Energie","Bioplasma-Spirale","Magnetische Turbulenz",
+  "Domovoi (Hausgeist Schutz)","Brownie (Hausgeist Helfer)","Zashiki-warashi (Glücksbringer)","Tomte / Nisse (Schutzgeist Hof)",
+  "Poltergeist (aktive Störung)","Kitsune (Fuchsgeist List)","Jinn / Djinn (Feuergeist)","Churel (Rachegeist Frau)",
+  "La Llorona (Trauernde Frau)","Banshee (Todesschrei)","Elektromagnetischer Puls","Quanten-Verschränkungsblitz",
+  "Biophotonische Explosion","Magnetische Turbulenzspirale","Infraschall-Knoten","Plasmafluktuation",
+  "Energie-Cluster-Spike","Neurofeld-Interferenz","Photonische Resonanzblase","Feldanomalie-Resonanz"
+];
+
 // --- Spirit-Logger Setup ---
 const logDiv = document.getElementById('log');
 let recording = false;
@@ -65,7 +94,8 @@ function logSpirit(){
   if(Math.random() < 0.3){ // 30% Chance für Spirit
     const spirit = Math.floor(Math.random()*100)+1;
     const change = Math.floor(Math.random()*101);
-    addLogLine(`[${now}] Spirit Pegel: ${spirit} | Change: ${change}%`);
+    const ghost = ghosts[Math.floor(Math.random()*ghosts.length)];
+    addLogLine(`[${now}] Spirit Pegel: ${spirit} | Change: ${change}% | Möglicher Geist: ${ghost}`);
   } else {
     addLogLine(`[${now}] unklar`);
   }
@@ -77,7 +107,8 @@ setInterval(()=>{
   if(Math.random() < 0.3){
     const spirit = Math.floor(Math.random()*100)+1;
     const change = Math.floor(Math.random()*101);
-    addLogLine(`[${now}] Spirit Pegel: ${spirit} | Change: ${change}%`);
+    const ghost = ghosts[Math.floor(Math.random()*ghosts.length)];
+    addLogLine(`[${now}] Spirit Pegel: ${spirit} | Change: ${change}% | Möglicher Geist: ${ghost}`);
   } else {
     addLogLine(`[${now}] unklar`);
   }
@@ -116,18 +147,13 @@ let particles=[];
 function rand(a,b){return a+Math.random()*(b-a);}
 function createParticle(layer){
   const s=rand(layer.scaleRange[0],layer.scaleRange[1]);
-  return {
-    x:rand(-200,200), y:rand(-100,100), z:rand(0,400),
-    vx:rand(-layer.speed,layer.speed), vy:rand(-0.02,0.02), vz:rand(-0.1,0.1),
-    scale:s, baseScale:s, alpha:0, targetAlpha:rand(0.4*layer.alpha,0.8*layer.alpha),
-    rot:rand(0,Math.PI*2), rotSpeed:rand(-0.002,0.002), layer,
-    life:rand(10000,20000), age:0, fadeDuration:2000
-  };
+  return {x:rand(-200,200),y:rand(-100,100),z:rand(0,400),
+          vx:rand(-layer.speed,layer.speed),vy:rand(-0.02,0.02),vz:rand(-0.1,0.1),
+          scale:s,baseScale:s,alpha:0,targetAlpha:rand(0.4*layer.alpha,0.8*layer.alpha),
+          rot:rand(0,Math.PI*2),rotSpeed:rand(-0.002,0.002),layer,
+          life:rand(10000,20000),age:0,fadeDuration:2000};
 }
-function initParticles(){
-  particles=[];
-  for(const l of LAYERS){for(let i=0;i<l.count;i++)particles.push(createParticle(l));}
-}
+function initParticles(){particles=[];for(const l of LAYERS)for(let i=0;i<l.count;i++)particles.push(createParticle(l));}
 
 img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
 img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
@@ -145,10 +171,7 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   function updateMic(){
     analyser.getByteTimeDomainData(dataArray);
     let sum=0;
-    for(let i=0;i<dataArray.length;i++){
-      const val=(dataArray[i]-128)/128;
-      sum+=val*val;
-    }
+    for(let i=0;i<dataArray.length;i++){ const val=(dataArray[i]-128)/128; sum+=val*val; }
     const rms=Math.sqrt(sum/dataArray.length);
     masterAlpha=Math.min(1, rms*5);
     requestAnimationFrame(updateMic);
@@ -156,11 +179,7 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   updateMic();
 }).catch(err=>{console.log("Mikrofon Zugriff verweigert",err); masterAlpha=0.5;});
 
-function project3D(x,y,z){
-  const fov=800;
-  const scale=fov/(fov+z);
-  return {x:canvas.width/2 + x*scale, y:canvas.height/2 + y*scale, scale:scale};
-}
+function project3D(x,y,z){ const fov=800; const scale=fov/(fov+z); return {x:canvas.width/2 + x*scale, y:canvas.height/2 + y*scale, scale:scale}; }
 
 function loop(ts){
   const dt=ts-last; last=ts;
@@ -170,40 +189,27 @@ function loop(ts){
     ctx.globalCompositeOperation='source-over';
     for(const p of particles){
       if(p.layer!==layer)continue;
-      p.age+=dt;
-      p.x+=p.vx*1.5*(1/p.layer.depth);
-      p.y+=p.vy*1.5;
-      p.z+=p.vz*1.5;
-      p.rot+=p.rotSpeed;
-
+      p.age+=dt; p.x+=p.vx*1.5*(1/p.layer.depth); p.y+=p.vy*1.5; p.z+=p.vz*1.5; p.rot+=p.rotSpeed;
       if(p.age<p.fadeDuration){p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;}
       else if(p.age>p.life-p.fadeDuration){p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));}
       else{p.alpha=p.targetAlpha;}
       const alphaFinal=p.alpha*masterAlpha;
-
       const proj=project3D(p.x,p.y,p.z);
       const wP=img.width*p.scale*0.45*proj.scale;
       const hP=img.height*p.scale*0.45*proj.scale;
-      ctx.save();
-      ctx.translate(proj.x,proj.y);
-      ctx.rotate(p.rot);
-      ctx.globalAlpha=alphaFinal;
-      if(img.complete&&img.naturalWidth)ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
+      ctx.save(); ctx.translate(proj.x,proj.y); ctx.rotate(p.rot); ctx.globalAlpha=alphaFinal;
+      if(img.complete&&img.naturalWidth) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       else{ctx.beginPath();ctx.arc(0,0,40*p.scale*proj.scale,0,Math.PI*2);ctx.fillStyle=`rgba(180,180,180,${alphaFinal})`;ctx.fill();}
       ctx.restore();
-
       if(p.age>p.life){const idx=particles.indexOf(p);if(idx!==-1)particles[idx]=createParticle(layer);}
     }
   }
 
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const maxW=canvas.width/2;
-    const maxH=canvas.height/2;
+    const maxW=canvas.width/2; const maxH=canvas.height/2;
     const ratio=Math.min(maxW/blinkImg.width, maxH/blinkImg.height);
-    const w=blinkImg.width*ratio;
-    const h=blinkImg.height*ratio;
-    const xPos=canvas.width/8;
-    const yPos=canvas.height - h - canvas.height/8;
+    const w=blinkImg.width*ratio; const h=blinkImg.height*ratio;
+    const xPos=canvas.width/8; const yPos=canvas.height - h - canvas.height/8;
     ctx.drawImage(blinkImg,xPos,yPos,w,h);
   }
 
@@ -211,4 +217,5 @@ function loop(ts){
 }
 </script>
 </body>
-</html>
+  </html>
+  
