@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Wolke mit Mikrofonsteuerung</title>
+<title>Wolke mit Mikrofonsteuerung und Blinkbild</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;}
 #cloudCanvas{display:block;width:100vw;height:100vh}
@@ -14,6 +14,7 @@ html,body{height:100%;margin:0;overflow:hidden;}
 <script>
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
+const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
 const canvas=document.getElementById('cloudCanvas');
 const ctx=canvas.getContext('2d');
 let DPR=Math.max(1,window.devicePixelRatio||1);
@@ -33,6 +34,12 @@ img.src=PARTICLE_SRC;
 const bg=new Image();
 bg.crossOrigin='anonymous';
 bg.src=BACKGROUND_SRC;
+
+const blinkImg=new Image();
+blinkImg.crossOrigin='anonymous';
+blinkImg.src=BLINK_IMAGE_SRC;
+let blinkVisible=true;
+setInterval(()=>{blinkVisible=!blinkVisible;},1000); // 1 Sekunde Blink-Takt
 
 const LAYERS=[
   {count:6,speed:0.06,scaleRange:[1.0,1.5],alpha:0.4,depth:0.6},
@@ -80,7 +87,7 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
       sum+=val*val;
     }
     const rms=Math.sqrt(sum/dataArray.length);
-    masterAlpha=Math.min(1, rms*5); // Verstärkung anpassen
+    masterAlpha=Math.min(1, rms*5);
     requestAnimationFrame(updateMic);
   }
   updateMic();
@@ -128,9 +135,15 @@ function loop(ts){
     }
   }
 
+  // Blinkbild links unten, 1/4 Fenstergröße
+  if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
+    const w=canvas.width/4;
+    const h=canvas.height/4;
+    ctx.drawImage(blinkImg,0,canvas.height-h,w,h);
+  }
+
   requestAnimationFrame(loop);
 }
 </script>
 </body>
-  </html>
-  
+</html>
