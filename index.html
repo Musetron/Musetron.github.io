@@ -134,14 +134,16 @@ function loop(ts){
     }
   }
 
-  // Blinkbild links unten, 1/4 Fenstergröße, proportional
+  // Blinkbild größer, weiter oben, links unten versetzt
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const maxW=canvas.width/4;
-    const maxH=canvas.height/4;
+    const maxW=canvas.width/2; // größer
+    const maxH=canvas.height/2;
     const ratio=Math.min(maxW/blinkImg.width, maxH/blinkImg.height);
     const w=blinkImg.width*ratio;
     const h=blinkImg.height*ratio;
-    ctx.drawImage(blinkImg,0,canvas.height-h,w,h);
+    const xPos=canvas.width/8; // leicht rechts von links
+    const yPos=canvas.height - h - canvas.height/8; // etwas höher
+    ctx.drawImage(blinkImg,xPos,yPos,w,h);
   }
 
   requestAnimationFrame(loop);
