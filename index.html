@@ -3,21 +3,94 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Wolke mit Mikrofonsteuerung und Blinkbild</title>
+<title>Wolke mit Mikrofonsteuerung und Spirit-Logger</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;}
-#cloudCanvas{display:block;width:100vw;height:100vh}
+#cloudCanvas{display:block;width:100vw;height:100vh;}
+#recordBtn{
+  position:fixed;top:10px;left:10px;padding:10px 20px;font-size:16px;z-index:10;
+}
+#log{
+  position:fixed;top:10px;right:10px;width:280px;height:220px;overflow:auto;
+  background:rgba(0,0,0,0.6);color:#0f0;font-family:monospace;font-size:14px;
+  padding:5px;border-radius:5px;z-index:10;
+}
 </style>
 </head>
 <body>
+<button id="recordBtn">Start Recording</button>
+<div id="log"></div>
 <canvas id="cloudCanvas"></canvas>
+
 <script>
+// --- Spirit-Logger Setup ---
+const logDiv = document.getElementById('log');
+let recording = false;
+let recordInterval = null;
+let logLines = [];
+
+function addLogLine(line){
+  logLines.push(line);
+  if(logLines.length > 20) logLines.shift();
+  logDiv.innerText = logLines.join("\n");
+}
+
+function saveTxtFile(){
+  const blob = new Blob([logLines.join("\n")], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'spirit_log.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('recordBtn').addEventListener('click', ()=>{
+  if(recording){
+    clearInterval(recordInterval);
+    recording = false;
+    saveTxtFile();
+    document.getElementById('recordBtn').innerText = 'Start Recording';
+    addLogLine('Recording stopped, file saved.');
+  } else {
+    recording = true;
+    document.getElementById('recordBtn').innerText = 'Stop Recording';
+    addLogLine('Recording started...');
+    recordInterval = setInterval(logSpirit, 5000);
+  }
+});
+
+function logSpirit(){
+  const now = new Date().toLocaleTimeString();
+  if(Math.random() < 0.3){ // 30% Chance für Spirit
+    const spirit = Math.floor(Math.random()*100)+1;
+    const change = Math.floor(Math.random()*101);
+    addLogLine(`[${now}] Spirit Pegel: ${spirit} | Change: ${change}%`);
+  } else {
+    addLogLine(`[${now}] unklar`);
+  }
+}
+
+// Live-Log auch ohne Aufnahme
+setInterval(()=>{
+  const now = new Date().toLocaleTimeString();
+  if(Math.random() < 0.3){
+    const spirit = Math.floor(Math.random()*100)+1;
+    const change = Math.floor(Math.random()*101);
+    addLogLine(`[${now}] Spirit Pegel: ${spirit} | Change: ${change}%`);
+  } else {
+    addLogLine(`[${now}] unklar`);
+  }
+},5000);
+
+// --- Wolken- und Blinkbildanimation ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
 const canvas=document.getElementById('cloudCanvas');
 const ctx=canvas.getContext('2d');
 let DPR=Math.max(1,window.devicePixelRatio||1);
+
 function resize(){
   DPR=Math.max(1,window.devicePixelRatio||1);
   canvas.width=Math.floor(window.innerWidth*DPR);
@@ -27,17 +100,9 @@ function resize(){
 window.addEventListener('resize',resize);
 resize();
 
-const img=new Image();
-img.crossOrigin='anonymous';
-img.src=PARTICLE_SRC;
-
-const bg=new Image();
-bg.crossOrigin='anonymous';
-bg.src=BACKGROUND_SRC;
-
-const blinkImg=new Image();
-blinkImg.crossOrigin='anonymous';
-blinkImg.src=BLINK_IMAGE_SRC;
+const img=new Image(); img.crossOrigin='anonymous'; img.src=PARTICLE_SRC;
+const bg=new Image(); bg.crossOrigin='anonymous'; bg.src=BACKGROUND_SRC;
+const blinkImg=new Image(); blinkImg.crossOrigin='anonymous'; blinkImg.src=BLINK_IMAGE_SRC;
 let blinkVisible=true;
 setInterval(()=>{blinkVisible=!blinkVisible;},1000);
 
@@ -48,7 +113,7 @@ const LAYERS=[
 ];
 
 let particles=[];
-function rand(a,b){return a+Math.random()*(b-a)}
+function rand(a,b){return a+Math.random()*(b-a);}
 function createParticle(layer){
   const s=rand(layer.scaleRange[0],layer.scaleRange[1]);
   return {
@@ -64,12 +129,12 @@ function initParticles(){
   for(const l of LAYERS){for(let i=0;i<l.count;i++)particles.push(createParticle(l));}
 }
 
-img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop)};
-img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(loop)};
+img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
+img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
 
-let last=performance.now(),accumulator=0;
-let masterAlpha=0;
+let last=performance.now(),masterAlpha=0;
 
+// Mikrofon
 navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   const source=audioCtx.createMediaStreamSource(stream);
@@ -77,7 +142,6 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   analyser.fftSize=512;
   source.connect(analyser);
   const dataArray=new Uint8Array(analyser.frequencyBinCount);
-
   function updateMic(){
     analyser.getByteTimeDomainData(dataArray);
     let sum=0;
@@ -99,16 +163,14 @@ function project3D(x,y,z){
 }
 
 function loop(ts){
-  const dt=ts-last; last=ts; accumulator+=dt;
-  if(accumulator<33){requestAnimationFrame(loop);return;} accumulator=0;
-
+  const dt=ts-last; last=ts;
   if(bg.complete&&bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
 
   for(const layer of LAYERS){
     ctx.globalCompositeOperation='source-over';
     for(const p of particles){
       if(p.layer!==layer)continue;
-      p.age+=33;
+      p.age+=dt;
       p.x+=p.vx*1.5*(1/p.layer.depth);
       p.y+=p.vy*1.5;
       p.z+=p.vz*1.5;
@@ -134,15 +196,14 @@ function loop(ts){
     }
   }
 
-  // Blinkbild größer, weiter oben, links unten versetzt
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const maxW=canvas.width/2; // größer
+    const maxW=canvas.width/2;
     const maxH=canvas.height/2;
     const ratio=Math.min(maxW/blinkImg.width, maxH/blinkImg.height);
     const w=blinkImg.width*ratio;
     const h=blinkImg.height*ratio;
-    const xPos=canvas.width/8; // leicht rechts von links
-    const yPos=canvas.height - h - canvas.height/8; // etwas höher
+    const xPos=canvas.width/8;
+    const yPos=canvas.height - h - canvas.height/8;
     ctx.drawImage(blinkImg,xPos,yPos,w,h);
   }
 
