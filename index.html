@@ -1,250 +1,136 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Spirit Energy Viewer — Live Mikrofon</title>
-  <style>
-    html,body{height:100%;margin:0;background:#222;color:#ddd;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;overflow:hidden}
-    #ui{position:fixed;left:12px;top:12px;z-index:5;background:rgba(0,0,0,0.4);padding:8px;border-radius:8px}
-    label{display:block;font-size:12px;margin-bottom:6px}
-    .btn{padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.02);color:#fff;cursor:pointer}
-    #credits{position:fixed;right:12px;bottom:12px;font-size:12px;opacity:0.7}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Wolke mit Mikrofonsteuerung</title>
+<style>
+html,body{height:100%;margin:0;overflow:hidden;}
+#cloudCanvas{display:block;width:100vw;height:100vh}
+</style>
 </head>
 <body>
-  <div id="ui">
-    <button id="startBtn" class="btn">Mikrofon starten</button>
-    <label>FFT Größe: <select id="fftSelect"><option selected>128</option><option>256</option><option>512</option><option>1024</option></select></label>
-    <label>Punkte pro Frame: <input id="binsRange" type="range" min="64" max="2048" value="100"></label>
-    <label>Depth (Zeit): <input id="depthRange" type="range" min="16" max="512" value="100"></label>
-    <label>Point Size: <input id="sizeRange" type="range" min="0.5" max="6" step="0.1" value="0.25"></label>
-  </div>
-  <div id="credits">Spirit Energy Viewer</div>
+<canvas id="cloudCanvas"></canvas>
+<script>
+const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
+const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
+const canvas=document.getElementById('cloudCanvas');
+const ctx=canvas.getContext('2d');
+let DPR=Math.max(1,window.devicePixelRatio||1);
+function resize(){
+  DPR=Math.max(1,window.devicePixelRatio||1);
+  canvas.width=Math.floor(window.innerWidth*DPR);
+  canvas.height=Math.floor(window.innerHeight*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);
+resize();
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+const img=new Image();
+img.crossOrigin='anonymous';
+img.src=PARTICLE_SRC;
 
-  <script>
-  let renderer, scene, camera, controls;
-  let particleSystem, positions, colors;
-  let WIDTH = window.innerWidth, HEIGHT = window.innerHeight;
+const bg=new Image();
+bg.crossOrigin='anonymous';
+bg.src=BACKGROUND_SRC;
 
-  let audioContext, analyser, sourceNode;
+const LAYERS=[
+  {count:6,speed:0.06,scaleRange:[1.0,1.5],alpha:0.4,depth:0.6},
+  {count:10,speed:0.1,scaleRange:[0.7,1.1],alpha:0.5,depth:0.9},
+  {count:14,speed:0.14,scaleRange:[0.5,0.9],alpha:0.6,depth:1.4}
+];
 
-  let BINS = 100;
-  let DEPTH = 100;
-  let POINT_SIZE = 0.25;
+let particles=[];
+function rand(a,b){return a+Math.random()*(b-a)}
+function createParticle(layer){
+  const s=rand(layer.scaleRange[0],layer.scaleRange[1]);
+  return {
+    x:rand(-200,200), y:rand(-100,100), z:rand(0,400),
+    vx:rand(-layer.speed,layer.speed), vy:rand(-0.02,0.02), vz:rand(-0.1,0.1),
+    scale:s, baseScale:s, alpha:0, targetAlpha:rand(0.4*layer.alpha,0.8*layer.alpha),
+    rot:rand(0,Math.PI*2), rotSpeed:rand(-0.002,0.002), layer,
+    life:rand(10000,20000), age:0, fadeDuration:2000
+  };
+}
+function initParticles(){
+  particles=[];
+  for(const l of LAYERS){for(let i=0;i<l.count;i++)particles.push(createParticle(l));}
+}
 
-  let framesBuffer;
-  let particleOffsets;
-  let particleBaseOffsets;
+img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop)};
+img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(loop)};
 
-  function initThree(){
-    renderer = new THREE.WebGLRenderer({antialias:true});
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(WIDTH, HEIGHT);
-    document.body.appendChild(renderer.domElement);
+let last=performance.now(),accumulator=0;
+let masterAlpha=0;
 
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf0f0f0)
-    scene.fog = new THREE.FogExp2(0x222222, 0.01);
+// Mikrofon Setup
+navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
+  const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const source=audioCtx.createMediaStreamSource(stream);
+  const analyser=audioCtx.createAnalyser();
+  analyser.fftSize=512;
+  source.connect(analyser);
+  const dataArray=new Uint8Array(analyser.frequencyBinCount);
 
-    camera = new THREE.PerspectiveCamera(60, WIDTH/HEIGHT, 0.1, 1000);
-    camera.position.set(0, 30, 120);
-
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-    dir.position.set(10,30,10);
-    scene.add(dir);
-
-    window.addEventListener('resize', onWindowResize);
-  }
-
-  function onWindowResize(){
-    WIDTH = window.innerWidth; HEIGHT = window.innerHeight;
-    camera.aspect = WIDTH/HEIGHT; camera.updateProjectionMatrix();
-    renderer.setSize(WIDTH, HEIGHT);
-  }
-
-  function createPointCloud(){
-    if (particleSystem) scene.remove(particleSystem);
-
-    const total = BINS * DEPTH;
-    const geometry = new THREE.BufferGeometry();
-
-    positions = new Float32Array(total * 3);
-    colors = new Float32Array(total * 3);
-    particleOffsets = new Float32Array(total * 3);
-    particleBaseOffsets = new Float32Array(total * 3);
-
-    const X_RANGE = 100;
-    const Z_SPACING = 0.6;
-
-    let idx = 0;
-    for(let z=0; z<DEPTH; z++){
-      for(let x=0; x<BINS; x++){
-        const px = (x / (BINS-1) - 0.5) * X_RANGE;
-        const py = -10;
-        const pz = z * Z_SPACING;
-        positions[idx*3+0] = px;
-        positions[idx*3+1] = py;
-        positions[idx*3+2] = pz;
-
-        particleBaseOffsets[idx*3+0] = px;
-        particleBaseOffsets[idx*3+1] = py;
-        particleBaseOffsets[idx*3+2] = pz;
-
-        particleOffsets[idx*3+0] = (Math.random()-0.5)*0.5;
-        particleOffsets[idx*3+1] = (Math.random()-0.5)*0.5;
-        particleOffsets[idx*3+2] = (Math.random()-0.5)*0.5;
-
-        colors[idx*3+0] = 0;
-        colors[idx*3+1] = 0;
-        colors[idx*3+2] = 0;
-
-        idx++;
-      }
+  function updateMic(){
+    analyser.getByteTimeDomainData(dataArray);
+    let sum=0;
+    for(let i=0;i<dataArray.length;i++){
+      const val=(dataArray[i]-128)/128;
+      sum+=val*val;
     }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setAttribute('customColor', new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
-
-    const material = new THREE.ShaderMaterial({
-      transparent: true,
-      depthTest: true,
-      uniforms: {
-        uPixelRatio: { value: window.devicePixelRatio },
-        uSize: { value: POINT_SIZE }
-      },
-      vertexShader: `
-        attribute vec3 customColor;
-        varying vec3 vColor;
-        uniform float uPixelRatio;
-        uniform float uSize;
-        void main(){
-          vColor = customColor;
-          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = max(1.0, uPixelRatio * uSize);
-          gl_Position = projectionMatrix * mvPosition;
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vColor;
-        void main(){
-          float r = length(gl_PointCoord - vec2(0.5));
-          float alpha = smoothstep(0.5, 0.45, r);
-          gl_FragColor = vec4(vColor, alpha);
-        }
-      `
-    });
-
-    particleSystem = new THREE.Points(geometry, material);
-    particleSystem.rotation.x = -Math.PI/12;
-    scene.add(particleSystem);
+    const rms=Math.sqrt(sum/dataArray.length);
+    masterAlpha=Math.min(1, rms*5); // Verstärkung anpassen
+    requestAnimationFrame(updateMic);
   }
+  updateMic();
+}).catch(err=>{console.log("Mikrofon Zugriff verweigert",err); masterAlpha=0.5;});
 
-  async function initAudio(){
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    sourceNode = audioContext.createMediaStreamSource(stream);
+function project3D(x,y,z){
+  const fov=800;
+  const scale=fov/(fov+z);
+  return {x:canvas.width/2 + x*scale, y:canvas.height/2 + y*scale, scale:scale};
+}
 
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 128;
-    analyser.smoothingTimeConstant = 0.3;
-    sourceNode.connect(analyser);
+function loop(ts){
+  const dt=ts-last; last=ts; accumulator+=dt;
+  if(accumulator<33){requestAnimationFrame(loop);return;} accumulator=0;
 
-    framesBuffer = new Array(DEPTH);
-    for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
+  if(bg.complete&&bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
 
-    createPointCloud();
-    animate();
-  }
+  for(const layer of LAYERS){
+    ctx.globalCompositeOperation='source-over';
+    for(const p of particles){
+      if(p.layer!==layer)continue;
+      p.age+=33;
+      p.x+=p.vx*1.5*(1/p.layer.depth);
+      p.y+=p.vy*1.5;
+      p.z+=p.vz*1.5;
+      p.rot+=p.rotSpeed;
 
-  function pushFrame(){
-    const rawBins = new Float32Array(analyser.frequencyBinCount);
-    analyser.getFloatFrequencyData(rawBins);
+      const alphaFinal=p.alpha*masterAlpha;
+      if(p.age<p.fadeDuration){p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;}
+      else if(p.age>p.life-p.fadeDuration){p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));}
+      else{p.alpha=p.targetAlpha;}
 
-    const step = Math.max(1, Math.floor(rawBins.length / BINS));
-    const frame = new Float32Array(BINS);
-    for(let i=0, j=0; i<BINS; i++, j+=step){
-      const v = rawBins[Math.min(j, rawBins.length-1)];
-      let amp = Math.max(0, (v + 100) / 100);
-      amp = amp * 0.5;
-      frame[i] = amp;
+      const proj=project3D(p.x,p.y,p.z);
+      const wP=img.width*p.scale*0.45*proj.scale;
+      const hP=img.height*p.scale*0.45*proj.scale;
+      ctx.save();
+      ctx.translate(proj.x,proj.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha=alphaFinal;
+      if(img.complete&&img.naturalWidth)ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
+      else{ctx.beginPath();ctx.arc(0,0,40*p.scale*proj.scale,0,Math.PI*2);ctx.fillStyle=`rgba(180,180,180,${alphaFinal})`;ctx.fill();}
+      ctx.restore();
+
+      if(p.age>p.life){const idx=particles.indexOf(p);if(idx!==-1)particles[idx]=createParticle(layer);}
     }
-    framesBuffer.pop();
-    framesBuffer.unshift(frame);
   }
 
-  function updateGeometry(){
-    if(!positions) return;
-    const X_RANGE = 100;
-    const Z_SPACING = 0.6;
-
-    let idx = 0;
-    for(let z=0; z<DEPTH; z++){
-      const frame = framesBuffer[z];
-      for(let x=0; x<BINS; x++){
-        const baseIdx = idx*3;
-
-        // Position mit Basis + kleiner zufälliger Partikelbewegung
-        particleOffsets[baseIdx+0] += (Math.random()-0.5)*0.1;
-        particleOffsets[baseIdx+1] += (Math.random()-0.5)*0.1;
-        particleOffsets[baseIdx+2] += (Math.random()-0.5)*0.1;
-
-        // Limitierte Distanz vom Basisort
-        particleOffsets[baseIdx+0] = Math.max(-0.5, Math.min(0.5, particleOffsets[baseIdx+0]));
-        particleOffsets[baseIdx+1] = Math.max(-0.5, Math.min(0.5, particleOffsets[baseIdx+1]));
-        particleOffsets[baseIdx+2] = Math.max(-0.5, Math.min(0.5, particleOffsets[baseIdx+2]));
-
-        positions[baseIdx+0] = particleBaseOffsets[baseIdx+0] + particleOffsets[baseIdx+0];
-        const a = frame ? frame[x] : 0;
-        positions[baseIdx+1] = a * 80 - 10 + particleOffsets[baseIdx+1];
-        positions[baseIdx+2] = particleBaseOffsets[baseIdx+2] + particleOffsets[baseIdx+2];
-
-        colors[baseIdx+0] = 0;
-        colors[baseIdx+1] = 0;
-        colors[baseIdx+2] = 0;
-
-        idx++;
-      }
-    }
-
-    particleSystem.geometry.attributes.position.needsUpdate = true;
-    particleSystem.geometry.attributes.customColor.needsUpdate = true;
-  }
-
-  function animate(){
-    requestAnimationFrame(animate);
-    if(analyser){
-      pushFrame();
-      updateGeometry();
-    }
-    if (controls) controls.update();
-    renderer.render(scene, camera);
-  }
-
-  document.getElementById('startBtn').addEventListener('click', async ()=>{
-    if(!audioContext){
-      try{
-        await initAudio();
-      }catch(e){
-        alert('Konnte Mikrofon nicht öffnen: ' + e.message);
-        return;
-      }
-    }
-  });
-
-  initThree();
-  framesBuffer = new Array(DEPTH);
-  for(let i=0;i<DEPTH;i++) framesBuffer[i] = new Float32Array(BINS);
-  createPointCloud();
-  animate();
-  </script>
+  requestAnimationFrame(loop);
+}
+</script>
 </body>
   </html>
   
