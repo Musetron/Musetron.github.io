@@ -5,216 +5,381 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Spirit-Logger</title>
 <style>
-html,body{height:100%;margin:0;overflow:hidden;}
-#cloudCanvas{display:block;width:100vw;height:100vh;}
-#recordBtn,#calibrateBtn{
-  position:fixed;top:10px;padding:10px 20px;font-size:16px;z-index:10;
-}
-#recordBtn{left:10px;}
-#calibrateBtn{left:160px;}
-#log{
-  position:fixed;top:50px;right:10px;width:320px;height:260px;overflow:auto;
-  background:rgba(0,0,0,0.6);color:#0f0;font-family:monospace;font-size:14px;
-  padding:5px;border-radius:5px;z-index:10;
-}
+  html,body{height:100%;margin:0;overflow:hidden;background:#040404;}
+  #cloudCanvas{display:block;width:100vw;height:100vh;}
+  .btn{
+    position:fixed;top:10px;padding:10px 16px;font-size:15px;border-radius:6px;border:none;
+    background:#222;color:#fff;cursor:pointer;z-index:11;
+    box-shadow:0 4px 14px rgba(0,0,0,0.6);
+  }
+  #recordBtn{left:10px;}
+  #calibrateBtn{left:140px;}
+  #info{
+    position:fixed;top:10px;right:10px;width:380px;max-width:45vw;height:300px;overflow:auto;
+    background:rgba(0,0,0,0.66);color:#7CFF7C;font-family:monospace;font-size:13px;
+    padding:10px;border-radius:8px;z-index:11;line-height:1.3;
+  }
+  #status{
+    position:fixed;bottom:12px;left:12px;color:#ccc;font-family:monospace;font-size:13px;z-index:11;
+    background:rgba(0,0,0,0.35);padding:6px 10px;border-radius:6px;
+  }
+  small.note{color:#aaa;display:block;margin-top:6px;}
 </style>
 </head>
 <body>
 
-<button id="recordBtn">Start Recording</button>
-<button id="calibrateBtn">Kalibrieren</button>
-<div id="log"></div>
+<button id="recordBtn" class="btn">Start Recording</button>
+<button id="calibrateBtn" class="btn">Kalibrieren</button>
+
+<div id="info">Lade List.txt…</div>
 <canvas id="cloudCanvas"></canvas>
+<div id="status">Sensor: warten... • Baseline: –</div>
 
 <script>
-// --- Spirit-Logger ---
-const logDiv = document.getElementById('log');
-let recording = false;
-let logLines = [];
-let ghostLines = [];
-let currentSpiritLevel = 0;
-let lastSpiritLevel = 0;
-let stableDuration = 0;
-let currentChance = 0;
-let currentRMS = 0;
-let motionReady = false;
-let baseline = 0; // Kalibrierungswert
+/* =========================
+   Config / Globals
+   ========================= */
+const LOG_INTERVAL_MS = 5000;      // 5 Sekunden
+const STABILITY_WINDOW = 6;        // 6 Werte ~ 30s Fenster (6 * 5s)
+const MAX_MAG_FOR_MAPPING = 20;    // mag in m/s², Werte >= hier → letzte Zeile
+const SMOOTH_ALPHA = 0.12;         // Glättung für masterAlpha und mag
+const LIST_FILENAME = 'List.txt';
 
+const infoDiv = document.getElementById('info');
+const statusDiv = document.getElementById('status');
+const recordBtn = document.getElementById('recordBtn');
+const calibrateBtn = document.getElementById('calibrateBtn');
+const canvas = document.getElementById('cloudCanvas');
+const ctx = canvas.getContext('2d');
+
+/* Logger */
+let logLines = [];
 function addLogLine(line){
   logLines.push(line);
-  if(logLines.length>20) logLines.shift();
-  logDiv.innerText = logLines.join("\n");
+  if(logLines.length > 200) logLines.shift();
+  // show last ~20 lines in info div
+  const tail = logLines.slice(-20).join('\n');
+  infoDiv.innerText = tail || 'Keine Logs';
 }
-
-function saveTxtFile(){
+function saveTxtFile(filename='spirit_log.txt'){
   const blob = new Blob([logLines.join("\n")], {type:'text/plain'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'spirit_log.txt';
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-fetch('List.txt')
-  .then(res=>res.text())
-  .then(text=>{ ghostLines = text.split(/\r?\n/); })
-  .catch(err=>console.error('Fehler beim Laden von List.txt',err));
-
-function getGhostForMagnitude(mag){
-  if(ghostLines.length===0) return "Liste nicht geladen";
-  const normalized = Math.min(1, mag/20);
-  const index = Math.floor(normalized*(ghostLines.length-1));
-  return ghostLines[index];
-}
-
-// --- Buttons ---
-document.getElementById('recordBtn').addEventListener('click', ()=>{
-  if(recording){
-    recording=false;
-    saveTxtFile();
-    document.getElementById('recordBtn').innerText='Start Recording';
-    addLogLine('Recording stopped, file saved.');
-  } else {
-    recording=true;
-    document.getElementById('recordBtn').innerText='Stop Recording';
-    addLogLine('Recording started...');
-  }
-});
-
-// Kalibrierung
-document.getElementById('calibrateBtn').addEventListener('click', ()=>{
-  baseline = currentRMS;
-  addLogLine(`Kalibriert: Leerlaufwert = ${baseline.toFixed(2)}`);
-});
-
-// --- Accelerometer ---
-let smoothedMag=0;
-if(window.DeviceMotionEvent){
-  window.addEventListener('devicemotion',(event)=>{
-    const a = event.accelerationIncludingGravity;
-    if(!a) return;
-    let mag = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
-    mag = Math.max(0, mag - baseline); // Kalibrierung abziehen
-    smoothedMag = smoothedMag*0.9 + mag*0.1;
-    currentRMS = smoothedMag;
-    currentSpiritLevel = Math.min(100, Math.floor(smoothedMag*200));
-    motionReady=true;
+/* List.txt laden */
+let ghostLines = [];
+fetch(LIST_FILENAME)
+  .then(r => {
+    if(!r.ok) throw new Error('List.txt nicht gefunden');
+    return r.text();
+  })
+  .then(text => {
+    // split und filter: falls leere Zeilen bewusst behalten, dann entferne .filter
+    ghostLines = text.split(/\r?\n/);
+    addLogLine(`List.txt geladen: ${ghostLines.length} Zeilen`);
+    addLogLine('--- Start Log ---');
+  })
+  .catch(err => {
+    addLogLine('Fehler beim Laden von List.txt — bitte sicherstellen, dass List.txt im selben Ordner liegt.');
+    addLogLine(String(err));
   });
-}else{
-  addLogLine('Beschleunigungssensor nicht verfügbar.');
+
+/* Sensor / Kalibrierung */
+let baseline = 0;          // gemessener Ruhewert
+let motionAllowed = false;
+let motionReady = false;
+let smoothedMag = 0;      // geglättete magnitude (nach baseline-Abzug)
+let masterAlpha = 0.0;    // für Wolke (0..1)
+let spiritFloat = 0.0;    // Spirit Pegel Dezimal 0.00 - 100.00
+
+// Fenster für Stabilitätsberechnung (letzte N spiritFloat Werte)
+const windowValues = [];
+
+/* iOS permission helper */
+async function ensureMotionPermission(){
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    try {
+      const resp = await DeviceMotionEvent.requestPermission();
+      if (resp === 'granted') {
+        motionAllowed = true;
+        addLogLine('DeviceMotion permission granted (iOS).');
+      } else {
+        motionAllowed = false;
+        addLogLine('DeviceMotion permission denied (iOS).');
+      }
+    } catch (e) {
+      motionAllowed = false;
+      addLogLine('DeviceMotion permission error: ' + e);
+    }
+  } else {
+    // andere Plattformen (Android/Chrome) brauchen keine expl. Anfrage
+    motionAllowed = true;
+  }
 }
 
-// --- Logging alle 5s ---
-setInterval(()=>{
-  if(!motionReady) return;
-  if(Math.abs(currentSpiritLevel-lastSpiritLevel)<2){
-    stableDuration+=5000;
-  } else {
-    stableDuration=5000;
+/* Kalibrierungsaktion: setzt baseline auf aktuellen smoothed mag */
+function doCalibrate(){
+  baseline = smoothedMag || baseline; // falls noch 0, bleibt 0
+  addLogLine(`Kalibriert. Baseline = ${baseline.toFixed(3)}`);
+  statusDiv.innerText = `Sensor: bereit • Baseline: ${baseline.toFixed(3)}`;
+}
+
+/* DeviceMotion Verarbeitung */
+function handleMotionEvent(e){
+  // benutze accelerationIncludingGravity (zeigt Gravitation), baseline sollte diese berücksichtigen
+  const a = e.accelerationIncludingGravity;
+  if(!a) return;
+  const x = a.x || 0;
+  const y = a.y || 0;
+  const z = a.z || 0;
+
+  // magnitude (Gesamtbeschleunigung)
+  let mag = Math.sqrt(x*x + y*y + z*z);
+
+  // baseline abziehen (kalibriert)
+  let magAdj = mag - baseline;
+  if (magAdj < 0) magAdj = 0;
+
+  // glätten
+  smoothedMag = smoothedMag * (1 - SMOOTH_ALPHA) + magAdj * SMOOTH_ALPHA;
+
+  // Spirit als Dezimal 0..100 (Skalierung: normiere mit MAX_MAG_FOR_MAPPING)
+  const spirit = Math.min(100, (smoothedMag / MAX_MAG_FOR_MAPPING) * 100);
+  spiritFloat = spirit; // Dezimalwert
+  // masterAlpha direkt synchron (geglaettet)
+  masterAlpha = Math.min(1, spiritFloat / 100);
+
+  // push to window for stability calc
+  windowValues.push(spiritFloat);
+  if(windowValues.length > STABILITY_WINDOW) windowValues.shift();
+
+  motionReady = true;
+}
+
+/* Mappe spiritFloat (0..100) exakt auf eine Zeile:
+   - Teile 0..100 in ghostLines.length gleich große Intervalle.
+   - index = floor((spirit/100) * len)  → clamp auf len-1
+*/
+function getGhostForSpirit(spirit){
+  if(!ghostLines || ghostLines.length === 0) return 'Liste nicht geladen';
+  const len = ghostLines.length;
+  let idx = Math.floor((spirit / 100) * len);
+  if(idx < 0) idx = 0;
+  if(idx >= len) idx = len - 1;
+  return ghostLines[idx];
+}
+
+/* Stabilitäts- / Chance-Berechnung:
+   - maxDiff = max(window) - min(window)
+   - interpret: wenn maxDiff = 0 => Chance 100%; 
+     wenn maxDiff >= threshold => Chance 0.
+   - threshold legen wir auf 20 (Entspricht Schwankung von 20 Punkten auf 100)
+*/
+function calcChanceFromWindow(){
+  if(windowValues.length === 0) return 0;
+  const mx = Math.max(...windowValues);
+  const mn = Math.min(...windowValues);
+  const diff = mx - mn;
+  const threshold = 20; // 20 Spirit-Punkte → 0% Chance (konfigurierbar)
+  const raw = 1 - (diff / threshold);
+  const chance = Math.round(Math.max(0, Math.min(1, raw)) * 100);
+  return chance;
+}
+
+/* =========================
+   Buttons / Permission
+   ========================= */
+let recording = false;
+recordBtn.addEventListener('click', async ()=>{
+  // iOS: permission request must be in a user gesture
+  await ensureMotionPermission();
+  if(!motionAllowed){ addLogLine('Motion permission nicht gegeben.'); return; }
+
+  // add the devicemotion listener on first interaction
+  if(!window.hasDeviceMotionHook){
+    window.addEventListener('devicemotion', handleMotionEvent, { passive: true });
+    window.hasDeviceMotionHook = true;
+    addLogLine('DeviceMotion listener gestartet.');
   }
-  lastSpiritLevel=currentSpiritLevel;
-  currentChance=Math.min(100, Math.floor(stableDuration/5000*10));
 
-  const ghost=getGhostForMagnitude(currentRMS);
-  const now=new Date().toLocaleTimeString();
-  addLogLine(`[${now}] Spirit Pegel: ${currentSpiritLevel} | Chance: ${currentChance}% | Möglicher Geist: ${ghost}`);
-},5000);
+  recording = !recording;
+  recordBtn.innerText = recording ? 'Stop Recording' : 'Start Recording';
+  if(!recording){
+    // Save on stop
+    saveTxtFile();
+    addLogLine('Recording gestoppt und Datei gespeichert.');
+  } else {
+    addLogLine('Recording gestartet.');
+  }
+});
 
-// --- Wolken-Animation ---
+calibrateBtn.addEventListener('click', async ()=>{
+  await ensureMotionPermission();
+  if(!motionAllowed){ addLogLine('Motion permission nicht gegeben.'); return; }
+
+  // if no hook yet, add listener to get values for baseline
+  if(!window.hasDeviceMotionHook){
+    window.addEventListener('devicemotion', handleMotionEvent, { passive: true });
+    window.hasDeviceMotionHook = true;
+    addLogLine('DeviceMotion listener gestartet (für Kalibrierung).');
+  }
+
+  // set baseline to current smoothedMag (use a short average)
+  // compute small average from last few smoothed readings (if available)
+  let avg = smoothedMag;
+  // if we have some window values, estimate baseline in spirit space => convert back approximately
+  // but simpler: just use current smoothedMag as baseline
+  baseline = avg;
+  addLogLine(`Kalibriert. Baseline gesetzt auf ${baseline.toFixed(3)} (Achtung: Gravitation wird damit ausgeglichen)`);
+  statusDiv.innerText = `Sensor: bereit • Baseline: ${baseline.toFixed(3)}`;
+});
+
+/* =========================
+   Logging (alle 5s)
+   ========================= */
+setInterval(()=>{
+  if(!motionReady) {
+    // show a hint
+    // only show once every ~interval to avoid spam
+    return;
+  }
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString();
+
+  // current decimal spirit
+  const spirit = spiritFloat; // already 0..100 decimal
+  const chance = calcChanceFromWindow();
+
+  // map to ghost line
+  const ghost = getGhostForSpirit(spirit);
+
+  const logLine = `[${timeStr}] Spirit Pegel: ${spirit.toFixed(2)} | Chance: ${chance}% | Möglicher Geist: ${ghost}`;
+  addLogLine(logLine);
+  // if recording, we keep adding lines; file saved on Stop
+}, LOG_INTERVAL_MS);
+
+/* =========================
+   Canvas / Wolken-Animation
+   ========================= */
+// reuse assets from previous versions
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
 
-const canvas=document.getElementById('cloudCanvas');
-const ctx=canvas.getContext('2d');
-let DPR=Math.max(1,window.devicePixelRatio||1);
-
-function resize(){
-  DPR=Math.max(1,window.devicePixelRatio||1);
-  canvas.width=Math.floor(window.innerWidth*DPR);
-  canvas.height=Math.floor(window.innerHeight*DPR);
+let DPR = Math.max(1, window.devicePixelRatio || 1);
+function resizeCanvas(){
+  DPR = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.floor(window.innerWidth * DPR);
+  canvas.height = Math.floor(window.innerHeight * DPR);
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
-window.addEventListener('resize',resize);
-resize();
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
-const img=new Image(); img.crossOrigin='anonymous'; img.src=PARTICLE_SRC;
-const bg=new Image(); bg.crossOrigin='anonymous'; bg.src=BACKGROUND_SRC;
-const blinkImg=new Image(); blinkImg.crossOrigin='anonymous'; blinkImg.src=BLINK_IMAGE_SRC;
+const img = new Image(); img.crossOrigin='anonymous'; img.src = PARTICLE_SRC;
+const bg = new Image(); bg.crossOrigin='anonymous'; bg.src = BACKGROUND_SRC;
+const blinkImg = new Image(); blinkImg.crossOrigin='anonymous'; blinkImg.src = BLINK_IMAGE_SRC;
 
-let blinkVisible=true;
-setInterval(()=>{blinkVisible=!blinkVisible;},1000);
+let blinkVisible = true;
+setInterval(()=>{ blinkVisible = !blinkVisible; }, 1000);
 
-const LAYERS=[
+const LAYERS = [
   {count:6,speed:0.06,scaleRange:[1.0,1.5],alpha:0.4,depth:0.6},
   {count:10,speed:0.1,scaleRange:[0.7,1.1],alpha:0.5,depth:0.9},
   {count:14,speed:0.14,scaleRange:[0.5,0.9],alpha:0.6,depth:1.4}
 ];
 
-let particles=[];
-function rand(a,b){return a+Math.random()*(b-a);}
+let particles = [];
+function rand(a,b){ return a + Math.random()*(b-a); }
 function createParticle(layer){
-  const s=rand(layer.scaleRange[0],layer.scaleRange[1]);
-  return {x:rand(-200,200),y:rand(-100,100),z:rand(0,400),
-          vx:rand(-layer.speed,layer.speed),vy:rand(-0.02,0.02),vz:rand(-0.1,0.1),
-          scale:s,baseScale:s,alpha:0,targetAlpha:rand(0.4*layer.alpha,0.8*layer.alpha),
-          rot:rand(0,Math.PI*2),rotSpeed:rand(-0.002,0.002),layer,
-          life:rand(10000,20000),age:0,fadeDuration:2000};
+  const s = rand(layer.scaleRange[0], layer.scaleRange[1]);
+  return {
+    x: rand(-200,200), y: rand(-100,100), z: rand(0,400),
+    vx: rand(-layer.speed, layer.speed), vy: rand(-0.02,0.02), vz: rand(-0.1,0.1),
+    scale: s, baseScale: s, alpha:0, targetAlpha: rand(0.4*layer.alpha, 0.8*layer.alpha),
+    rot: rand(0,Math.PI*2), rotSpeed: rand(-0.002,0.002), layer,
+    life: rand(10000,20000), age:0, fadeDuration:2000
+  };
 }
-function initParticles(){particles=[];for(const l of LAYERS)for(let i=0;i<l.count;i++)particles.push(createParticle(l));}
-img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
-img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
+function initParticles(){ particles = []; for(const l of LAYERS) for(let i=0;i<l.count;i++) particles.push(createParticle(l)); }
 
-let last=performance.now(),masterAlpha=0.5;
+img.onload = ()=>{ initParticles(); last = performance.now(); requestAnimationFrame(loop); };
+img.onerror = ()=>{ initParticles(); last = performance.now(); requestAnimationFrame(loop); };
+
+let last = performance.now();
 
 function project3D(x,y,z){
-  const fov=800;
-  const scale=fov/(fov+z);
-  return {x:canvas.width/2 + x*scale, y:canvas.height/2 + y*scale, scale:scale};
+  const fov = 800;
+  const scale = fov / (fov + z);
+  return { x: canvas.width/2 + x*scale, y: canvas.height/2 + y*scale, scale: scale };
 }
 
 function loop(ts){
-  const dt=ts-last; last=ts;
-  if(bg.complete&&bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
-
-  // Wolken alpha direkt synchron zum Pegel
-  masterAlpha = Math.min(1, currentSpiritLevel/100);
+  const dt = ts - last; last = ts;
+  if(bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+  // slight smoothing for masterAlpha to avoid flicker
+  masterAlpha = masterAlpha * (1 - 0.06) + (Math.min(1, spiritFloat/100)) * 0.06;
 
   for(const layer of LAYERS){
-    ctx.globalCompositeOperation='source-over';
+    ctx.globalCompositeOperation = 'source-over';
     for(const p of particles){
-      if(p.layer!==layer) continue;
-      p.age+=dt; p.x+=p.vx*1.5*(1/p.layer.depth); p.y+=p.vy*1.5; p.z+=p.vz*1.5; p.rot+=p.rotSpeed;
-      if(p.age<p.fadeDuration){ p.alpha=(p.age/p.fadeDuration)*p.targetAlpha; }
-      else if(p.age>p.life-p.fadeDuration){ p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration)); }
-      else{ p.alpha=p.targetAlpha; }
+      if(p.layer !== layer) continue;
+      p.age += dt;
+      p.x += p.vx * 1.5 * (1/p.layer.depth);
+      p.y += p.vy * 1.5;
+      p.z += p.vz * 1.5;
+      p.rot += p.rotSpeed;
 
-      const alphaFinal=p.alpha*masterAlpha;
-      const proj=project3D(p.x,p.y,p.z);
-      const wP=img.width*p.scale*0.45*proj.scale;
-      const hP=img.height*p.scale*0.45*proj.scale;
+      if(p.age < p.fadeDuration){
+        p.alpha = (p.age / p.fadeDuration) * p.targetAlpha;
+      } else if(p.age > p.life - p.fadeDuration){
+        p.alpha = Math.max(0, p.targetAlpha * ((p.life - p.age) / p.fadeDuration));
+      } else {
+        p.alpha = p.targetAlpha;
+      }
+
+      const alphaFinal = p.alpha * masterAlpha;
+      const proj = project3D(p.x, p.y, p.z);
+      const wP = (img.complete && img.naturalWidth) ? img.width * p.scale * 0.45 * proj.scale : 80 * p.scale * proj.scale;
+      const hP = (img.complete && img.naturalWidth) ? img.height * p.scale * 0.45 * proj.scale : 80 * p.scale * proj.scale;
 
       ctx.save();
-      ctx.translate(proj.x,proj.y); ctx.rotate(p.rot); ctx.globalAlpha=alphaFinal;
-      if(img.complete&&img.naturalWidth) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
-      else { ctx.beginPath(); ctx.arc(0,0,40*p.scale*proj.scale,0,Math.PI*2); ctx.fillStyle=`rgba(180,180,180,${alphaFinal})`; ctx.fill(); }
+      ctx.translate(proj.x, proj.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha = alphaFinal;
+      if(img.complete && img.naturalWidth) ctx.drawImage(img, -wP/2, -hP/2, wP, hP);
+      else { ctx.beginPath(); ctx.arc(0,0,40*p.scale*proj.scale,0,Math.PI*2); ctx.fillStyle = `rgba(180,180,180,${alphaFinal})`; ctx.fill(); }
       ctx.restore();
 
-      if(p.age>p.life){ const idx=particles.indexOf(p); if(idx!==-1)particles[idx]=createParticle(layer);}
+      if(p.age > p.life){
+        const idx = particles.indexOf(p);
+        if(idx !== -1) particles[idx] = createParticle(layer);
+      }
     }
   }
 
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const maxW=canvas.width/2; const maxH=canvas.height/2;
-    const ratio=Math.min(maxW/blinkImg.width,maxH/blinkImg.height);
-    const w=blinkImg.width*ratio; const h=blinkImg.height*ratio;
-    const xPos=canvas.width/8; const yPos=canvas.height - h - canvas.height/8;
-    ctx.drawImage(blinkImg,xPos,yPos,w,h);
+    const maxW = canvas.width/2;
+    const maxH = canvas.height/2;
+    const ratio = Math.min(maxW/blinkImg.width, maxH/blinkImg.height);
+    const w = blinkImg.width * ratio;
+    const h = blinkImg.height * ratio;
+    const xPos = canvas.width/8;
+    const yPos = canvas.height - h - canvas.height/8;
+    ctx.drawImage(blinkImg, xPos, yPos, w, h);
   }
 
   requestAnimationFrame(loop);
 }
+
+/* Initial status */
+addLogLine('Bereit. Drücke "Start Recording" oder "Kalibrieren" (erforderliche Erlaubnis für Motion auf iOS folgt bei Bedarf).');
+statusDiv.innerText = `Sensor: warten... • Baseline: ${baseline.toFixed(3)}`;
 </script>
 
 </body>
