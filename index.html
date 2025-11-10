@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Spirit Analyzer – Stabil Version</title>
+<title>Spirit Analyzer – Stabil & Log</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;background:black;color:#0f0;font-family:monospace;}
 #cloudCanvas{display:block;width:100vw;height:100vh;}
@@ -160,7 +160,7 @@ img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loo
 
 let last=performance.now(),masterAlpha=0;
 
-// --- Mikrofon mit Bandpass 2–5 kHz ---
+// --- Mikrofon Bandpass 2–5 kHz ---
 navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   const source=audioCtx.createMediaStreamSource(stream);
@@ -207,7 +207,7 @@ function loop(ts){
       if(img.complete&&img.naturalWidth)ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       ctx.restore();
 
-      if(p.age>p.life || p.z<0){const idx=particles.indexOf(p);if(idx!==-1)particles[idx]=createParticle(layer);}
+      if(p.age>p.life || p.z<50){const idx=particles.indexOf(p);if(idx!==-1)particles[idx]=createParticle(layer);}
     }
   }
 
