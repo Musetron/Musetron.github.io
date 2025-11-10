@@ -8,7 +8,8 @@
 html,body{height:100%;margin:0;overflow:hidden;}
 #cloudCanvas{display:block;width:100vw;height:100vh;}
 #recordBtn{
-  position:fixed;top:10px;left:10px;padding:10px 20px;font-size:16px;z-index:10;
+  position:fixed;top:10px;left:10px;padding:10px 20px;
+  font-size:16px;z-index:10;
 }
 #log{
   position:fixed;top:10px;right:10px;width:320px;height:260px;overflow:auto;
@@ -18,31 +19,27 @@ html,body{height:100%;margin:0;overflow:hidden;}
 </style>
 </head>
 <body>
-
 <button id="recordBtn">Start Recording</button>
 <div id="log"></div>
 <canvas id="cloudCanvas"></canvas>
 
 <script>
-// --- Spirit-Logger Setup ---
+// --- Spirit-Liste extern laden ---
+let ghosts = [];
+fetch("List.txt")
+  .then(r => r.text())
+  .then(t => ghosts = t.split(/\r?\n/).filter(l => l.trim().length));
+
+// --- Logger ---
 const logDiv = document.getElementById('log');
 let recording = false;
+let recordInterval = null;
 let logLines = [];
-let ghostLines = [];
-
-let currentSpiritLevel = 0;
-let lastSpiritLevel = 0;
-let stableDuration = 0;
-let currentChance = 0;
-let currentRMS = 0;
-
-// --- Log-Funktion ---
 function addLogLine(line){
   logLines.push(line);
   if(logLines.length > 20) logLines.shift();
   logDiv.innerText = logLines.join("\n");
 }
-
 function saveTxtFile(){
   const blob = new Blob([logLines.join("\n")], {type:'text/plain'});
   const url = URL.createObjectURL(blob);
@@ -52,28 +49,9 @@ function saveTxtFile(){
   a.click();
   URL.revokeObjectURL(url);
 }
-
-// --- Lade List.txt ---
-fetch('List.txt')
-  .then(res => res.text())
-  .then(text => {
-    ghostLines = text.split(/\r?\n/);
-    console.log(`List.txt geladen (${ghostLines.length} Zeilen)`);
-  })
-  .catch(err => console.error('Fehler beim Laden von List.txt', err));
-
-// --- Mapping-Funktion ---
-function getGhostForMagnitude(mag){
-  if (ghostLines.length === 0) return "Liste nicht geladen";
-  // Normiere Bewegung (mag) zwischen 0 und ~20 m/s²
-  const normalized = Math.min(1, mag / 20);
-  const index = Math.floor(normalized * (ghostLines.length - 1));
-  return ghostLines[index];
-}
-
-// --- Button für Aufnahme ---
 document.getElementById('recordBtn').addEventListener('click', ()=>{
   if(recording){
+    clearInterval(recordInterval);
     recording = false;
     saveTxtFile();
     document.getElementById('recordBtn').innerText = 'Start Recording';
@@ -82,52 +60,56 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
     recording = true;
     document.getElementById('recordBtn').innerText = 'Stop Recording';
     addLogLine('Recording started...');
+    recordInterval = setInterval(logSpirit, 5000);
   }
 });
 
-// --- Accelerometer Setup ---
-let smoothedMag = 0;
-let motionReady = false;
+// --- Bewegungssensor ---
+let currentMag = 9.81;
+let lastMag = 9.81;
+let currentChance = 100;
 
 if (window.DeviceMotionEvent) {
-  window.addEventListener('devicemotion', (event)=>{
-    const a = event.accelerationIncludingGravity;
-    if (!a) return;
-    const mag = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
-    smoothedMag = smoothedMag * 0.9 + mag * 0.1;
-    currentRMS = smoothedMag;
-    currentSpiritLevel = Math.min(100, Math.floor((mag/20)*100));
-    motionReady = true;
+  window.addEventListener("devicemotion", (e)=>{
+    if(e.accelerationIncludingGravity){
+      const a = e.accelerationIncludingGravity;
+      const mag = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
+      lastMag = currentMag;
+      // leicht glätten, aber nicht zu stark
+      currentMag = currentMag * 0.7 + mag * 0.3;
+
+      const delta = Math.abs(currentMag - lastMag);
+      // Chance = je stabiler, desto höher
+      currentChance = Math.max(0, Math.min(100, 100 - delta * 50));
+    }
   });
 } else {
-  addLogLine('Beschleunigungssensor nicht verfügbar.');
+  addLogLine("Beschleunigungssensor nicht unterstützt.");
 }
 
-// --- Log alle 5 Sekunden ---
-setInterval(()=>{
-  if(!motionReady) return;
-  if(Math.abs(currentSpiritLevel - lastSpiritLevel) < 2){
-    stableDuration += 5000;
-  } else {
-    stableDuration = 5000;
-  }
-  lastSpiritLevel = currentSpiritLevel;
-  currentChance = Math.min(100, Math.floor(stableDuration / 5000 * 10));
+// --- Spirit-Logik ---
+function logSpirit(){
+  if(ghosts.length === 0) return;
 
-  const ghost = getGhostForMagnitude(currentRMS);
   const now = new Date().toLocaleTimeString();
-  addLogLine(`[${now}] Spirit Pegel: ${currentSpiritLevel} | Chance: ${currentChance}% | Möglicher Geist: ${ghost}`);
-}, 5000);
+  const normalized = Math.min(987, Math.max(1, Math.round(currentMag / 20 * 987))); // ca. 0–20 m/s² auf 1–987
+  const spiritIndex = Math.min(ghosts.length-1, normalized - 1);
+  const ghost = ghosts[spiritIndex] || "Unbekannt";
 
-// --- Wolken-Animation (wie gehabt) ---
+  const line = `[${now}] Spirit Pegel: ${normalized} | Chance: ${Math.round(currentChance)}% | ${ghost}`;
+  addLogLine(line);
+}
+
+// --- Auch wenn nicht aufgenommen wird, jede 5 s loggen ---
+setInterval(()=>{ if(!recording) logSpirit(); }, 5000);
+
+// --- Hintergrundwolke ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
-
 const canvas=document.getElementById('cloudCanvas');
 const ctx=canvas.getContext('2d');
 let DPR=Math.max(1,window.devicePixelRatio||1);
-
 function resize(){
   DPR=Math.max(1,window.devicePixelRatio||1);
   canvas.width=Math.floor(window.innerWidth*DPR);
@@ -136,26 +118,15 @@ function resize(){
 }
 window.addEventListener('resize',resize);
 resize();
-
-const img=new Image();
-img.crossOrigin='anonymous';
-img.src=PARTICLE_SRC;
-const bg=new Image();
-bg.crossOrigin='anonymous';
-bg.src=BACKGROUND_SRC;
-const blinkImg=new Image();
-blinkImg.crossOrigin='anonymous';
-blinkImg.src=BLINK_IMAGE_SRC;
-
-let blinkVisible=true;
-setInterval(()=>{blinkVisible=!blinkVisible;},1000);
-
+const img=new Image(); img.crossOrigin='anonymous'; img.src=PARTICLE_SRC;
+const bg=new Image(); bg.crossOrigin='anonymous'; bg.src=BACKGROUND_SRC;
+const blinkImg=new Image(); blinkImg.crossOrigin='anonymous'; blinkImg.src=BLINK_IMAGE_SRC;
+let blinkVisible=true; setInterval(()=>{blinkVisible=!blinkVisible;},1000);
 const LAYERS=[
   {count:6,speed:0.06,scaleRange:[1.0,1.5],alpha:0.4,depth:0.6},
   {count:10,speed:0.1,scaleRange:[0.7,1.1],alpha:0.5,depth:0.9},
   {count:14,speed:0.14,scaleRange:[0.5,0.9],alpha:0.6,depth:1.4}
 ];
-
 let particles=[];
 function rand(a,b){return a+Math.random()*(b-a);}
 function createParticle(layer){
@@ -167,24 +138,13 @@ function createParticle(layer){
           life:rand(10000,20000),age:0,fadeDuration:2000};
 }
 function initParticles(){particles=[];for(const l of LAYERS)for(let i=0;i<l.count;i++)particles.push(createParticle(l));}
-
 img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
 img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
-
-let last=performance.now(),masterAlpha=0.5;
-
-function project3D(x,y,z){
-  const fov=800;
-  const scale=fov/(fov+z);
-  return {x:canvas.width/2 + x*scale, y:canvas.height/2 + y*scale, scale:scale};
-}
-
+let last=performance.now(),masterAlpha=1;
+function project3D(x,y,z){const fov=800;const scale=fov/(fov+z);return {x:canvas.width/2 + x*scale, y:canvas.height/2 + y*scale, scale:scale};}
 function loop(ts){
   const dt=ts-last; last=ts;
   if(bg.complete&&bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
-
-  masterAlpha = Math.min(1, (currentRMS/10));
-
   for(const layer of LAYERS){
     ctx.globalCompositeOperation='source-over';
     for(const p of particles){
@@ -194,7 +154,6 @@ function loop(ts){
       p.y+=p.vy*1.5;
       p.z+=p.vz*1.5;
       p.rot+=p.rotSpeed;
-
       if(p.age<p.fadeDuration){
         p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
       } else if(p.age>p.life-p.fadeDuration){
@@ -202,17 +161,14 @@ function loop(ts){
       } else {
         p.alpha=p.targetAlpha;
       }
-
       const alphaFinal=p.alpha*masterAlpha;
       const proj=project3D(p.x,p.y,p.z);
       const wP=img.width*p.scale*0.45*proj.scale;
       const hP=img.height*p.scale*0.45*proj.scale;
-
       ctx.save();
       ctx.translate(proj.x,proj.y);
       ctx.rotate(p.rot);
       ctx.globalAlpha=alphaFinal;
-
       if(img.complete&&img.naturalWidth)
         ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       else {
@@ -222,14 +178,12 @@ function loop(ts){
         ctx.fill();
       }
       ctx.restore();
-
       if(p.age>p.life){
         const idx=particles.indexOf(p);
         if(idx!==-1)particles[idx]=createParticle(layer);
       }
     }
   }
-
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
     const maxW=canvas.width/2;
     const maxH=canvas.height/2;
@@ -240,10 +194,8 @@ function loop(ts){
     const yPos=canvas.height - h - canvas.height/8;
     ctx.drawImage(blinkImg,xPos,yPos,w,h);
   }
-
   requestAnimationFrame(loop);
 }
 </script>
-
 </body>
 </html>
