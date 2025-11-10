@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Spirit Analyzer – Spectrum Logger 2–5 kHz</title>
+<title>Spirit Analyzer</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;background:black;color:#0f0;font-family:monospace;}
 #cloudCanvas{display:block;width:100vw;height:100vh;}
@@ -23,59 +23,48 @@ html,body{height:100%;margin:0;overflow:hidden;background:black;color:#0f0;font-
 <canvas id="cloudCanvas"></canvas>
 
 <script>
-// --- Große Spiritliste ---
-// Von Technik → Energie → Orbs → Seelen → Geister → Dämonen
+// --- Spiritliste: von normal bis paranormal ---
 const ghosts = [
-  // Technische / Physikalische Störungen
-  "Thermisches Rauschen", "Elektromagnetische Interferenz", "Hintergrundstrahlung",
-  "Mikrofonrauschen", "Signalreflexion", "Ultraschall-Feedback", "Infraschall-Drift",
-  "Elektrostatik-Puls", "Kabelinduktion", "Schumannresonanz-Anomalie", "Magnetfeld-Drift",
-  "Statische Entladung", "Ionisationsflackern", "Resonanzfrequenz-Welle", "Feldrauschen",
-  "Photonenrauschen", "Luftdruckmodulation", "Quantisierungsrauschen", "Lichtinterferenz",
-  "Akustische Wellenüberlagerung", "Subharmonische Schwingung",
-
-  // Quanten / Energien
-  "Photonischer Flux", "Quanteninferenz-Spur", "Neutrino-Spur", "Bioplasma-Knoten",
-  "Energiecluster", "Magnetische Turbulenz", "Elektroplasmatische Entladung", "Vortex-Welle",
-  "Feldfluktuation", "Resonanzfeld-Anomalie", "Subraum-Energiefluss", "Plasmawirbel",
-  "EMF-Spike", "Ionische Resonanz", "Neurofeld-Schwingung", "Elektronenwolke",
-  "Biophotonischer Impuls", "Gravitationsmikropuls", "Energiegradient", "Interferenzspektrum",
-
-  // Orbs & Lichter
-  "Lichtorb (niedrig)", "Lichtorb (mittel)", "Lichtorb (hell)", "Staubreflexion",
-  "Energieblase", "Plasma-Orb", "Photonische Kugel", "Kalte Lichtkugel", "Ionisierte Sphäre",
-  "Wärmeorb", "Bewegungsmuster-Orb", "Smaragd-Lichtpunkt", "Roter Schimmer", "Blauer Impuls",
-  "Weiße Manifestation", "Transparente Kugel", "Langsame Rotation", "Zitternde Kugel",
-  "Orbschwarm", "Anomalie im Lichtfeld",
-
-  // Energieformen & Bewusstseinsreste
-  "Energieabdruck", "Resonanzkörper", "Residualfeld", "Ektoplasmatische Welle",
-  "Astrale Spur", "Lebensenergie-Fragment", "Mentale Schwingung", "Aura-Reflexion",
-  "Emotionales Feld", "Bewusstseins-Schatten", "Projektion eines Willens", "Restenergie",
-  "Zeitresonanz", "Traumanker", "Gedankenform (Tulpa)", "Bioenergetisches Echo",
-  "Anwesenheitsrest", "Energiegeflecht", "Manifestationspunkt", "Geistige Verdichtung",
-
+  // Physikalische Störungen
+  "Thermisches Rauschen","Elektromagnetische Interferenz","Hintergrundstrahlung",
+  "Mikrofonrauschen","Signalreflexion","Ultraschall-Feedback","Infraschall-Drift",
+  "Elektrostatik-Puls","Kabelinduktion","Schumannresonanz-Anomalie","Magnetfeld-Drift",
+  "Statische Entladung","Ionisationsflackern","Resonanzfrequenz-Welle","Feldrauschen",
+  "Photonenrauschen","Luftdruckmodulation","Quantisierungsrauschen","Lichtinterferenz","Akustische Wellenüberlagerung",
+  // Quanten / Energie
+  "Photonischer Flux","Quanteninferenz-Spur","Neutrino-Spur","Bioplasma-Knoten",
+  "Energiecluster","Magnetische Turbulenz","Elektroplasmatische Entladung","Vortex-Welle",
+  "Feldfluktuation","Resonanzfeld-Anomalie","Subraum-Energiefluss","Plasmawirbel",
+  "EMF-Spike","Ionische Resonanz","Neurofeld-Schwingung","Elektronenwolke",
+  "Biophotonischer Impuls","Gravitationsmikropuls","Energiegradient","Interferenzspektrum",
+  // Orbs
+  "Lichtorb (niedrig)","Lichtorb (mittel)","Lichtorb (hell)","Staubreflexion",
+  "Energieblase","Plasma-Orb","Photonische Kugel","Kalte Lichtkugel","Ionisierte Sphäre",
+  "Wärmeorb","Bewegungsmuster-Orb","Smaragd-Lichtpunkt","Roter Schimmer","Blauer Impuls",
+  "Weiße Manifestation","Transparente Kugel","Langsame Rotation","Zitternde Kugel",
+  "Orbschwarm","Anomalie im Lichtfeld",
+  // Energie / Bewusstsein
+  "Energieabdruck","Resonanzkörper","Residualfeld","Ektoplasmatische Welle",
+  "Astrale Spur","Lebensenergie-Fragment","Mentale Schwingung","Aura-Reflexion",
+  "Emotionales Feld","Bewusstseins-Schatten","Projektion eines Willens","Restenergie",
+  "Zeitresonanz","Traumanker","Gedankenform","Bioenergetisches Echo",
+  "Anwesenheitsrest","Energiegeflecht","Manifestationspunkt","Geistige Verdichtung",
   // Seelen
-  "Seelenfragment", "Wanderseele", "Ahnenenergie", "Verirrte Präsenz", "Schutzgeist",
-  "Verbundene Seele", "Wächterenergie", "Ruhende Essenz", "Halbbewusstes Echo",
-  "Astraler Reisender", "Inkarnationsspur", "Alte Seele", "Verlorene Erinnerung",
-  "Zeitlose Präsenz", "Bindende Seele", "Unvollendete Energie", "Gebundene Erinnerung",
-  "Transzendente Projektion", "Innerer Wächter", "Aufgestiegene Präsenz",
-
-  // Geister / Erscheinungen
-  "Domovoi (Hausgeist)", "Brownie (Helfer)", "Zashiki-warashi (Kindergeist)", "Tomte / Nisse",
-  "Poltergeist", "Onryō", "La Llorona", "Banshee", "Kitsune", "Revenant",
-  "Jiangshi", "Manananggal", "Vetala", "Pontianak", "Dullahan", "Wraith",
-  "Tikoloshe", "Pishacha", "Lutin", "Huli Jing", "Gashadokuro", "Phantom",
-  "Erscheinung im Nebel", "Schattenwesen", "Flüsterer", "Fensterspiegelung",
-  "Träumerische Gestalt", "Wächter der Schwelle", "Seelenführer", "Stiller Beobachter",
-
-  // Dämonische / Dunkle Entitäten
-  "Lurker", "Schattendämon", "Incubus", "Succubus", "Obskurum", "Leere Präsenz",
-  "Nachtmahre", "Dämonischer Knoten", "Besessenheitsfragment", "Abyssischer Rufer",
-  "Wurzelfresser", "Traumschlucker", "Kollektive Angstform", "Energiezehrer",
-  "Nether-Manifestation", "Archont", "Entropischer Parasit", "Schwarzer Spiegel",
-  "Verdrehter Geist", "Höllisches Echo"
+  "Seelenfragment","Wanderseele","Ahnenenergie","Verirrte Präsenz","Schutzgeist",
+  "Verbundene Seele","Ruhende Essenz","Halbbewusstes Echo","Astraler Reisender",
+  "Inkarnationsspur","Alte Seele","Verlorene Erinnerung","Zeitlose Präsenz","Bindende Seele",
+  "Unvollendete Energie","Gebundene Erinnerung","Transzendente Projektion","Innerer Wächter","Aufgestiegene Präsenz",
+  // Geister
+  "Domovoi","Brownie","Zashiki-warashi","Tomte / Nisse","Poltergeist","Onryō",
+  "La Llorona","Banshee","Kitsune","Revenant","Jiangshi","Manananggal","Vetala",
+  "Pontianak","Dullahan","Wraith","Tikoloshe","Pishacha","Lutin","Huli Jing","Gashadokuro",
+  "Phantom","Erscheinung im Nebel","Schattenwesen","Flüsterer","Fensterspiegelung",
+  "Träumerische Gestalt","Wächter der Schwelle","Seelenführer","Stiller Beobachter",
+  // Dämonen
+  "Lurker","Schattendämon","Incubus","Succubus","Obskurum","Leere Präsenz",
+  "Nachtmahre","Dämonischer Knoten","Besessenheitsfragment","Abyssischer Rufer",
+  "Wurzelfresser","Traumschlucker","Kollektive Angstform","Energiezehrer","Nether-Manifestation",
+  "Archont","Entropischer Parasit","Schwarzer Spiegel","Verdrehter Geist","Höllisches Echo"
 ];
 
 // --- Spirit Logger ---
@@ -84,6 +73,7 @@ let recording = false;
 let recordInterval = null;
 let logLines = [];
 let currentSpiritLevel = 0;
+let lastSpiritLevel = 0;
 
 function addLogLine(line){
   logLines.push(line);
@@ -119,23 +109,24 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
 function logSpirit(){
   const now = new Date().toLocaleTimeString();
   const spirit = Math.round(currentSpiritLevel);
-  const change = Math.round(Math.abs(Math.random() * 20 - 10));
+  const change = Math.round(100 - Math.abs(spirit - lastSpiritLevel)); // Stabilität
+  lastSpiritLevel = spirit;
 
-  if (spirit > 75) {
-    const ghost = ghosts[Math.floor(Math.random()*ghosts.length)];
-    addLogLine(`[${now}] ⚡ STARKER Spirit-Pegel: ${spirit} | Aktivität: ${change}% | Detektiert: ${ghost}`);
-  } else if (spirit > 40) {
-    const ghost = ghosts[Math.floor(Math.random()*80)+20];
-    addLogLine(`[${now}] Spirit-Pegel: ${spirit} | Aktivität: ${change}% | Präsenz: ${ghost}`);
-  } else if (spirit > 10) {
+  if(spirit > 75){
+    const ghost = ghosts[Math.floor(Math.random()*(ghosts.length-60)+60)];
+    addLogLine(`[${now}] ⚡ HOHER Spirit-Pegel: ${spirit} | Stabilität: ${change}% | Detektiert: ${ghost}`);
+  } else if(spirit > 40){
+    const ghost = ghosts[Math.floor(Math.random()*(60-40)+40)];
+    addLogLine(`[${now}] Spirit-Pegel: ${spirit} | Stabilität: ${change}% | Präsenz: ${ghost}`);
+  } else if(spirit > 10){
     const ghost = ghosts[Math.floor(Math.random()*40)];
-    addLogLine(`[${now}] Schwache Energie (${spirit}) – ${ghost}`);
+    addLogLine(`[${now}] Schwache Energie (${spirit}) | Stabilität: ${change}% | ${ghost}`);
   } else {
-    addLogLine(`[${now}] Spirit-Pegel: ${spirit} | unklar`);
+    addLogLine(`[${now}] Spirit-Pegel: ${spirit} | unklar | Stabilität: ${change}%`);
   }
 }
 
-// --- Canvas Animation ---
+// --- Canvas Wolkenanimation ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
@@ -163,6 +154,7 @@ const LAYERS=[
   {count:10,speed:0.1,scaleRange:[0.7,1.1],alpha:0.5,depth:0.9},
   {count:14,speed:0.14,scaleRange:[0.5,0.9],alpha:0.6,depth:1.4}
 ];
+
 let particles=[];
 function rand(a,b){return a+Math.random()*(b-a);}
 function createParticle(layer){
@@ -205,35 +197,45 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   masterAlpha=0.5;
 });
 
+// --- 3D-Projektion ---
 function project3D(x,y,z){const fov=800;const s=fov/(fov+z);return {x:canvas.width/2+x*s,y:canvas.height/2+y*s,scale:s};}
+
 function loop(ts){
   const dt=ts-last; last=ts;
   if(bg.complete&&bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
+
   for(const layer of LAYERS){
     for(const p of particles){
       if(p.layer!==layer)continue;
-      p.age+=dt; p.x+=p.vx; p.y+=p.vy; p.z+=p.vz; p.rot+=p.rotSpeed;
+      p.age+=dt;
+      p.x+=p.vx; p.y+=p.vy; p.z+=p.vz; p.rot+=p.rotSpeed;
       if(p.age<p.fadeDuration)p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
       else if(p.age>p.life-p.fadeDuration)p.alpha=p.targetAlpha*((p.life-p.age)/p.fadeDuration);
       else p.alpha=p.targetAlpha;
+
       const alphaFinal=p.alpha*masterAlpha;
       const proj=project3D(p.x,p.y,p.z);
       const wP=img.width*p.scale*0.45*proj.scale;
       const hP=img.height*p.scale*0.45*proj.scale;
-      ctx.save();ctx.translate(proj.x,proj.y);ctx.rotate(p.rot);ctx.globalAlpha=alphaFinal;
-      if(img.complete&&img.naturalWidth)ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
+      ctx.save();
+      ctx.translate(proj.x,proj.y);
+      ctx.rotate(p.rot);
+      ctx.globalAlpha=alphaFinal;
+      if(img.complete&&img.naturalWidth) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       ctx.restore();
+
       if(p.age>p.life){const idx=particles.indexOf(p);if(idx!==-1)particles[idx]=createParticle(layer);}
     }
   }
+
   if(blinkVisible&&blinkImg.complete){
     const ratio=Math.min(canvas.width/2/blinkImg.width,canvas.height/2/blinkImg.height);
     const w=blinkImg.width*ratio,h=blinkImg.height*ratio;
     ctx.drawImage(blinkImg,canvas.width/8,canvas.height-h-canvas.height/8,w,h);
   }
+
   requestAnimationFrame(loop);
 }
 </script>
 </body>
-  </html>
-  
+</html>
