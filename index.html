@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Wolke mit Beschleunigungssensor und Spirit-Logger</title>
+<title>Wolke mit Bewegungssensor und Spirit-Logger</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;}
 #cloudCanvas{display:block;width:100vw;height:100vh;}
@@ -65,22 +65,27 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
 });
 
 // --- Bewegungssensor ---
-let currentMag = 9.81;
-let lastMag = 9.81;
+let currentMotion = 0;
+let lastMag = 0;
 let currentChance = 100;
+const motionHistory = [];
 
 if (window.DeviceMotionEvent) {
   window.addEventListener("devicemotion", (e)=>{
-    if(e.accelerationIncludingGravity){
-      const a = e.accelerationIncludingGravity;
-      const mag = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
-      lastMag = currentMag;
-      // leicht glätten, aber nicht zu stark
-      currentMag = currentMag * 0.7 + mag * 0.3;
+    const acc = e.acceleration; // ohne Gravity!
+    if(acc && acc.x !== null){
+      const mag = Math.sqrt(acc.x*acc.x + acc.y*acc.y + acc.z*acc.z);
+      const delta = Math.abs(mag - lastMag);
+      lastMag = mag;
 
-      const delta = Math.abs(currentMag - lastMag);
+      // Stärkere Gewichtung auf Veränderungen -> spürbarer Unterschied
+      currentMotion = currentMotion * 0.8 + delta * 0.2;
+
       // Chance = je stabiler, desto höher
-      currentChance = Math.max(0, Math.min(100, 100 - delta * 50));
+      motionHistory.push(currentMotion);
+      if(motionHistory.length > 10) motionHistory.shift();
+      const variance = Math.max(...motionHistory) - Math.min(...motionHistory);
+      currentChance = Math.max(0, Math.min(100, 100 - variance * 800));
     }
   });
 } else {
@@ -92,18 +97,20 @@ function logSpirit(){
   if(ghosts.length === 0) return;
 
   const now = new Date().toLocaleTimeString();
-  const normalized = Math.min(987, Math.max(1, Math.round(currentMag / 20 * 987))); // ca. 0–20 m/s² auf 1–987
+  // Skalierung: realistische Bewegung ~ 0–20 m/s²
+  let normalized = Math.round(currentMotion * 987 / 5);
+  normalized = Math.min(987, Math.max(1, normalized));
+
   const spiritIndex = Math.min(ghosts.length-1, normalized - 1);
   const ghost = ghosts[spiritIndex] || "Unbekannt";
-
   const line = `[${now}] Spirit Pegel: ${normalized} | Chance: ${Math.round(currentChance)}% | ${ghost}`;
   addLogLine(line);
 }
 
-// --- Auch wenn nicht aufgenommen wird, jede 5 s loggen ---
+// --- Auch wenn nicht aufgenommen wird, alle 5 s loggen ---
 setInterval(()=>{ if(!recording) logSpirit(); }, 5000);
 
-// --- Hintergrundwolke ---
+// --- Wolken-Hintergrund ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
