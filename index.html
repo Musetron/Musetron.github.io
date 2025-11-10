@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Spirit Logger</title>
+<title>Spirit Activity Logger</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;}
 #cloudCanvas{display:block;width:100vw;height:100vh;}
@@ -38,10 +38,12 @@ let lastSpiritLevel = 0;
 let stableDuration = 0;
 let currentChance = 0;
 let currentRMS = 0;
-let baseMag = 9.81; // Kalibrierungsbasis (Standard: Gravitation)
+let baseMag = 9.81; // Basiswert nach Kalibrierung
 let calibrating = false;
 
-// --- Log-Funktion ---
+// Empfindlichkeitsfaktor
+const SENSITIVITY = 10;  // je höher, desto empfindlicher
+
 function addLogLine(line){
   logLines.push(line);
   if(logLines.length > 20) logLines.shift();
@@ -67,15 +69,14 @@ fetch('List.txt')
   })
   .catch(err => console.error('Fehler beim Laden von List.txt', err));
 
-// --- Mapping-Funktion ---
 function getGhostForMagnitude(mag){
   if (ghostLines.length === 0) return "Liste nicht geladen";
-  const normalized = Math.min(1, mag / 5); // Bewegung 0–5 m/s² relevant
+  const normalized = Math.min(1, mag / 2.0); // empfindlicher Bereich 0–2 m/s²
   const index = Math.floor(normalized * (ghostLines.length - 1));
   return ghostLines[index];
 }
 
-// --- Aufnahme starten/stoppen ---
+// --- Aufnahme ---
 document.getElementById('recordBtn').addEventListener('click', ()=>{
   if(recording){
     recording = false;
@@ -89,21 +90,21 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
   }
 });
 
-// --- Kalibrieren ---
+// --- Kalibrierung ---
 document.getElementById('calibrateBtn').addEventListener('click', ()=>{
   if(!window.DeviceMotionEvent){ addLogLine('Sensor nicht verfügbar'); return; }
   calibrating = true;
   addLogLine('Kalibrierung läuft – bitte Gerät still halten...');
   let samples = [];
   const calInterval = setInterval(()=>{
-    if(samples.length >= 20){
+    if(samples.length >= 30){
       const avg = samples.reduce((a,b)=>a+b,0)/samples.length;
       baseMag = avg;
       calibrating = false;
       clearInterval(calInterval);
-      addLogLine(`Kalibrierung abgeschlossen: Basiswert = ${baseMag.toFixed(2)} m/s²`);
+      addLogLine(`Kalibrierung abgeschlossen: Basiswert = ${baseMag.toFixed(3)} m/s²`);
     }
-  }, 50);
+  }, 40);
   window.addEventListener('devicemotion', function capture(e){
     if(calibrating){
       const a = e.accelerationIncludingGravity;
@@ -114,7 +115,7 @@ document.getElementById('calibrateBtn').addEventListener('click', ()=>{
   });
 });
 
-// --- Accelerometer Setup ---
+// --- Accelerometer ---
 let smoothedMag = 0;
 let motionReady = false;
 
@@ -125,9 +126,11 @@ if (window.DeviceMotionEvent) {
     if (!a) return;
     const mag = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
     const adjMag = Math.abs(mag - baseMag);
-    smoothedMag = smoothedMag * 0.9 + adjMag * 0.1;
+    // Schnellere Reaktion, geringere Glättung
+    smoothedMag = smoothedMag * 0.7 + adjMag * 0.3;
     currentRMS = smoothedMag;
-    currentSpiritLevel = Math.min(100, Math.floor((adjMag/5)*100));
+    // empfindlicher Pegel
+    currentSpiritLevel = Math.min(100, Math.floor(adjMag * SENSITIVITY));
     motionReady = true;
   });
 } else {
@@ -150,7 +153,7 @@ setInterval(()=>{
   addLogLine(`[${now}] Spirit Pegel: ${currentSpiritLevel} | Chance: ${currentChance}% | Möglicher Geist: ${ghost}`);
 }, 5000);
 
-// --- Wolken-Animation bleibt unverändert ---
+// --- Wolkenanimation ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
@@ -204,7 +207,7 @@ function project3D(x,y,z){
 function loop(ts){
   const dt=ts-last; last=ts;
   if(bg.complete&&bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
-  masterAlpha=Math.min(1,(currentRMS/10));
+  masterAlpha=Math.min(1,(currentRMS*2));
   for(const layer of LAYERS){
     for(const p of particles){
       if(p.layer!==layer)continue;
