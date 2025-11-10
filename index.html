@@ -3,13 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Spirit-Logger</title>
+<title>Wolke mit Mikrofonsteuerung und Spirit-Logger</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;}
 #cloudCanvas{display:block;width:100vw;height:100vh;}
 #recordBtn{
-  position:fixed;top:10px;left:10px;padding:10px 20px;
-  font-size:16px;z-index:10;
+  position:fixed;top:10px;left:10px;padding:10px 20px;font-size:16px;z-index:10;
 }
 #log{
   position:fixed;top:10px;right:10px;width:320px;height:260px;overflow:auto;
@@ -19,27 +18,31 @@ html,body{height:100%;margin:0;overflow:hidden;}
 </style>
 </head>
 <body>
+
 <button id="recordBtn">Start Recording</button>
 <div id="log"></div>
 <canvas id="cloudCanvas"></canvas>
 
 <script>
-// --- Spirit-Liste extern laden ---
-let ghosts = [];
-fetch("List.txt")
-  .then(r => r.text())
-  .then(t => ghosts = t.split(/\r?\n/).filter(l => l.trim().length));
-
-// --- Logger ---
+// --- Spirit-Logger Setup mit externer Liste ---
 const logDiv = document.getElementById('log');
 let recording = false;
-let recordInterval = null;
 let logLines = [];
+let ghostLines = []; // Array für List.txt
+
+// aktuelle Werte
+let currentSpiritLevel = 0;
+let smoothSpiritLevel = 0;
+let lastSpiritLevel = 0;
+let stableDuration = 0; // ms
+let currentChance = 0;
+
 function addLogLine(line){
   logLines.push(line);
   if(logLines.length > 20) logLines.shift();
   logDiv.innerText = logLines.join("\n");
 }
+
 function saveTxtFile(){
   const blob = new Blob([logLines.join("\n")], {type:'text/plain'});
   const url = URL.createObjectURL(blob);
@@ -49,9 +52,29 @@ function saveTxtFile(){
   a.click();
   URL.revokeObjectURL(url);
 }
+
+// --- Lade List.txt ---
+fetch('List.txt')
+  .then(res => res.text())
+  .then(text => {
+    ghostLines = text.split(/\r?\n/);
+  })
+  .catch(err => {
+    console.error('Fehler beim Laden von List.txt', err);
+  });
+
+// --- Helper für Pegel zu Zeile ---
+// RMS wird auf alle Zeilen skaliert
+function getGhostForLevel(rms){
+  if(ghostLines.length === 0) return "Liste nicht geladen";
+  // rms ca. 0..0.2 typischerweise → multiplizieren um alle Zeilen zu erreichen
+  const index = Math.min(ghostLines.length - 1, Math.floor(rms * ghostLines.length * 50));
+  return ghostLines[index];
+}
+
+// --- Recording Button ---
 document.getElementById('recordBtn').addEventListener('click', ()=>{
   if(recording){
-    clearInterval(recordInterval);
     recording = false;
     saveTxtFile();
     document.getElementById('recordBtn').innerText = 'Start Recording';
@@ -60,63 +83,34 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
     recording = true;
     document.getElementById('recordBtn').innerText = 'Stop Recording';
     addLogLine('Recording started...');
-    recordInterval = setInterval(logSpirit, 5000);
   }
 });
 
-// --- Bewegungssensor ---
-let currentMotion = 0;
-let lastMag = 0;
-let currentChance = 100;
-const motionHistory = [];
+// --- Spirit Logging alle 5 Sekunden ---
+setInterval(()=>{
+  // Chance berechnen: wie lange Pegel konstant bleibt
+  if(Math.abs(currentSpiritLevel - lastSpiritLevel) < 2){ // kleine Schwankung = stabil
+    stableDuration += 5000;
+  } else {
+    stableDuration = 5000;
+  }
+  lastSpiritLevel = currentSpiritLevel;
+  currentChance = Math.min(100, Math.floor(stableDuration / 5000 * 10)); // max 100%
 
-if (window.DeviceMotionEvent) {
-  window.addEventListener("devicemotion", (e)=>{
-    const acc = e.acceleration; // ohne Gravity!
-    if(acc && acc.x !== null){
-      const mag = Math.sqrt(acc.x*acc.x + acc.y*acc.y + acc.z*acc.z);
-      const delta = Math.abs(mag - lastMag);
-      lastMag = mag;
-
-      // Stärkere Gewichtung auf Veränderungen -> spürbarer Unterschied
-      currentMotion = currentMotion * 0.8 + delta * 0.2;
-
-      // Chance = je stabiler, desto höher
-      motionHistory.push(currentMotion);
-      if(motionHistory.length > 10) motionHistory.shift();
-      const variance = Math.max(...motionHistory) - Math.min(...motionHistory);
-      currentChance = Math.max(0, Math.min(100, 100 - variance * 800));
-    }
-  });
-} else {
-  addLogLine("Beschleunigungssensor nicht unterstützt.");
-}
-
-// --- Spirit-Logik ---
-function logSpirit(){
-  if(ghosts.length === 0) return;
-
+  const ghost = getGhostForLevel(smoothSpiritLevel);
   const now = new Date().toLocaleTimeString();
-  // Skalierung: realistische Bewegung ~ 0–20 m/s²
-  let normalized = Math.round(currentMotion * 987 / 5);
-  normalized = Math.min(987, Math.max(1, normalized));
+  addLogLine(`[${now}] Spirit Pegel: ${currentSpiritLevel} | Chance: ${currentChance}% | Möglicher Geist: ${ghost}`);
+},5000);
 
-  const spiritIndex = Math.min(ghosts.length-1, normalized - 1);
-  const ghost = ghosts[spiritIndex] || "Unbekannt";
-  const line = `[${now}] Spirit Pegel: ${normalized} | Chance: ${Math.round(currentChance)}% | ${ghost}`;
-  addLogLine(line);
-}
-
-// --- Auch wenn nicht aufgenommen wird, alle 5 s loggen ---
-setInterval(()=>{ if(!recording) logSpirit(); }, 5000);
-
-// --- Wolken-Hintergrund ---
+// --- Wolken- und Blinkbildanimation ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
+
 const canvas=document.getElementById('cloudCanvas');
 const ctx=canvas.getContext('2d');
 let DPR=Math.max(1,window.devicePixelRatio||1);
+
 function resize(){
   DPR=Math.max(1,window.devicePixelRatio||1);
   canvas.width=Math.floor(window.innerWidth*DPR);
@@ -125,15 +119,26 @@ function resize(){
 }
 window.addEventListener('resize',resize);
 resize();
-const img=new Image(); img.crossOrigin='anonymous'; img.src=PARTICLE_SRC;
-const bg=new Image(); bg.crossOrigin='anonymous'; bg.src=BACKGROUND_SRC;
-const blinkImg=new Image(); blinkImg.crossOrigin='anonymous'; blinkImg.src=BLINK_IMAGE_SRC;
-let blinkVisible=true; setInterval(()=>{blinkVisible=!blinkVisible;},1000);
+
+const img=new Image();
+img.crossOrigin='anonymous';
+img.src=PARTICLE_SRC;
+const bg=new Image();
+bg.crossOrigin='anonymous';
+bg.src=BACKGROUND_SRC;
+const blinkImg=new Image();
+blinkImg.crossOrigin='anonymous';
+blinkImg.src=BLINK_IMAGE_SRC;
+
+let blinkVisible=true;
+setInterval(()=>{blinkVisible=!blinkVisible;},1000);
+
 const LAYERS=[
   {count:6,speed:0.06,scaleRange:[1.0,1.5],alpha:0.4,depth:0.6},
   {count:10,speed:0.1,scaleRange:[0.7,1.1],alpha:0.5,depth:0.9},
   {count:14,speed:0.14,scaleRange:[0.5,0.9],alpha:0.6,depth:1.4}
 ];
+
 let particles=[];
 function rand(a,b){return a+Math.random()*(b-a);}
 function createParticle(layer){
@@ -145,13 +150,66 @@ function createParticle(layer){
           life:rand(10000,20000),age:0,fadeDuration:2000};
 }
 function initParticles(){particles=[];for(const l of LAYERS)for(let i=0;i<l.count;i++)particles.push(createParticle(l));}
+
 img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
 img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
-let last=performance.now(),masterAlpha=1;
-function project3D(x,y,z){const fov=800;const scale=fov/(fov+z);return {x:canvas.width/2 + x*scale, y:canvas.height/2 + y*scale, scale:scale};}
+
+let last=performance.now(),masterAlpha=0;
+
+// --- Mikrofon mit Bandpass 2–5 kHz ---
+navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
+  const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const source=audioCtx.createMediaStreamSource(stream);
+
+  const bandpass=audioCtx.createBiquadFilter();
+  bandpass.type="bandpass";
+  bandpass.frequency.value=3500;
+  bandpass.Q.value=0.7;
+
+  const analyser=audioCtx.createAnalyser();
+  analyser.fftSize=512;
+
+  source.connect(bandpass);
+  bandpass.connect(analyser);
+
+  const dataArray=new Uint8Array(analyser.frequencyBinCount);
+  let smoothRMS = 0;
+
+  function updateMic(){
+    analyser.getByteTimeDomainData(dataArray);
+    let sum=0;
+    for(let i=0;i<dataArray.length;i++){
+      const val=(dataArray[i]-128)/128;
+      sum+=val*val;
+    }
+    const rms=Math.sqrt(sum/dataArray.length);
+
+    smoothRMS = smoothRMS*0.8 + rms*0.2; // Glättung
+    smoothSpiritLevel = smoothRMS;
+
+    masterAlpha = Math.min(1, smoothRMS*5);
+    currentSpiritLevel = Math.min(100, Math.floor(smoothRMS*200));
+  }
+
+  setInterval(updateMic,100);
+}).catch(err=>{
+  console.log("Mikrofon Zugriff verweigert",err);
+  masterAlpha=0.5;
+  currentSpiritLevel=50;
+  smoothSpiritLevel=0.1;
+});
+
+// --- 3D-Projektion & Animation ---
+function project3D(x,y,z){
+  const fov=800;
+  const scale=fov/(fov+z);
+  return {x:canvas.width/2 + x*scale, y:canvas.height/2 + y*scale, scale:scale};
+}
+
 function loop(ts){
   const dt=ts-last; last=ts;
   if(bg.complete&&bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
+
   for(const layer of LAYERS){
     ctx.globalCompositeOperation='source-over';
     for(const p of particles){
@@ -161,6 +219,7 @@ function loop(ts){
       p.y+=p.vy*1.5;
       p.z+=p.vz*1.5;
       p.rot+=p.rotSpeed;
+
       if(p.age<p.fadeDuration){
         p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
       } else if(p.age>p.life-p.fadeDuration){
@@ -168,14 +227,17 @@ function loop(ts){
       } else {
         p.alpha=p.targetAlpha;
       }
+
       const alphaFinal=p.alpha*masterAlpha;
       const proj=project3D(p.x,p.y,p.z);
       const wP=img.width*p.scale*0.45*proj.scale;
       const hP=img.height*p.scale*0.45*proj.scale;
+
       ctx.save();
       ctx.translate(proj.x,proj.y);
       ctx.rotate(p.rot);
       ctx.globalAlpha=alphaFinal;
+
       if(img.complete&&img.naturalWidth)
         ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       else {
@@ -185,24 +247,28 @@ function loop(ts){
         ctx.fill();
       }
       ctx.restore();
+
       if(p.age>p.life){
         const idx=particles.indexOf(p);
         if(idx!==-1)particles[idx]=createParticle(layer);
       }
     }
   }
+
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
     const maxW=canvas.width/2;
     const maxH=canvas.height/2;
-    const ratio=Math.min(maxW/blinkImg.width, maxH/blinkImg.height);
+    const ratio=Math.min(maxW/blinkImg.width, maxH/blinkImg.height) ;
     const w=blinkImg.width*ratio;
     const h=blinkImg.height*ratio;
     const xPos=canvas.width/8;
     const yPos=canvas.height - h - canvas.height/8;
     ctx.drawImage(blinkImg,xPos,yPos,w,h);
   }
+
   requestAnimationFrame(loop);
 }
 </script>
+
 </body>
 </html>
