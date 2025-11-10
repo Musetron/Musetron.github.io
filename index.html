@@ -91,7 +91,7 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
 
 function logSpirit(){
   const now = new Date().toLocaleTimeString();
-  if(Math.random() < 0.3){
+  if(Math.random() < 0.3){ // 30% Chance für Spirit
     const spirit = Math.floor(Math.random()*100)+1;
     const change = Math.floor(Math.random()*101);
     const ghost = ghosts[Math.floor(Math.random()*ghosts.length)];
@@ -101,6 +101,7 @@ function logSpirit(){
   }
 }
 
+// Live-Log auch ohne Aufnahme
 setInterval(()=>{
   const now = new Date().toLocaleTimeString();
   if(Math.random() < 0.3){
@@ -164,16 +165,16 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   const source=audioCtx.createMediaStreamSource(stream);
 
-  // Bandpass-Filter 2–5 kHz
+  // Bandpass-Filter
   const bandpass=audioCtx.createBiquadFilter();
   bandpass.type="bandpass";
-  bandpass.frequency.value=3500; // Mittenfrequenz
-  bandpass.Q.value=0.7; // etwa 2–5 kHz Bandbreite
+  bandpass.frequency.value=3500; // Mitte bei 3.5 kHz
+  bandpass.Q.value=0.7; // ca. 2–5 kHz Bandbreite
 
   const analyser=audioCtx.createAnalyser();
   analyser.fftSize=512;
 
-  // Verbindung: Mikrofon -> Bandpass -> Analyzer
+  // Verbindung: Mic -> Bandpass -> Analyzer
   source.connect(bandpass);
   bandpass.connect(analyser);
 
@@ -227,4 +228,5 @@ function loop(ts){
 }
 </script>
 </body>
-</html>
+  </html>
+  
