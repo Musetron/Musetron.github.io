@@ -27,10 +27,14 @@ html,body{height:100%;margin:0;overflow:hidden;}
 // --- Spirit-Logger Setup mit externer Liste ---
 const logDiv = document.getElementById('log');
 let recording = false;
-let recordInterval = null;
 let logLines = [];
 let ghostLines = []; // Array für List.txt
+
+// aktuelle Werte
 let currentSpiritLevel = 0;
+let smoothSpiritLevel = 0;
+let lastSpiritLevel = 0;
+let stableDuration = 0; // ms
 let currentChance = 0;
 
 function addLogLine(line){
@@ -69,7 +73,6 @@ function getGhostForLevel(level){
 // --- Recording Button ---
 document.getElementById('recordBtn').addEventListener('click', ()=>{
   if(recording){
-    clearInterval(recordInterval);
     recording = false;
     saveTxtFile();
     document.getElementById('recordBtn').innerText = 'Start Recording';
@@ -78,16 +81,24 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
     recording = true;
     document.getElementById('recordBtn').innerText = 'Stop Recording';
     addLogLine('Recording started...');
-    recordInterval = setInterval(logSpirit, 5000);
   }
 });
 
-// --- Spirit Logging ---
-function logSpirit(){
-  const now = new Date().toLocaleTimeString();
+// --- Spirit Logging alle 5 Sekunden ---
+setInterval(()=>{
+  // Chance berechnen: wie lange Pegel konstant bleibt
+  if(Math.abs(currentSpiritLevel - lastSpiritLevel) < 2){ // kleine Schwankung = stabil
+    stableDuration += 5000;
+  } else {
+    stableDuration = 5000;
+  }
+  lastSpiritLevel = currentSpiritLevel;
+  currentChance = Math.min(100, Math.floor(stableDuration / 5000 * 10)); // max 100%
+
   const ghost = getGhostForLevel(currentSpiritLevel);
+  const now = new Date().toLocaleTimeString();
   addLogLine(`[${now}] Spirit Pegel: ${currentSpiritLevel} | Chance: ${currentChance}% | Möglicher Geist: ${ghost}`);
-}
+},5000);
 
 // --- Wolken- und Blinkbildanimation ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
@@ -136,7 +147,6 @@ function createParticle(layer){
           rot:rand(0,Math.PI*2),rotSpeed:rand(-0.002,0.002),layer,
           life:rand(10000,20000),age:0,fadeDuration:2000};
 }
-
 function initParticles(){particles=[];for(const l of LAYERS)for(let i=0;i<l.count;i++)particles.push(createParticle(l));}
 
 img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
@@ -161,7 +171,6 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   bandpass.connect(analyser);
 
   const dataArray=new Uint8Array(analyser.frequencyBinCount);
-
   let smoothRMS = 0;
 
   function updateMic(){
@@ -172,25 +181,20 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
       sum+=val*val;
     }
     const rms=Math.sqrt(sum/dataArray.length);
-
-    // smoothing
     smoothRMS = smoothRMS*0.8 + rms*0.2;
 
     masterAlpha = Math.min(1, smoothRMS*5);
-
-    // Spirit-Pegel 0-100
     currentSpiritLevel = Math.min(100, Math.floor(smoothRMS*200));
-    currentChance = Math.min(100, Math.floor(smoothRMS*200));
   }
 
-  setInterval(updateMic, 100);
+  setInterval(updateMic,100);
 }).catch(err=>{
   console.log("Mikrofon Zugriff verweigert",err);
   masterAlpha=0.5;
-  currentSpiritLevel = 50;
-  currentChance = 50;
+  currentSpiritLevel=50;
 });
 
+// --- 3D-Projektion & Animation ---
 function project3D(x,y,z){
   const fov=800;
   const scale=fov/(fov+z);
@@ -237,7 +241,6 @@ function loop(ts){
         ctx.fillStyle=`rgba(180,180,180,${alphaFinal})`;
         ctx.fill();
       }
-
       ctx.restore();
 
       if(p.age>p.life){
