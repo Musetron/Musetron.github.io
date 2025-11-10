@@ -30,6 +30,8 @@ let recording = false;
 let recordInterval = null;
 let logLines = [];
 let ghostLines = []; // Array für List.txt
+let currentSpiritLevel = 0;
+let currentChance = 0;
 
 function addLogLine(line){
   logLines.push(line);
@@ -59,7 +61,6 @@ fetch('List.txt')
 
 // --- Helper für Pegel zu Zeile ---
 function getGhostForLevel(level){
-  // level 1-100
   if(ghostLines.length === 0) return "Liste nicht geladen";
   const index = Math.floor((level/100)*(ghostLines.length-1));
   return ghostLines[index];
@@ -82,39 +83,11 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
 });
 
 // --- Spirit Logging ---
-let lastLevel = null;
-let stableDuration = 0; // ms
 function logSpirit(){
   const now = new Date().toLocaleTimeString();
-  const spiritLevel = Math.floor(Math.random()*100)+1; // zufälliger Pegel 1-100
-
-  if(spiritLevel === lastLevel){
-    stableDuration += 5000;
-  } else {
-    stableDuration = 5000;
-  }
-  lastLevel = spiritLevel;
-
-  const changePercent = Math.min(100, Math.floor((stableDuration/1000)/5*100)); // einfache Approx.
-  const ghost = getGhostForLevel(spiritLevel);
-
-  addLogLine(`[${now}] Spirit Pegel: ${spiritLevel} | Change: ${changePercent}% | Möglicher Geist: ${ghost}`);
+  const ghost = getGhostForLevel(currentSpiritLevel);
+  addLogLine(`[${now}] Spirit Pegel: ${currentSpiritLevel} | Chance: ${currentChance}% | Möglicher Geist: ${ghost}`);
 }
-
-// Live-Log auch ohne Aufnahme
-setInterval(()=>{
-  const now = new Date().toLocaleTimeString();
-  const spiritLevel = Math.floor(Math.random()*100)+1;
-  if(spiritLevel === lastLevel){
-    stableDuration += 5000;
-  } else {
-    stableDuration = 5000;
-  }
-  lastLevel = spiritLevel;
-  const changePercent = Math.min(100, Math.floor((stableDuration/1000)/5*100));
-  const ghost = getGhostForLevel(spiritLevel);
-  addLogLine(`[${now}] Spirit Pegel: ${spiritLevel} | Change: ${changePercent}% | Möglicher Geist: ${ghost}`);
-},5000);
 
 // --- Wolken- und Blinkbildanimation ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
@@ -189,6 +162,8 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
 
   const dataArray=new Uint8Array(analyser.frequencyBinCount);
 
+  let smoothRMS = 0;
+
   function updateMic(){
     analyser.getByteTimeDomainData(dataArray);
     let sum=0;
@@ -197,13 +172,23 @@ navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
       sum+=val*val;
     }
     const rms=Math.sqrt(sum/dataArray.length);
-    masterAlpha=Math.min(1, rms*5);
+
+    // smoothing
+    smoothRMS = smoothRMS*0.8 + rms*0.2;
+
+    masterAlpha = Math.min(1, smoothRMS*5);
+
+    // Spirit-Pegel 0-100
+    currentSpiritLevel = Math.min(100, Math.floor(smoothRMS*200));
+    currentChance = Math.min(100, Math.floor(smoothRMS*200));
   }
 
   setInterval(updateMic, 100);
 }).catch(err=>{
   console.log("Mikrofon Zugriff verweigert",err);
   masterAlpha=0.5;
+  currentSpiritLevel = 50;
+  currentChance = 50;
 });
 
 function project3D(x,y,z){
@@ -278,5 +263,4 @@ function loop(ts){
 </script>
 
 </body>
-  </html>
-  
+</html>
