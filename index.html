@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Wolke mit Mikrofonsteuerung und Spirit-Logger</title>
+<title>Spirit Analyzer – Spectrum Logger 2–5 kHz</title>
 <style>
-html,body{height:100%;margin:0;overflow:hidden;}
+html,body{height:100%;margin:0;overflow:hidden;background:black;color:#0f0;font-family:monospace;}
 #cloudCanvas{display:block;width:100vw;height:100vh;}
 #recordBtn{
   position:fixed;top:10px;left:10px;padding:10px 20px;font-size:16px;z-index:10;
 }
 #log{
-  position:fixed;top:10px;right:10px;width:320px;height:260px;overflow:auto;
+  position:fixed;top:10px;right:10px;width:360px;height:280px;overflow:auto;
   background:rgba(0,0,0,0.6);color:#0f0;font-family:monospace;font-size:14px;
-  padding:5px;border-radius:5px;z-index:10;
+  padding:5px;border-radius:5px;z-index:10;white-space:pre;
 }
 </style>
 </head>
@@ -23,40 +23,67 @@ html,body{height:100%;margin:0;overflow:hidden;}
 <canvas id="cloudCanvas"></canvas>
 
 <script>
-// --- Geisterliste 1-100 ---
+// --- Große Spiritliste ---
+// Von Technik → Energie → Orbs → Seelen → Geister → Dämonen
 const ghosts = [
-  "Domovoi (slawischer Hausgeist)","Brownie (schottischer Hausgeist)","Zashiki-warashi (japanischer Kindergeist)",
-  "Tomte / Nisse (skandinavischer Hausgeist)","Poltergeist (deutsch/modern)","Kitsune (japanischer Fuchsgeist)",
-  "Jinn / Djinn (arabische Folklore)","Churel (indische Folklore)","La Llorona (mexikanischer Geist)","Banshee (irischer Todesschrei)",
-  "Pontianak / Kuntilanak (südostasiatischer weiblicher Geist)","Vetala (indische untote Gestalt)","Dullahan (irischer kopfloser Reiter)",
-  "Revenant (europäischer Rachegeist)","Sylphen (Luftgeist, westliche Alchemie)","Undine (Wassergeist, mitteleuropäische Folklore)",
-  "Salamander (Feuergeist, Alchemie/Europa)","Kobold (deutsch/englische Folklore, schelmisch)","Onryō (japanischer Rachegeist)",
-  "Huli Jing (chinesischer Fuchsgeist)","La Mala Hora (mexikanische unheilvolle Gestalt)","Manananggal (philippinischer Vampir-Geist)",
-  "Jiangshi (chinesischer „hüpfender“ Zombie)","Gashadokuro (japanischer Riesen-Skelettgeist)","Wraith (britischer Todesgeist)",
-  "Bogle (schottischer Kobold/Poltergeist)","Teke Teke (japanischer Rachegeist)","Lutin (französischer Hausgeist/Kobold)",
-  "Tikoloshe (südafrikanischer Wasser-/Schabernackgeist)","Pishacha (indischer Dämon/Geist)","Elektromagnetische Resonanzfeldstörung",
-  "Quanteninferenz-Spur","Biophotonisches Energiefeld","Magnetische Aura-Anomalie","Ionisierte Luftspirale","Körperschall-Resonanz",
-  "Feldfluktuation im Infraschallbereich","Photonische Interferenzerscheinung","Elektrostatik-Wellenfront","Schumannresonanzveränderung",
-  "Vortex der Energiecluster","Plasma-Knoten","Infraschall-Oszillation","Kalte Lichtanomalie","Magnetfeld-Fluktuation",
-  "Quantum Flux-Spiegelung","Bioplasma-Kondensat","Energie-Gradientenwirbel","EMF-Spike","Neurofeld-Resonanz",
-  "Domovoi (zweites Haus)","Brownie (zweites Haus)","Poltergeist (sekundär)","Kitsune (trickreich)","Jinn / Djinn (zweite Form)",
-  "Onryō (zweiter Typ)","Revenant (regional)","Banshee (zweites Heulen)","Manananggal (regional)","Jiangshi (lokal)",
-  "Elektromagnetische Störung","Plasmawirbel","Ionische Resonanz","Feldanomalie","Vibration in Infraschall",
-  "Kalte Lichtspirale","Biophoton-Wirbel","Energieblase","EMF-Interferenz","Magnetfeld-Knoten",
-  "Quantenfeld-Spiegelung","Neurofeld-Wirbel","Photonische Welle","Feldfluktuation","Ionisierter Nebel",
-  "Elektrostatik-Resonanz","Plasma-Frequenzschwingung","Vortex der kalten Energie","Bioplasma-Spirale","Magnetische Turbulenz",
-  "Domovoi (Hausgeist Schutz)","Brownie (Hausgeist Helfer)","Zashiki-warashi (Glücksbringer)","Tomte / Nisse (Schutzgeist Hof)",
-  "Poltergeist (aktive Störung)","Kitsune (Fuchsgeist List)","Jinn / Djinn (Feuergeist)","Churel (Rachegeist Frau)",
-  "La Llorona (Trauernde Frau)","Banshee (Todesschrei)","Elektromagnetischer Puls","Quanten-Verschränkungsblitz",
-  "Biophotonische Explosion","Magnetische Turbulenzspirale","Infraschall-Knoten","Plasmafluktuation",
-  "Energie-Cluster-Spike","Neurofeld-Interferenz","Photonische Resonanzblase","Feldanomalie-Resonanz"
+  // Technische / Physikalische Störungen
+  "Thermisches Rauschen", "Elektromagnetische Interferenz", "Hintergrundstrahlung",
+  "Mikrofonrauschen", "Signalreflexion", "Ultraschall-Feedback", "Infraschall-Drift",
+  "Elektrostatik-Puls", "Kabelinduktion", "Schumannresonanz-Anomalie", "Magnetfeld-Drift",
+  "Statische Entladung", "Ionisationsflackern", "Resonanzfrequenz-Welle", "Feldrauschen",
+  "Photonenrauschen", "Luftdruckmodulation", "Quantisierungsrauschen", "Lichtinterferenz",
+  "Akustische Wellenüberlagerung", "Subharmonische Schwingung",
+
+  // Quanten / Energien
+  "Photonischer Flux", "Quanteninferenz-Spur", "Neutrino-Spur", "Bioplasma-Knoten",
+  "Energiecluster", "Magnetische Turbulenz", "Elektroplasmatische Entladung", "Vortex-Welle",
+  "Feldfluktuation", "Resonanzfeld-Anomalie", "Subraum-Energiefluss", "Plasmawirbel",
+  "EMF-Spike", "Ionische Resonanz", "Neurofeld-Schwingung", "Elektronenwolke",
+  "Biophotonischer Impuls", "Gravitationsmikropuls", "Energiegradient", "Interferenzspektrum",
+
+  // Orbs & Lichter
+  "Lichtorb (niedrig)", "Lichtorb (mittel)", "Lichtorb (hell)", "Staubreflexion",
+  "Energieblase", "Plasma-Orb", "Photonische Kugel", "Kalte Lichtkugel", "Ionisierte Sphäre",
+  "Wärmeorb", "Bewegungsmuster-Orb", "Smaragd-Lichtpunkt", "Roter Schimmer", "Blauer Impuls",
+  "Weiße Manifestation", "Transparente Kugel", "Langsame Rotation", "Zitternde Kugel",
+  "Orbschwarm", "Anomalie im Lichtfeld",
+
+  // Energieformen & Bewusstseinsreste
+  "Energieabdruck", "Resonanzkörper", "Residualfeld", "Ektoplasmatische Welle",
+  "Astrale Spur", "Lebensenergie-Fragment", "Mentale Schwingung", "Aura-Reflexion",
+  "Emotionales Feld", "Bewusstseins-Schatten", "Projektion eines Willens", "Restenergie",
+  "Zeitresonanz", "Traumanker", "Gedankenform (Tulpa)", "Bioenergetisches Echo",
+  "Anwesenheitsrest", "Energiegeflecht", "Manifestationspunkt", "Geistige Verdichtung",
+
+  // Seelen
+  "Seelenfragment", "Wanderseele", "Ahnenenergie", "Verirrte Präsenz", "Schutzgeist",
+  "Verbundene Seele", "Wächterenergie", "Ruhende Essenz", "Halbbewusstes Echo",
+  "Astraler Reisender", "Inkarnationsspur", "Alte Seele", "Verlorene Erinnerung",
+  "Zeitlose Präsenz", "Bindende Seele", "Unvollendete Energie", "Gebundene Erinnerung",
+  "Transzendente Projektion", "Innerer Wächter", "Aufgestiegene Präsenz",
+
+  // Geister / Erscheinungen
+  "Domovoi (Hausgeist)", "Brownie (Helfer)", "Zashiki-warashi (Kindergeist)", "Tomte / Nisse",
+  "Poltergeist", "Onryō", "La Llorona", "Banshee", "Kitsune", "Revenant",
+  "Jiangshi", "Manananggal", "Vetala", "Pontianak", "Dullahan", "Wraith",
+  "Tikoloshe", "Pishacha", "Lutin", "Huli Jing", "Gashadokuro", "Phantom",
+  "Erscheinung im Nebel", "Schattenwesen", "Flüsterer", "Fensterspiegelung",
+  "Träumerische Gestalt", "Wächter der Schwelle", "Seelenführer", "Stiller Beobachter",
+
+  // Dämonische / Dunkle Entitäten
+  "Lurker", "Schattendämon", "Incubus", "Succubus", "Obskurum", "Leere Präsenz",
+  "Nachtmahre", "Dämonischer Knoten", "Besessenheitsfragment", "Abyssischer Rufer",
+  "Wurzelfresser", "Traumschlucker", "Kollektive Angstform", "Energiezehrer",
+  "Nether-Manifestation", "Archont", "Entropischer Parasit", "Schwarzer Spiegel",
+  "Verdrehter Geist", "Höllisches Echo"
 ];
 
-// --- Spirit-Logger Setup ---
+// --- Spirit Logger ---
 const logDiv = document.getElementById('log');
 let recording = false;
 let recordInterval = null;
 let logLines = [];
+let currentSpiritLevel = 0;
 
 function addLogLine(line){
   logLines.push(line);
@@ -80,41 +107,35 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
     recording = false;
     saveTxtFile();
     document.getElementById('recordBtn').innerText = 'Start Recording';
-    addLogLine('Recording stopped, file saved.');
+    addLogLine('Aufnahme beendet. Datei gespeichert.');
   } else {
     recording = true;
     document.getElementById('recordBtn').innerText = 'Stop Recording';
-    addLogLine('Recording started...');
-    recordInterval = setInterval(logSpirit, 5000);
+    addLogLine('Aufnahme gestartet...');
+    recordInterval = setInterval(logSpirit, 3000);
   }
 });
 
 function logSpirit(){
   const now = new Date().toLocaleTimeString();
-  if(Math.random() < 0.3){ // 30% Chance für Spirit
-    const spirit = Math.floor(Math.random()*100)+1;
-    const change = Math.floor(Math.random()*101);
+  const spirit = Math.round(currentSpiritLevel);
+  const change = Math.round(Math.abs(Math.random() * 20 - 10));
+
+  if (spirit > 75) {
     const ghost = ghosts[Math.floor(Math.random()*ghosts.length)];
-    addLogLine(`[${now}] Spirit Pegel: ${spirit} | Change: ${change}% | Möglicher Geist: ${ghost}`);
+    addLogLine(`[${now}] ⚡ STARKER Spirit-Pegel: ${spirit} | Aktivität: ${change}% | Detektiert: ${ghost}`);
+  } else if (spirit > 40) {
+    const ghost = ghosts[Math.floor(Math.random()*80)+20];
+    addLogLine(`[${now}] Spirit-Pegel: ${spirit} | Aktivität: ${change}% | Präsenz: ${ghost}`);
+  } else if (spirit > 10) {
+    const ghost = ghosts[Math.floor(Math.random()*40)];
+    addLogLine(`[${now}] Schwache Energie (${spirit}) – ${ghost}`);
   } else {
-    addLogLine(`[${now}] unklar`);
+    addLogLine(`[${now}] Spirit-Pegel: ${spirit} | unklar`);
   }
 }
 
-// Live-Log auch ohne Aufnahme
-setInterval(()=>{
-  const now = new Date().toLocaleTimeString();
-  if(Math.random() < 0.3){
-    const spirit = Math.floor(Math.random()*100)+1;
-    const change = Math.floor(Math.random()*101);
-    const ghost = ghosts[Math.floor(Math.random()*ghosts.length)];
-    addLogLine(`[${now}] Spirit Pegel: ${spirit} | Change: ${change}% | Möglicher Geist: ${ghost}`);
-  } else {
-    addLogLine(`[${now}] unklar`);
-  }
-},5000);
-
-// --- Wolken- und Blinkbildanimation ---
+// --- Canvas Animation ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
@@ -142,132 +163,77 @@ const LAYERS=[
   {count:10,speed:0.1,scaleRange:[0.7,1.1],alpha:0.5,depth:0.9},
   {count:14,speed:0.14,scaleRange:[0.5,0.9],alpha:0.6,depth:1.4}
 ];
-
 let particles=[];
 function rand(a,b){return a+Math.random()*(b-a);}
 function createParticle(layer){
   const s=rand(layer.scaleRange[0],layer.scaleRange[1]);
   return {x:rand(-200,200),y:rand(-100,100),z:rand(0,400),
           vx:rand(-layer.speed,layer.speed),vy:rand(-0.02,0.02),vz:rand(-0.1,0.1),
-          scale:s,baseScale:s,alpha:0,targetAlpha:rand(0.4*layer.alpha,0.8*layer.alpha),
+          scale:s,alpha:0,targetAlpha:rand(0.4*layer.alpha,0.8*layer.alpha),
           rot:rand(0,Math.PI*2),rotSpeed:rand(-0.002,0.002),layer,
           life:rand(10000,20000),age:0,fadeDuration:2000};
 }
 function initParticles(){particles=[];for(const l of LAYERS)for(let i=0;i<l.count;i++)particles.push(createParticle(l));}
-
 img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
-img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
 
 let last=performance.now(),masterAlpha=0;
 
-// --- Mikrofon mit Bandpass 2–5 kHz und optimierter Loop ---
+// --- Mikrofon mit Bandpass 2–5 kHz ---
 navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
   const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   const source=audioCtx.createMediaStreamSource(stream);
-
-  // Bandpass-Filter
   const bandpass=audioCtx.createBiquadFilter();
   bandpass.type="bandpass";
-  bandpass.frequency.value=3500; // Mitte 3.5 kHz
-  bandpass.Q.value=0.7; // ca. 2–5 kHz Bandbreite
-
+  bandpass.frequency.value=3500;
+  bandpass.Q.value=0.7;
   const analyser=audioCtx.createAnalyser();
   analyser.fftSize=512;
-
-  // Verbindung: Mic -> Bandpass -> Analyzer
   source.connect(bandpass);
   bandpass.connect(analyser);
-
   const dataArray=new Uint8Array(analyser.frequencyBinCount);
-
   function updateMic(){
     analyser.getByteTimeDomainData(dataArray);
     let sum=0;
-    for(let i=0;i<dataArray.length;i++){
-      const val=(dataArray[i]-128)/128;
-      sum+=val*val;
-    }
+    for(let i=0;i<dataArray.length;i++){const v=(dataArray[i]-128)/128;sum+=v*v;}
     const rms=Math.sqrt(sum/dataArray.length);
-    masterAlpha=Math.min(1, rms*5);
+    masterAlpha=Math.min(1,rms*5);
+    currentSpiritLevel = Math.min(100, Math.round(masterAlpha * 100 * 1.5));
   }
-
-  // Nur alle 100 ms updaten (10 ×/s)
-  setInterval(updateMic, 100);
-
+  setInterval(updateMic,100);
 }).catch(err=>{
-  console.log("Mikrofon Zugriff verweigert",err);
+  console.log("Mic error",err);
   masterAlpha=0.5;
 });
 
-function project3D(x,y,z){
-  const fov=800;
-  const scale=fov/(fov+z);
-  return {x:canvas.width/2 + x*scale, y:canvas.height/2 + y*scale, scale:scale};
-}
-
+function project3D(x,y,z){const fov=800;const s=fov/(fov+z);return {x:canvas.width/2+x*s,y:canvas.height/2+y*s,scale:s};}
 function loop(ts){
   const dt=ts-last; last=ts;
   if(bg.complete&&bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
-
   for(const layer of LAYERS){
-    ctx.globalCompositeOperation='source-over';
     for(const p of particles){
       if(p.layer!==layer)continue;
-      p.age+=dt;
-      p.x+=p.vx*1.5*(1/p.layer.depth);
-      p.y+=p.vy*1.5;
-      p.z+=p.vz*1.5;
-      p.rot+=p.rotSpeed;
-
-      if(p.age<p.fadeDuration){
-        p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
-      } else if(p.age>p.life-p.fadeDuration){
-        p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));
-      } else {
-        p.alpha=p.targetAlpha;
-      }
-
+      p.age+=dt; p.x+=p.vx; p.y+=p.vy; p.z+=p.vz; p.rot+=p.rotSpeed;
+      if(p.age<p.fadeDuration)p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
+      else if(p.age>p.life-p.fadeDuration)p.alpha=p.targetAlpha*((p.life-p.age)/p.fadeDuration);
+      else p.alpha=p.targetAlpha;
       const alphaFinal=p.alpha*masterAlpha;
       const proj=project3D(p.x,p.y,p.z);
       const wP=img.width*p.scale*0.45*proj.scale;
       const hP=img.height*p.scale*0.45*proj.scale;
-
-      ctx.save();
-      ctx.translate(proj.x,proj.y);
-      ctx.rotate(p.rot);
-      ctx.globalAlpha=alphaFinal;
-
-      if(img.complete&&img.naturalWidth)
-        ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
-      else {
-        ctx.beginPath();
-        ctx.arc(0,0,40*p.scale*proj.scale,0,Math.PI*2);
-        ctx.fillStyle=`rgba(180,180,180,${alphaFinal})`;
-        ctx.fill();
-      }
-
+      ctx.save();ctx.translate(proj.x,proj.y);ctx.rotate(p.rot);ctx.globalAlpha=alphaFinal;
+      if(img.complete&&img.naturalWidth)ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       ctx.restore();
-
-      if(p.age>p.life){
-        const idx=particles.indexOf(p);
-        if(idx!==-1)particles[idx]=createParticle(layer);
-      }
+      if(p.age>p.life){const idx=particles.indexOf(p);if(idx!==-1)particles[idx]=createParticle(layer);}
     }
   }
-
-  if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const maxW=canvas.width/2;
-    const maxH=canvas.height/2;
-    const ratio=Math.min(maxW/blinkImg.width, maxH/blinkImg.height);
-    const w=blinkImg.width*ratio;
-    const h=blinkImg.height*ratio;
-    const xPos=canvas.width/8;
-    const yPos=canvas.height - h - canvas.height/8;
-    ctx.drawImage(blinkImg,xPos,yPos,w,h);
+  if(blinkVisible&&blinkImg.complete){
+    const ratio=Math.min(canvas.width/2/blinkImg.width,canvas.height/2/blinkImg.height);
+    const w=blinkImg.width*ratio,h=blinkImg.height*ratio;
+    ctx.drawImage(blinkImg,canvas.width/8,canvas.height-h-canvas.height/8,w,h);
   }
-
   requestAnimationFrame(loop);
 }
 </script>
 </body>
-</html>
+  </html>
+  
