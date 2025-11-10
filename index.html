@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Wolke mit Mikrofonsteuerung und Spirit-Logger</title>
+<title>Ghost Logger</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;}
 #cloudCanvas{display:block;width:100vw;height:100vh;}
@@ -24,19 +24,19 @@ html,body{height:100%;margin:0;overflow:hidden;}
 <canvas id="cloudCanvas"></canvas>
 
 <script>
-// --- Spirit-Logger Setup mit externer Liste ---
+// --- Spirit-Logger Setup ---
 const logDiv = document.getElementById('log');
 let recording = false;
 let logLines = [];
-let ghostLines = []; // Array für List.txt
+let ghostLines = [];
 
-// aktuelle Werte
 let currentSpiritLevel = 0;
-let smoothSpiritLevel = 0;
 let lastSpiritLevel = 0;
-let stableDuration = 0; // ms
+let stableDuration = 0;
 let currentChance = 0;
+let currentRMS = 0;
 
+// --- Log-Funktion ---
 function addLogLine(line){
   logLines.push(line);
   if(logLines.length > 20) logLines.shift();
@@ -58,19 +58,20 @@ fetch('List.txt')
   .then(res => res.text())
   .then(text => {
     ghostLines = text.split(/\r?\n/);
+    console.log(`List.txt geladen (${ghostLines.length} Zeilen)`);
   })
-  .catch(err => {
-    console.error('Fehler beim Laden von List.txt', err);
-  });
+  .catch(err => console.error('Fehler beim Laden von List.txt', err));
 
-// --- Helper für Pegel zu Zeile ---
-function getGhostForLevel(level){
-  if(ghostLines.length === 0) return "Liste nicht geladen";
-  const index = Math.floor((level/100)*(ghostLines.length-1));
+// --- Mapping-Funktion ---
+function getGhostForMagnitude(mag){
+  if (ghostLines.length === 0) return "Liste nicht geladen";
+  // Normiere Bewegung (mag) zwischen 0 und ~20 m/s²
+  const normalized = Math.min(1, mag / 20);
+  const index = Math.floor(normalized * (ghostLines.length - 1));
   return ghostLines[index];
 }
 
-// --- Recording Button ---
+// --- Button für Aufnahme ---
 document.getElementById('recordBtn').addEventListener('click', ()=>{
   if(recording){
     recording = false;
@@ -84,23 +85,41 @@ document.getElementById('recordBtn').addEventListener('click', ()=>{
   }
 });
 
-// --- Spirit Logging alle 5 Sekunden ---
+// --- Accelerometer Setup ---
+let smoothedMag = 0;
+let motionReady = false;
+
+if (window.DeviceMotionEvent) {
+  window.addEventListener('devicemotion', (event)=>{
+    const a = event.accelerationIncludingGravity;
+    if (!a) return;
+    const mag = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
+    smoothedMag = smoothedMag * 0.9 + mag * 0.1;
+    currentRMS = smoothedMag;
+    currentSpiritLevel = Math.min(100, Math.floor((mag/20)*100));
+    motionReady = true;
+  });
+} else {
+  addLogLine('Beschleunigungssensor nicht verfügbar.');
+}
+
+// --- Log alle 5 Sekunden ---
 setInterval(()=>{
-  // Chance berechnen: wie lange Pegel konstant bleibt
-  if(Math.abs(currentSpiritLevel - lastSpiritLevel) < 2){ // kleine Schwankung = stabil
+  if(!motionReady) return;
+  if(Math.abs(currentSpiritLevel - lastSpiritLevel) < 2){
     stableDuration += 5000;
   } else {
     stableDuration = 5000;
   }
   lastSpiritLevel = currentSpiritLevel;
-  currentChance = Math.min(100, Math.floor(stableDuration / 5000 * 10)); // max 100%
+  currentChance = Math.min(100, Math.floor(stableDuration / 5000 * 10));
 
-  const ghost = getGhostForLevel(currentSpiritLevel);
+  const ghost = getGhostForMagnitude(currentRMS);
   const now = new Date().toLocaleTimeString();
   addLogLine(`[${now}] Spirit Pegel: ${currentSpiritLevel} | Chance: ${currentChance}% | Möglicher Geist: ${ghost}`);
-},5000);
+}, 5000);
 
-// --- Wolken- und Blinkbildanimation ---
+// --- Wolken-Animation (wie gehabt) ---
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
@@ -152,49 +171,8 @@ function initParticles(){particles=[];for(const l of LAYERS)for(let i=0;i<l.coun
 img.onload=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
 img.onerror=()=>{initParticles();last=performance.now();requestAnimationFrame(loop);};
 
-let last=performance.now(),masterAlpha=0;
+let last=performance.now(),masterAlpha=0.5;
 
-// --- Mikrofon mit Bandpass 2–5 kHz ---
-navigator.mediaDevices.getUserMedia({ audio:true }).then(stream=>{
-  const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  const source=audioCtx.createMediaStreamSource(stream);
-
-  const bandpass=audioCtx.createBiquadFilter();
-  bandpass.type="bandpass";
-  bandpass.frequency.value=3500;
-  bandpass.Q.value=0.7;
-
-  const analyser=audioCtx.createAnalyser();
-  analyser.fftSize=512;
-
-  source.connect(bandpass);
-  bandpass.connect(analyser);
-
-  const dataArray=new Uint8Array(analyser.frequencyBinCount);
-  let smoothRMS = 0;
-
-  function updateMic(){
-    analyser.getByteTimeDomainData(dataArray);
-    let sum=0;
-    for(let i=0;i<dataArray.length;i++){
-      const val=(dataArray[i]-128)/128;
-      sum+=val*val;
-    }
-    const rms=Math.sqrt(sum/dataArray.length);
-    smoothRMS = smoothRMS*0.8 + rms*0.2;
-
-    masterAlpha = Math.min(1, smoothRMS*5);
-    currentSpiritLevel = Math.min(100, Math.floor(smoothRMS*200));
-  }
-
-  setInterval(updateMic,100);
-}).catch(err=>{
-  console.log("Mikrofon Zugriff verweigert",err);
-  masterAlpha=0.5;
-  currentSpiritLevel=50;
-});
-
-// --- 3D-Projektion & Animation ---
 function project3D(x,y,z){
   const fov=800;
   const scale=fov/(fov+z);
@@ -204,6 +182,8 @@ function project3D(x,y,z){
 function loop(ts){
   const dt=ts-last; last=ts;
   if(bg.complete&&bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
+
+  masterAlpha = Math.min(1, (currentRMS/10));
 
   for(const layer of LAYERS){
     ctx.globalCompositeOperation='source-over';
@@ -253,7 +233,7 @@ function loop(ts){
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
     const maxW=canvas.width/2;
     const maxH=canvas.height/2;
-    const ratio=Math.min(maxW/blinkImg.width, maxH/blinkImg.height) ;
+    const ratio=Math.min(maxW/blinkImg.width, maxH/blinkImg.height);
     const w=blinkImg.width*ratio;
     const h=blinkImg.height*ratio;
     const xPos=canvas.width/8;
