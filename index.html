@@ -29,23 +29,23 @@
     z-index: 11;
     box-shadow: 0 4px 14px rgba(0,0,0,0.6);
   }
-  #recordBtn {
-    left: 10px;
-  }
-  /* Neuer vertikaler Slider links */
+  #recordBtn { left: 10px; }
+
+  /* Vertikaler Gain-Slider */
   #gainSliderContainer {
     position: fixed;
     top: 50%;
-    left: 10px;
+    left: 60px;
     transform: translateY(-50%) rotate(-90deg);
     height: 30px;
-    width: 150px;
+    width: 180px;
     z-index: 11;
   }
   #gainSlider {
-    width: 150px;
+    width: 180px;
     accent-color: #7CFF7C;
   }
+
   #info {
     position: fixed;
     top: 10px;
@@ -76,7 +76,7 @@
     border-radius: 6px;
   }
 
-  /* Mobile Optimierung im Querformat */
+  /* Mobile Querformat */
   @media (orientation: landscape) and (max-height: 500px) {
     #info {
       top: auto;
@@ -86,14 +86,8 @@
       height: 40vh;
       font-size: 12px;
     }
-    #recordBtn {
-      top: 10px;
-      left: 10px;
-    }
     #gainSliderContainer {
-      top: 50%;
-      left: 60px;
-      transform: translateY(-50%) rotate(-90deg);
+      left: 50px;
     }
   }
 </style>
@@ -102,7 +96,7 @@
 
 <button id="recordBtn" class="btn">Start Recording</button>
 <div id="gainSliderContainer">
-  <input type="range" id="gainSlider" min="0.2" max="2.0" step="0.01" value="1" />
+  <input type="range" id="gainSlider" min="0.1" max="5.0" step="0.01" value="1.0" />
 </div>
 <div id="info">Lade List.txt…</div>
 <canvas id="cloudCanvas"></canvas>
@@ -194,7 +188,7 @@ function getCurrentLevel(){
   return rms * gainFactor;
 }
 
-/* Slider steuert Gain-Faktor */
+/* Slider steuert Gain */
 gainSlider.addEventListener('input', e => {
   gainFactor = parseFloat(e.target.value);
   statusDiv.innerText = `Mikrofon: aktiv • Gain: ${gainFactor.toFixed(2)}`;
@@ -204,7 +198,7 @@ gainSlider.addEventListener('input', e => {
 function updateAudio(){
   const level = getCurrentLevel();
   smoothedLevel = smoothedLevel*(1-SMOOTH_ALPHA) + level*SMOOTH_ALPHA;
-  spiritFloat = Math.min(100, smoothedLevel * 200);
+  spiritFloat = Math.min(100, smoothedLevel * 400); // doppelt so empfindlich
   masterAlpha = Math.min(1, spiritFloat / 100);
   windowValues.push(spiritFloat);
   if(windowValues.length > STABILITY_WINDOW) windowValues.shift();
@@ -226,8 +220,11 @@ function getGhostForSpirit(spirit){
   return ghostLines[idx];
 }
 
-/* Buttons */
+/* =========================
+   Buttons
+   ========================= */
 let recording = false;
+let animationRunning = false;
 recordBtn.addEventListener('click', async ()=>{
   if(!audioCtx) await initMic();
   recording = !recording;
@@ -236,13 +233,19 @@ recordBtn.addEventListener('click', async ()=>{
     await audioCtx.resume();
     addLogLine('Recording gestartet.');
     updateAudio();
+    if(!animationRunning){
+      animationRunning = true;
+      startAnimation(); // startet Wolken-Loop erst jetzt
+    }
   } else {
     saveTxtFile();
     addLogLine('Recording gestoppt & gespeichert.');
   }
 });
 
-/* Logging */
+/* =========================
+   Logging
+   ========================= */
 setInterval(()=>{
   if(!audioCtx) return;
   const now = new Date();
@@ -296,16 +299,18 @@ function createParticle(layer){
 }
 function initParticles(){ particles = []; for(const l of LAYERS) for(let i=0;i<l.count;i++) particles.push(createParticle(l)); }
 
-img.onload = ()=>{ initParticles(); last = performance.now(); requestAnimationFrame(loop); };
-img.onerror = ()=>{ initParticles(); last = performance.now(); requestAnimationFrame(loop); };
-
-let last = performance.now();
 function project3D(x,y,z){
   const fov = 800;
   const scale = fov / (fov + z);
   return { x: canvas.width/2 + x*scale, y: canvas.height/2 + y*scale, scale: scale };
 }
 
+function startAnimation(){
+  img.onload = ()=>{ initParticles(); last = performance.now(); requestAnimationFrame(loop); };
+  img.onerror = ()=>{ initParticles(); last = performance.now(); requestAnimationFrame(loop); };
+}
+
+let last = performance.now();
 function loop(ts){
   const dt = ts - last; last = ts;
   if(bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
@@ -358,7 +363,7 @@ function loop(ts){
 }
 
 /* Startstatus */
-addLogLine('Bereit. Drücke "Start Recording" und stelle den Gain-Slider ein.');
+addLogLine('Bereit. Drücke "Start Recording" und regle den Gain-Slider für mehr Empfindlichkeit.');
 statusDiv.innerText = `Mikrofon: warten... • Gain: ${gainFactor.toFixed(2)}`;
 </script>
 </body>
