@@ -63,7 +63,6 @@
     padding:6px 10px;
     border-radius:6px;
   }
-  /* Vertikaler Slider */
   #gainSlider{
     position:fixed;
     left:70px;
@@ -75,7 +74,6 @@
     appearance: slider-vertical;
     z-index:11;
   }
-
   @media (orientation: landscape) {
     #info{
       width:45vw;
@@ -110,12 +108,11 @@
 
 <script>
 /* =========================
-   Config / Globals
+   Globals
    ========================= */
 const LOG_INTERVAL_MS = 5000;
 const STABILITY_WINDOW = 6;
-const SMOOTH_ALPHA = 0.12;
-const LIST_FILENAME = 'List.txt';
+const SMOOTH_ALPHA = 0.15;
 
 const infoDiv = document.getElementById('info');
 const statusDiv = document.getElementById('status');
@@ -124,6 +121,13 @@ const gainSlider = document.getElementById('gainSlider');
 const canvas = document.getElementById('cloudCanvas');
 const ctx = canvas.getContext('2d');
 
+let audioCtx, analyser, micSource, dataArray;
+let gainFactor = 1.0;
+let spiritFloat = 0;
+let masterAlpha = 0;
+let recording = false;
+
+/* ========== Logging ========== */
 let logLines = [];
 function addLogLine(line){
   logLines.push(line);
@@ -134,41 +138,11 @@ function saveTxtFile(filename='spirit_log.txt'){
   const blob = new Blob([logLines.join("\n")], {type:'text/plain'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
+  a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
 
-/* =========================
-   Liste (Geistertexte)
-   ========================= */
-let ghostLines = [];
-fetch(LIST_FILENAME)
-  .then(r => {
-    if(!r.ok) throw new Error('List.txt nicht gefunden');
-    return r.text();
-  })
-  .then(text => {
-    ghostLines = text.split(/\r?\n/);
-    addLogLine(`List.txt geladen: ${ghostLines.length} Zeilen`);
-    addLogLine('--- Start Log ---');
-  })
-  .catch(err => {
-    addLogLine('Fehler beim Laden von List.txt.');
-    addLogLine(String(err));
-  });
-
-/* =========================
-   Mikrofon & Audioanalyse
-   ========================= */
-let audioCtx, analyser, micSource, dataArray;
-let gainFactor = 1.0;
-let smoothedLevel = 0;
-let spiritFloat = 0;
-let masterAlpha = 0;
-const windowValues = [];
-
+/* ========== Mikrofon Setup ========== */
 async function initMic(){
   try {
     const stream = await navigator.mediaDevices.getUserMedia({audio:true});
@@ -179,7 +153,7 @@ async function initMic(){
     analyser.fftSize = 1024;
     dataArray = new Float32Array(analyser.fftSize);
     micSource.connect(analyser);
-    addLogLine('Mikrofon erfolgreich aktiviert.');
+    addLogLine('🎙 Mikrofon aktiv.');
   } catch(err){
     addLogLine('⚠️ Mikrofonfehler: ' + err);
   }
@@ -194,39 +168,13 @@ function getCurrentLevel(){
   return rms * gainFactor;
 }
 
+/* ========== Gain Slider ========== */
 gainSlider.addEventListener('input', ()=>{
   gainFactor = parseFloat(gainSlider.value);
   statusDiv.innerText = `Mikrofon: ${audioCtx ? "bereit" : "warten..."} • Gain: ${gainFactor.toFixed(2)}`;
 });
 
-function updateAudio(){
-  const level = getCurrentLevel();
-  smoothedLevel = smoothedLevel*(1-SMOOTH_ALPHA) + level*SMOOTH_ALPHA;
-  spiritFloat = Math.min(100, smoothedLevel * 200);
-  masterAlpha = Math.min(1, spiritFloat / 100);
-  windowValues.push(spiritFloat);
-  if(windowValues.length > STABILITY_WINDOW) windowValues.shift();
-  requestAnimationFrame(updateAudio);
-}
-
-function calcChanceFromWindow(){
-  if(windowValues.length===0) return 0;
-  const mx = Math.max(...windowValues);
-  const mn = Math.min(...windowValues);
-  const diff = mx - mn;
-  const threshold = 20;
-  const raw = 1 - (diff/threshold);
-  return Math.round(Math.max(0,Math.min(1,raw))*100);
-}
-
-function getGhostForSpirit(spirit){
-  if(!ghostLines.length) return 'Liste nicht geladen';
-  const idx = Math.min(ghostLines.length-1, Math.floor((spirit/100)*ghostLines.length));
-  return ghostLines[idx];
-}
-
-/* Record-Button */
-let recording = false;
+/* ========== Aufnahme-Button ========== */
 recordBtn.addEventListener('click', async ()=>{
   if(!audioCtx) await initMic();
   recording = !recording;
@@ -234,29 +182,38 @@ recordBtn.addEventListener('click', async ()=>{
   if(recording){
     await audioCtx.resume();
     addLogLine('Recording gestartet.');
-    updateAudio();
   } else {
     saveTxtFile();
     addLogLine('Recording gestoppt & gespeichert.');
   }
 });
 
-/* Logging */
+/* ========== Pegel / Spirit Berechnung ========== */
+function updateAudio(){
+  if(recording && analyser){
+    const level = getCurrentLevel();
+    spiritFloat = spiritFloat*(1-SMOOTH_ALPHA) + Math.min(100, level * 250)*SMOOTH_ALPHA;
+    masterAlpha = Math.min(1, spiritFloat / 100);
+  } else {
+    // Idle-Wolkenruhe (leichter Schwebeeffekt)
+    masterAlpha = 0.15 + 0.05 * Math.sin(performance.now()/1000);
+  }
+  requestAnimationFrame(updateAudio);
+}
+updateAudio();
+
+/* ========== Logging ========== */
 setInterval(()=>{
-  if(!audioCtx) return;
-  const now = new Date();
-  const spirit = spiritFloat;
-  const chance = calcChanceFromWindow();
-  const ghost = getGhostForSpirit(spirit);
-  addLogLine(`[${now.toLocaleTimeString()}] Spirit Pegel: ${spirit.toFixed(2)} | Chance: ${chance}% | Geist: ${ghost}`);
+  if(recording && audioCtx){
+    const now = new Date();
+    const msg = `[${now.toLocaleTimeString()}] Pegel: ${spiritFloat.toFixed(2)} | Gain: ${gainFactor.toFixed(2)}`;
+    addLogLine(msg);
+  }
 }, LOG_INTERVAL_MS);
 
-/* =========================
-   Canvas / Animation
-   ========================= */
+/* ========== Canvas Wolke ========== */
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
-const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
 
 let DPR = Math.max(1, window.devicePixelRatio || 1);
 function resizeCanvas(){
@@ -270,15 +227,11 @@ resizeCanvas();
 
 const img = new Image(); img.crossOrigin='anonymous'; img.src = PARTICLE_SRC;
 const bg = new Image(); bg.crossOrigin='anonymous'; bg.src = BACKGROUND_SRC;
-const blinkImg = new Image(); blinkImg.crossOrigin='anonymous'; blinkImg.src = BLINK_IMAGE_SRC;
-
-let blinkVisible = true;
-setInterval(()=>{ blinkVisible = !blinkVisible; }, 1000);
 
 const LAYERS = [
-  {count:6,speed:0.06,scaleRange:[1.0,1.5],alpha:0.4,depth:0.6},
-  {count:10,speed:0.1,scaleRange:[0.7,1.1],alpha:0.5,depth:0.9},
-  {count:14,speed:0.14,scaleRange:[0.5,0.9],alpha:0.6,depth:1.4}
+  {count:8,speed:0.06,scaleRange:[1.0,1.5],alpha:0.4,depth:0.6},
+  {count:12,speed:0.1,scaleRange:[0.7,1.1],alpha:0.5,depth:0.9},
+  {count:16,speed:0.14,scaleRange:[0.5,0.9],alpha:0.6,depth:1.4}
 ];
 
 let particles = [];
@@ -293,12 +246,11 @@ function createParticle(layer){
     life: rand(10000,20000), age:0, fadeDuration:2000
   };
 }
-function initParticles(){ particles = []; for(const l of LAYERS) for(let i=0;i<l.count;i++) particles.push(createParticle(l)); }
+function initParticles(){ particles=[]; for(const l of LAYERS) for(let i=0;i<l.count;i++) particles.push(createParticle(l)); }
 
-img.onload = ()=>{ initParticles(); last = performance.now(); requestAnimationFrame(loop); };
-img.onerror = ()=>{ initParticles(); last = performance.now(); requestAnimationFrame(loop); };
-
+img.onload = ()=>{ initParticles(); last=performance.now(); requestAnimationFrame(loop); };
 let last = performance.now();
+
 function project3D(x,y,z){
   const fov = 800;
   const scale = fov / (fov + z);
@@ -308,33 +260,27 @@ function project3D(x,y,z){
 function loop(ts){
   const dt = ts - last; last = ts;
   if(bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-
-  // Wenn kein Mikro läuft, leichten "Idle"-Puls anzeigen
-  const idleAlpha = 0.3 + 0.2 * Math.sin(ts/1000);
-  const currentAlpha = audioCtx ? Math.min(1, spiritFloat/100) : idleAlpha;
-  masterAlpha = masterAlpha*(1-0.06)+currentAlpha*0.06;
-
   for(const layer of LAYERS){
     for(const p of particles){
       if(p.layer!==layer) continue;
       p.age += dt;
-      p.x += p.vx*1.5*(1/p.layer.depth);
-      p.y += p.vy*1.5;
-      p.z += p.vz*1.5;
+      p.x += p.vx*1.2*(1/p.layer.depth);
+      p.y += p.vy*1.2;
+      p.z += p.vz*1.2;
       p.rot += p.rotSpeed;
       if(p.age<p.fadeDuration) p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
       else if(p.age>p.life-p.fadeDuration)
         p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));
       else p.alpha=p.targetAlpha;
-      const alphaFinal=p.alpha*masterAlpha;
-      const proj=project3D(p.x,p.y,p.z);
-      const wP=img.width*p.scale*0.45*proj.scale;
-      const hP=img.height*p.scale*0.45*proj.scale;
+      const alphaFinal = p.alpha * masterAlpha;
+      const proj = project3D(p.x,p.y,p.z);
+      const wP = img.width*p.scale*0.45*proj.scale;
+      const hP = img.height*p.scale*0.45*proj.scale;
       ctx.save();
       ctx.translate(proj.x,proj.y);
       ctx.rotate(p.rot);
-      ctx.globalAlpha=alphaFinal;
-      if(img.complete&&img.naturalWidth) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
+      ctx.globalAlpha = alphaFinal;
+      if(img.complete) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       ctx.restore();
       if(p.age>p.life){
         const idx=particles.indexOf(p);
@@ -342,21 +288,12 @@ function loop(ts){
       }
     }
   }
-  if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const maxW=canvas.width/2;
-    const maxH=canvas.height/2;
-    const ratio=Math.min(maxW/blinkImg.width,maxH/blinkImg.height);
-    const w=blinkImg.width*ratio;
-    const h=blinkImg.height*ratio;
-    const xPos=canvas.width/8;
-    const yPos=canvas.height-h-canvas.height/8;
-    ctx.drawImage(blinkImg,xPos,yPos,w,h);
-  }
   requestAnimationFrame(loop);
 }
 
-addLogLine('Bereit. Wolke aktiv. Drücke "Start Recording", um Mikro zu aktivieren.');
+addLogLine('Spirit-Logger bereit. Wolke sichtbar. Drücke "Start Recording", um Pegel zu aktivieren.');
 statusDiv.innerText = `Mikrofon: warten... • Gain: ${gainFactor.toFixed(2)}`;
 </script>
 </body>
-</html>
+  </html>
+  
