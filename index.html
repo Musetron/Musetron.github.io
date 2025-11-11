@@ -70,13 +70,12 @@
     top:60px;
     height:200px;
     width:30px;
-    writing-mode: bt-lr; /* vertikal */
+    writing-mode: bt-lr;
     -webkit-appearance: slider-vertical;
     appearance: slider-vertical;
     z-index:11;
   }
 
-  /* Mobile Anpassungen */
   @media (orientation: landscape) {
     #info{
       width:45vw;
@@ -84,10 +83,9 @@
       font-size:12px;
     }
     #gainSlider{
-      left:auto;
-      right:10px;
+      left:10px;
       top:50%;
-      transform:translateY(-50%) rotate(0deg);
+      transform:translateY(-50%);
     }
     #recordBtn{
       top:auto;
@@ -96,8 +94,7 @@
     }
     #status{
       bottom:10px;
-      left:auto;
-      right:10px;
+      left:10px;
       font-size:12px;
     }
   }
@@ -197,13 +194,11 @@ function getCurrentLevel(){
   return rms * gainFactor;
 }
 
-/* Slider Gain Control */
 gainSlider.addEventListener('input', ()=>{
   gainFactor = parseFloat(gainSlider.value);
-  statusDiv.innerText = `Mikrofon: bereit • Gain: ${gainFactor.toFixed(2)}`;
+  statusDiv.innerText = `Mikrofon: ${audioCtx ? "bereit" : "warten..."} • Gain: ${gainFactor.toFixed(2)}`;
 });
 
-/* Pegelerfassung */
 function updateAudio(){
   const level = getCurrentLevel();
   smoothedLevel = smoothedLevel*(1-SMOOTH_ALPHA) + level*SMOOTH_ALPHA;
@@ -214,7 +209,6 @@ function updateAudio(){
   requestAnimationFrame(updateAudio);
 }
 
-/* Chanceberechnung & Mapping */
 function calcChanceFromWindow(){
   if(windowValues.length===0) return 0;
   const mx = Math.max(...windowValues);
@@ -231,7 +225,7 @@ function getGhostForSpirit(spirit){
   return ghostLines[idx];
 }
 
-/* Buttons */
+/* Record-Button */
 let recording = false;
 recordBtn.addEventListener('click', async ()=>{
   if(!audioCtx) await initMic();
@@ -314,7 +308,11 @@ function project3D(x,y,z){
 function loop(ts){
   const dt = ts - last; last = ts;
   if(bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-  masterAlpha = masterAlpha*(1-0.06)+(Math.min(1, spiritFloat/100))*0.06;
+
+  // Wenn kein Mikro läuft, leichten "Idle"-Puls anzeigen
+  const idleAlpha = 0.3 + 0.2 * Math.sin(ts/1000);
+  const currentAlpha = audioCtx ? Math.min(1, spiritFloat/100) : idleAlpha;
+  masterAlpha = masterAlpha*(1-0.06)+currentAlpha*0.06;
 
   for(const layer of LAYERS){
     for(const p of particles){
@@ -356,9 +354,9 @@ function loop(ts){
   }
   requestAnimationFrame(loop);
 }
-addLogLine('Bereit. Drücke "Start Recording" und nutze den Slider, um den Pegel anzupassen.');
+
+addLogLine('Bereit. Wolke aktiv. Drücke "Start Recording", um Mikro zu aktivieren.');
 statusDiv.innerText = `Mikrofon: warten... • Gain: ${gainFactor.toFixed(2)}`;
 </script>
 </body>
-  </html>
-  
+</html>
