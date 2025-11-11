@@ -23,14 +23,12 @@
     position:fixed;bottom:12px;left:12px;color:#ccc;font-family:monospace;font-size:13px;z-index:11;
     background:rgba(0,0,0,0.35);padding:6px 10px;border-radius:6px;
   }
-  small.note{color:#aaa;display:block;margin-top:6px;}
 </style>
 </head>
 <body>
 
 <button id="recordBtn" class="btn">Start Recording</button>
 <button id="calibrateBtn" class="btn">Kalibrieren</button>
-
 <div id="info">Lade List.txt…</div>
 <canvas id="cloudCanvas"></canvas>
 <div id="status">Mikrofon: warten... • Gain: –</div>
@@ -67,7 +65,9 @@ function saveTxtFile(filename='spirit_log.txt'){
   URL.revokeObjectURL(url);
 }
 
-/* List.txt laden */
+/* =========================
+   Liste (Geistertexte)
+   ========================= */
 let ghostLines = [];
 fetch(LIST_FILENAME)
   .then(r => {
@@ -80,32 +80,33 @@ fetch(LIST_FILENAME)
     addLogLine('--- Start Log ---');
   })
   .catch(err => {
-    addLogLine('Fehler beim Laden von List.txt — bitte sicherstellen, dass List.txt im selben Ordner liegt.');
+    addLogLine('Fehler beim Laden von List.txt.');
     addLogLine(String(err));
   });
 
 /* =========================
-   Mikrofon / Audioanalyse
+   Mikrofon & Audioanalyse
    ========================= */
-let audioCtx, analyser, dataArray, micSource;
-let gainFactor = 1;
+let audioCtx, analyser, micSource, dataArray;
+let gainFactor = 1.0;
 let smoothedLevel = 0;
-let spiritFloat = 0.0;
-let masterAlpha = 0.0;
+let spiritFloat = 0;
+let masterAlpha = 0;
 const windowValues = [];
 
 async function initMic(){
   try {
     const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    audioCtx = new AudioContext();
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    await audioCtx.resume(); // sehr wichtig!
     micSource = audioCtx.createMediaStreamSource(stream);
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 1024;
     dataArray = new Float32Array(analyser.fftSize);
     micSource.connect(analyser);
-    addLogLine('Mikrofon verbunden.');
+    addLogLine('Mikrofon erfolgreich aktiviert.');
   } catch(err){
-    addLogLine('Fehler beim Zugriff auf Mikrofon: ' + err);
+    addLogLine('⚠️ Mikrofonfehler: ' + err);
   }
 }
 
@@ -118,38 +119,38 @@ function getCurrentLevel(){
   return rms * gainFactor;
 }
 
-/* Kalibrierung: Maximalwert → 0.5 */
+/* Kalibrierung: lautester Wert = 0.5 */
 async function doCalibrate(){
-  if(!analyser){ await initMic(); }
-  addLogLine('Kalibrierung läuft (2 Sekunden)...');
+  if(!audioCtx) await initMic();
+  addLogLine('Kalibrierung läuft (2 s)... bitte lauter reden oder Geräusch machen.');
   const samples = [];
-  const t0 = performance.now();
-  while(performance.now() - t0 < 2000){
-    samples.push(getCurrentLevel()/gainFactor); // ungegainedes Signal
+  const start = performance.now();
+  while(performance.now() - start < 2000){
+    samples.push(getCurrentLevel()/gainFactor);
     await new Promise(r=>setTimeout(r,50));
   }
   const maxVal = Math.max(...samples);
-  if(maxVal>0){
+  if(maxVal > 0){
     gainFactor = 0.5 / maxVal;
-    addLogLine(`Kalibriert. Gain = ${gainFactor.toFixed(3)} (max=${maxVal.toFixed(4)})`);
+    addLogLine(`Kalibriert: Gain = ${gainFactor.toFixed(3)} (max=${maxVal.toFixed(4)})`);
     statusDiv.innerText = `Mikrofon: bereit • Gain: ${gainFactor.toFixed(3)}`;
   } else {
-    addLogLine('Kein Signal während Kalibrierung erkannt.');
+    addLogLine('Kein Signal erkannt! Versuche lauter zu sein.');
   }
 }
 
-/* Pegelmessung */
+/* Pegelerfassung */
 function updateAudio(){
   const level = getCurrentLevel();
   smoothedLevel = smoothedLevel*(1-SMOOTH_ALPHA) + level*SMOOTH_ALPHA;
-  spiritFloat = Math.min(100, smoothedLevel * 200);
+  spiritFloat = Math.min(100, smoothedLevel * 200); // RMS in 0–100
   masterAlpha = Math.min(1, spiritFloat / 100);
   windowValues.push(spiritFloat);
   if(windowValues.length > STABILITY_WINDOW) windowValues.shift();
   requestAnimationFrame(updateAudio);
 }
 
-/* Chanceberechnung */
+/* Chanceberechnung & Mapping */
 function calcChanceFromWindow(){
   if(windowValues.length===0) return 0;
   const mx = Math.max(...windowValues);
@@ -161,11 +162,8 @@ function calcChanceFromWindow(){
 }
 
 function getGhostForSpirit(spirit){
-  if(!ghostLines || ghostLines.length === 0) return 'Liste nicht geladen';
-  const len = ghostLines.length;
-  let idx = Math.floor((spirit / 100) * len);
-  if(idx < 0) idx = 0;
-  if(idx >= len) idx = len - 1;
+  if(!ghostLines.length) return 'Liste nicht geladen';
+  const idx = Math.min(ghostLines.length-1, Math.floor((spirit/100)*ghostLines.length));
   return ghostLines[idx];
 }
 
@@ -176,28 +174,28 @@ recordBtn.addEventListener('click', async ()=>{
   recording = !recording;
   recordBtn.innerText = recording ? 'Stop Recording' : 'Start Recording';
   if(recording){
+    await audioCtx.resume();
     addLogLine('Recording gestartet.');
     updateAudio();
   } else {
     saveTxtFile();
-    addLogLine('Recording gestoppt und Datei gespeichert.');
+    addLogLine('Recording gestoppt & gespeichert.');
   }
 });
 calibrateBtn.addEventListener('click', doCalibrate);
 
-/* Logging (alle 5s) */
+/* Logging */
 setInterval(()=>{
   if(!audioCtx) return;
   const now = new Date();
   const spirit = spiritFloat;
   const chance = calcChanceFromWindow();
   const ghost = getGhostForSpirit(spirit);
-  const logLine = `[${now.toLocaleTimeString()}] Spirit Pegel: ${spirit.toFixed(2)} | Chance: ${chance}% | Möglicher Geist: ${ghost}`;
-  addLogLine(logLine);
+  addLogLine(`[${now.toLocaleTimeString()}] Spirit Pegel: ${spirit.toFixed(2)} | Chance: ${chance}% | Geist: ${ghost}`);
 }, LOG_INTERVAL_MS);
 
 /* =========================
-   Canvas / Wolken-Animation
+   Canvas / Wolkenanimation
    ========================= */
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
@@ -233,7 +231,7 @@ function createParticle(layer){
   return {
     x: rand(-200,200), y: rand(-100,100), z: rand(0,400),
     vx: rand(-layer.speed, layer.speed), vy: rand(-0.02,0.02), vz: rand(-0.1,0.1),
-    scale: s, baseScale: s, alpha:0, targetAlpha: rand(0.4*layer.alpha, 0.8*layer.alpha),
+    scale: s, alpha:0, targetAlpha: rand(0.4*layer.alpha, 0.8*layer.alpha),
     rot: rand(0,Math.PI*2), rotSpeed: rand(-0.002,0.002), layer,
     life: rand(10000,20000), age:0, fadeDuration:2000
   };
@@ -244,7 +242,6 @@ img.onload = ()=>{ initParticles(); last = performance.now(); requestAnimationFr
 img.onerror = ()=>{ initParticles(); last = performance.now(); requestAnimationFrame(loop); };
 
 let last = performance.now();
-
 function project3D(x,y,z){
   const fov = 800;
   const scale = fov / (fov + z);
@@ -254,61 +251,58 @@ function project3D(x,y,z){
 function loop(ts){
   const dt = ts - last; last = ts;
   if(bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-  masterAlpha = masterAlpha * (1 - 0.06) + (Math.min(1, spiritFloat/100)) * 0.06;
+  masterAlpha = masterAlpha*(1-0.06)+(Math.min(1, spiritFloat/100))*0.06;
 
   for(const layer of LAYERS){
-    ctx.globalCompositeOperation = 'source-over';
     for(const p of particles){
-      if(p.layer !== layer) continue;
+      if(p.layer!==layer) continue;
       p.age += dt;
-      p.x += p.vx * 1.5 * (1/p.layer.depth);
-      p.y += p.vy * 1.5;
-      p.z += p.vz * 1.5;
+      p.x += p.vx*1.5*(1/p.layer.depth);
+      p.y += p.vy*1.5;
+      p.z += p.vz*1.5;
       p.rot += p.rotSpeed;
 
-      if(p.age < p.fadeDuration){
-        p.alpha = (p.age / p.fadeDuration) * p.targetAlpha;
-      } else if(p.age > p.life - p.fadeDuration){
-        p.alpha = Math.max(0, p.targetAlpha * ((p.life - p.age) / p.fadeDuration));
-      } else {
-        p.alpha = p.targetAlpha;
-      }
+      if(p.age<p.fadeDuration) p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
+      else if(p.age>p.life-p.fadeDuration)
+        p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));
+      else p.alpha=p.targetAlpha;
 
-      const alphaFinal = p.alpha * masterAlpha;
-      const proj = project3D(p.x, p.y, p.z);
-      const wP = img.width * p.scale * 0.45 * proj.scale;
-      const hP = img.height * p.scale * 0.45 * proj.scale;
+      const alphaFinal=p.alpha*masterAlpha;
+      const proj=project3D(p.x,p.y,p.z);
+      const wP=img.width*p.scale*0.45*proj.scale;
+      const hP=img.height*p.scale*0.45*proj.scale;
 
       ctx.save();
-      ctx.translate(proj.x, proj.y);
+      ctx.translate(proj.x,proj.y);
       ctx.rotate(p.rot);
-      ctx.globalAlpha = alphaFinal;
-      if(img.complete && img.naturalWidth) ctx.drawImage(img, -wP/2, -hP/2, wP, hP);
+      ctx.globalAlpha=alphaFinal;
+      if(img.complete&&img.naturalWidth) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       ctx.restore();
 
-      if(p.age > p.life){
-        const idx = particles.indexOf(p);
-        if(idx !== -1) particles[idx] = createParticle(layer);
+      if(p.age>p.life){
+        const idx=particles.indexOf(p);
+        if(idx!==-1) particles[idx]=createParticle(layer);
       }
     }
   }
 
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const maxW = canvas.width/2;
-    const maxH = canvas.height/2;
-    const ratio = Math.min(maxW/blinkImg.width, maxH/blinkImg.height);
-    const w = blinkImg.width * ratio;
-    const h = blinkImg.height * ratio;
-    const xPos = canvas.width/8;
-    const yPos = canvas.height - h - canvas.height/8;
-    ctx.drawImage(blinkImg, xPos, yPos, w, h);
+    const maxW=canvas.width/2;
+    const maxH=canvas.height/2;
+    const ratio=Math.min(maxW/blinkImg.width,maxH/blinkImg.height);
+    const w=blinkImg.width*ratio;
+    const h=blinkImg.height*ratio;
+    const xPos=canvas.width/8;
+    const yPos=canvas.height-h-canvas.height/8;
+    ctx.drawImage(blinkImg,xPos,yPos,w,h);
   }
   requestAnimationFrame(loop);
 }
 
-/* Initialstatus */
+/* Startstatus */
 addLogLine('Bereit. Drücke "Start Recording" oder "Kalibrieren" (Mikrofonzugriff erforderlich).');
 statusDiv.innerText = `Mikrofon: warten... • Gain: ${gainFactor.toFixed(3)}`;
 </script>
 </body>
-</html>
+  </html>
+  
