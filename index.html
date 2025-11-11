@@ -2,36 +2,114 @@
 <html lang="de">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
 <title>Spirit-Logger</title>
 <style>
-  html,body{height:100%;margin:0;overflow:hidden;background:#040404;}
-  #cloudCanvas{display:block;width:100vw;height:100vh;}
+  html,body{
+    height:100%;margin:0;overflow:hidden;
+    background:#040404;color:#fff;
+    font-family:sans-serif;
+    touch-action:none;
+  }
+  #cloudCanvas{
+    display:block;
+    width:100vw;
+    height:100vh;
+    position:absolute;
+    top:0;left:0;
+    z-index:0;
+  }
   .btn{
-    position:fixed;top:10px;padding:10px 16px;font-size:15px;border-radius:6px;border:none;
-    background:#222;color:#fff;cursor:pointer;z-index:11;
+    position:fixed;
+    top:10px;
+    left:10px;
+    padding:10px 16px;
+    font-size:15px;
+    border-radius:6px;
+    border:none;
+    background:#222;
+    color:#fff;
+    cursor:pointer;
+    z-index:11;
     box-shadow:0 4px 14px rgba(0,0,0,0.6);
   }
-  #recordBtn{left:10px;}
-  #calibrateBtn{left:140px;}
   #info{
-    position:fixed;top:10px;right:10px;width:380px;max-width:45vw;height:300px;overflow:auto;
-    background:rgba(0,0,0,0.66);color:#7CFF7C;font-family:monospace;font-size:13px;
-    padding:10px;border-radius:8px;z-index:11;line-height:1.3;
+    position:fixed;
+    top:10px;
+    right:10px;
+    width:35vw;
+    max-width:400px;
+    height:40vh;
+    max-height:300px;
+    overflow:auto;
+    background:rgba(0,0,0,0.66);
+    color:#7CFF7C;
+    font-family:monospace;
+    font-size:13px;
+    padding:10px;
+    border-radius:8px;
+    z-index:11;
+    line-height:1.3;
   }
   #status{
-    position:fixed;bottom:12px;left:12px;color:#ccc;font-family:monospace;font-size:13px;z-index:11;
-    background:rgba(0,0,0,0.35);padding:6px 10px;border-radius:6px;
+    position:fixed;
+    bottom:12px;
+    left:12px;
+    color:#ccc;
+    font-family:monospace;
+    font-size:13px;
+    z-index:11;
+    background:rgba(0,0,0,0.35);
+    padding:6px 10px;
+    border-radius:6px;
+  }
+  /* Vertikaler Slider */
+  #gainSlider{
+    position:fixed;
+    left:70px;
+    top:60px;
+    height:200px;
+    width:30px;
+    writing-mode: bt-lr; /* vertikal */
+    -webkit-appearance: slider-vertical;
+    appearance: slider-vertical;
+    z-index:11;
+  }
+
+  /* Mobile Anpassungen */
+  @media (orientation: landscape) {
+    #info{
+      width:45vw;
+      height:60vh;
+      font-size:12px;
+    }
+    #gainSlider{
+      left:auto;
+      right:10px;
+      top:50%;
+      transform:translateY(-50%) rotate(0deg);
+    }
+    #recordBtn{
+      top:auto;
+      bottom:10px;
+      left:10px;
+    }
+    #status{
+      bottom:10px;
+      left:auto;
+      right:10px;
+      font-size:12px;
+    }
   }
 </style>
 </head>
 <body>
 
 <button id="recordBtn" class="btn">Start Recording</button>
-<button id="calibrateBtn" class="btn">Kalibrieren</button>
+<input id="gainSlider" type="range" min="0.2" max="3" value="1" step="0.01" orient="vertical">
 <div id="info">Lade List.txt…</div>
 <canvas id="cloudCanvas"></canvas>
-<div id="status">Mikrofon: warten... • Gain: –</div>
+<div id="status">Mikrofon: warten... • Gain: 1.00</div>
 
 <script>
 /* =========================
@@ -45,7 +123,7 @@ const LIST_FILENAME = 'List.txt';
 const infoDiv = document.getElementById('info');
 const statusDiv = document.getElementById('status');
 const recordBtn = document.getElementById('recordBtn');
-const calibrateBtn = document.getElementById('calibrateBtn');
+const gainSlider = document.getElementById('gainSlider');
 const canvas = document.getElementById('cloudCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -98,7 +176,7 @@ async function initMic(){
   try {
     const stream = await navigator.mediaDevices.getUserMedia({audio:true});
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    await audioCtx.resume(); // sehr wichtig!
+    await audioCtx.resume();
     micSource = audioCtx.createMediaStreamSource(stream);
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 1024;
@@ -119,31 +197,17 @@ function getCurrentLevel(){
   return rms * gainFactor;
 }
 
-/* Kalibrierung: lautester Wert = 0.5 */
-async function doCalibrate(){
-  if(!audioCtx) await initMic();
-  addLogLine('Kalibrierung läuft (2 s)... bitte lauter reden oder Geräusch machen.');
-  const samples = [];
-  const start = performance.now();
-  while(performance.now() - start < 2000){
-    samples.push(getCurrentLevel()/gainFactor);
-    await new Promise(r=>setTimeout(r,50));
-  }
-  const maxVal = Math.max(...samples);
-  if(maxVal > 0){
-    gainFactor = 0.5 / maxVal;
-    addLogLine(`Kalibriert: Gain = ${gainFactor.toFixed(3)} (max=${maxVal.toFixed(4)})`);
-    statusDiv.innerText = `Mikrofon: bereit • Gain: ${gainFactor.toFixed(3)}`;
-  } else {
-    addLogLine('Kein Signal erkannt! Versuche lauter zu sein.');
-  }
-}
+/* Slider Gain Control */
+gainSlider.addEventListener('input', ()=>{
+  gainFactor = parseFloat(gainSlider.value);
+  statusDiv.innerText = `Mikrofon: bereit • Gain: ${gainFactor.toFixed(2)}`;
+});
 
 /* Pegelerfassung */
 function updateAudio(){
   const level = getCurrentLevel();
   smoothedLevel = smoothedLevel*(1-SMOOTH_ALPHA) + level*SMOOTH_ALPHA;
-  spiritFloat = Math.min(100, smoothedLevel * 200); // RMS in 0–100
+  spiritFloat = Math.min(100, smoothedLevel * 200);
   masterAlpha = Math.min(1, spiritFloat / 100);
   windowValues.push(spiritFloat);
   if(windowValues.length > STABILITY_WINDOW) windowValues.shift();
@@ -182,7 +246,6 @@ recordBtn.addEventListener('click', async ()=>{
     addLogLine('Recording gestoppt & gespeichert.');
   }
 });
-calibrateBtn.addEventListener('click', doCalibrate);
 
 /* Logging */
 setInterval(()=>{
@@ -195,7 +258,7 @@ setInterval(()=>{
 }, LOG_INTERVAL_MS);
 
 /* =========================
-   Canvas / Wolkenanimation
+   Canvas / Animation
    ========================= */
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
@@ -261,31 +324,26 @@ function loop(ts){
       p.y += p.vy*1.5;
       p.z += p.vz*1.5;
       p.rot += p.rotSpeed;
-
       if(p.age<p.fadeDuration) p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
       else if(p.age>p.life-p.fadeDuration)
         p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));
       else p.alpha=p.targetAlpha;
-
       const alphaFinal=p.alpha*masterAlpha;
       const proj=project3D(p.x,p.y,p.z);
       const wP=img.width*p.scale*0.45*proj.scale;
       const hP=img.height*p.scale*0.45*proj.scale;
-
       ctx.save();
       ctx.translate(proj.x,proj.y);
       ctx.rotate(p.rot);
       ctx.globalAlpha=alphaFinal;
       if(img.complete&&img.naturalWidth) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       ctx.restore();
-
       if(p.age>p.life){
         const idx=particles.indexOf(p);
         if(idx!==-1) particles[idx]=createParticle(layer);
       }
     }
   }
-
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
     const maxW=canvas.width/2;
     const maxH=canvas.height/2;
@@ -298,10 +356,8 @@ function loop(ts){
   }
   requestAnimationFrame(loop);
 }
-
-/* Startstatus */
-addLogLine('Bereit. Drücke "Start Recording" oder "Kalibrieren" (Mikrofonzugriff erforderlich).');
-statusDiv.innerText = `Mikrofon: warten... • Gain: ${gainFactor.toFixed(3)}`;
+addLogLine('Bereit. Drücke "Start Recording" und nutze den Slider, um den Pegel anzupassen.');
+statusDiv.innerText = `Mikrofon: warten... • Gain: ${gainFactor.toFixed(2)}`;
 </script>
 </body>
   </html>
