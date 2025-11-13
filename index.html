@@ -5,75 +5,75 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
 <title>Spirit-Logger</title>
 <style>
- html, body {
-   height: 100%;
-   margin: 0;
-   overflow: hidden;
-   background: #040404;
- }
- #cloudCanvas {
-   display: block;
-   width: 100vw;
-   height: 100vh;
- }
- .btn {
-   position: fixed;
-   top: 10px;
-   padding: 10px 16px;
-   font-size: 15px;
-   border-radius: 6px;
-   border: none;
-   background: #222;
-   color: #fff;
-   cursor: pointer;
-   z-index: 11;
-   box-shadow: 0 4px 14px rgba(0,0,0,0.6);
- }
- #recordBtn { left: 10px; }
- #gainSliderContainer {
-   position: fixed;
-   top: 50%;
-   left: 10px;
-   transform: translateY(-50%) rotate(-90deg);
-   height: 30px;
-   width: 150px;
-   z-index: 11;
- }
- #gainSlider { width: 150px; accent-color: #7CFF7C; }
- #info {
-   position: fixed;
-   top: 10px;
-   right: 10px;
-   width: 380px;
-   max-width: 45vw;
-   height: 300px;
-   overflow: auto;
-   background: rgba(0,0,0,0.66);
-   color: #7CFF7C;
-   font-family: monospace;
-   font-size: 13px;
-   padding: 10px;
-   border-radius: 8px;
-   z-index: 11;
-   line-height: 1.3;
- }
- #status {
-   position: fixed;
-   bottom: 12px;
-   left: 12px;
-   color: #ccc;
-   font-family: monospace;
-   font-size: 13px;
-   z-index: 11;
-   background: rgba(0,0,0,0.35);
-   padding: 6px 10px;
-   border-radius: 6px;
- }
- @media (orientation: landscape) and (max-height: 500px) {
-   #info { top: auto; bottom: 10px; width: 45vw; height: 40vh; font-size: 12px; }
-   #recordBtn { top: 10px; left: 10px; }
-   #gainSliderContainer { top: 50%; left: 60px; transform: translateY(-50%) rotate(-90deg); }
- }
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: #040404;
+  }
+  #cloudCanvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+  .btn {
+    position: fixed;
+    top: 10px;
+    padding: 10px 16px;
+    font-size: 15px;
+    border-radius: 6px;
+    border: none;
+    background: #222;
+    color: #fff;
+    cursor: pointer;
+    z-index: 11;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+  }
+  #recordBtn { left: 10px; }
+  #gainSliderContainer {
+    position: fixed;
+    top: 50%;
+    left: 10px;
+    transform: translateY(-50%) rotate(-90deg);
+    height: 30px;
+    width: 150px;
+    z-index: 11;
+  }
+  #gainSlider { width: 150px; accent-color: #7CFF7C; }
+  #info {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    width: 380px;
+    max-width: 45vw;
+    height: 300px;
+    overflow: auto;
+    background: rgba(0,0,0,0.66);
+    color: #7CFF7C;
+    font-family: monospace;
+    font-size: 13px;
+    padding: 10px;
+    border-radius: 8px;
+    z-index: 11;
+    line-height: 1.3;
+  }
+  #status {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    color: #ccc;
+    font-family: monospace;
+    font-size: 13px;
+    z-index: 11;
+    background: rgba(0,0,0,0.35);
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+  @media (orientation: landscape) and (max-height: 500px) {
+    #info { top: auto; bottom: 10px; width: 45vw; height: 40vh; font-size: 12px; }
+    #recordBtn { top: 10px; left: 10px; }
+    #gainSliderContainer { top: 50%; left: 60px; transform: translateY(-50%) rotate(-90deg); }
+  }
 </style>
 </head>
 <body>
@@ -89,7 +89,7 @@
 <script>
 /* =========================
    Config / Globals
-   ========================== */
+   ========================= */
 const LOG_INTERVAL_MS = 5000;
 const STABILITY_WINDOW = 6;
 const SMOOTH_ALPHA = 0.12;
@@ -120,7 +120,7 @@ function saveTxtFile(filename='spirit_log.txt'){
 
 /* =========================
    Liste (Geistertexte)
-   ========================== */
+   ========================= */
 let ghostLines = [];
 fetch(LIST_FILENAME)
   .then(r => r.ok ? r.text() : Promise.reject('List.txt nicht gefunden'))
@@ -136,7 +136,7 @@ fetch(LIST_FILENAME)
 
 /* =========================
    Mikrofon & Audioanalyse
-   ========================== */
+   ========================= */
 let audioCtx, analyser, micSource, dataArray;
 let gainFactor = 1.0;
 let smoothedLevel = 0;
@@ -216,7 +216,7 @@ recordBtn.addEventListener('click', ()=>{
 
 /* =========================
    Canvas / Wolkenanimation + Orb
-   ========================== */
+   ========================= */
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
 const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
@@ -266,10 +266,9 @@ function project3D(x,y,z){
 }
 
 /* =========================
-   Orb-Logik angepasst
-   ========================== */
+   Orb-Logik mit Fade In/Out
+   ========================= */
 function lerp(a,b,t){ return a + (b - a)*t; }
-
 let orb = {
   x: canvas.width/2, y: canvas.height/2,
   targetX: canvas.width/2, targetY: canvas.height/2,
@@ -287,12 +286,11 @@ let orb = {
   noiseSpeedY:0.015 + Math.random()*0.02,
   noiseOffsetX:Math.random()*1000,
   noiseOffsetY:Math.random()*1000,
-  fadeAlpha:0,
-  fadeTarget:0,
+  fadeAlpha:1,
+  fadeTarget:1,
   fadeSpeed:0.1
 };
-
-let orbActive = false; // Flag für einen Orb
+const MAX_TRAIL = 30;
 
 function idleAnimation(){
   orb.radius = orb.baseRadius + Math.sin(Date.now()*0.005)*5;
@@ -322,8 +320,9 @@ function movementAnimation(){
 function drawOrb(){
   if(orb.fadeAlpha < 0.01) return;
 
+  // Trail
   orb.trail.push({x:orb.x, y:orb.y, radius:orb.radius, alpha:orb.fadeAlpha});
-  if(orb.trail.length > 30) orb.trail.shift();
+  if(orb.trail.length > MAX_TRAIL) orb.trail.shift();
   for(let i=0;i<orb.trail.length;i++){
     let t = i / orb.trail.length;
     let trailOrb = orb.trail[i];
@@ -337,6 +336,7 @@ function drawOrb(){
     ctx.fill();
   }
 
+  // Orb Glow
   let pulse = Math.sin(Date.now()*0.02)*0.2;
   let alphaGlow = (orb.glow + pulse) * orb.fadeAlpha;
   if(alphaGlow < 0.01) return;
@@ -350,23 +350,44 @@ function drawOrb(){
   ctx.fill();
 }
 
-// Angepasste Orb Fade-Logik
-function updateOrbFade(){
-  if(spiritFloat >= 30 && spiritFloat <= 50){
-    if(!orbActive){
-      orb.fadeTarget = 1;
-      orbActive = true;
+function maybeSwitchMode(){
+  if(Math.random()<0.004){
+    if(orb.mode==='idle'){
+      orb.mode='movement';
+      orb.targetMovementType = Math.random()<0.5?'circle':'figure8';
+      orb.movementType = orb.targetMovementType;
+      orb.radiusTarget = 30 + Math.random()*20;
+      orb.targetAngleSpeed = 0.05 + Math.random()*0.08;
+      orb.targetAmplitude = 150 + Math.random()*100;
+      orb.targetDirection = Math.random()<0.5?1:-1;
+      orb.time = 0;
+    } else {
+      orb.mode='idle';
+      orb.targetAngleSpeed=0;
+      orb.targetAmplitude=0;
     }
-  } else {
-    orb.fadeTarget = 0;
-    orbActive = false;
   }
-  orb.fadeAlpha = lerp(orb.fadeAlpha, orb.fadeTarget, orb.fadeSpeed);
+}
+
+let orbActive = false;
+
+function updateOrbFade() {
+    // Alte zufällige Fade-Logik entfernen
+    if(spiritFloat >= 30 && spiritFloat <= 50){
+        if(!orbActive){
+            orb.fadeTarget = 1; // Orb erscheint
+            orbActive = true;
+        }
+    } else {
+        orb.fadeTarget = 0; // Orb verschwindet
+        orbActive = false;
+    }
+    orb.fadeAlpha = lerp(orb.fadeAlpha, orb.fadeTarget, orb.fadeSpeed);
 }
 
 /* =========================
    Main Loop
-   ========================== */
+   ========================= */
 function loop(ts){
   const dt = ts-last; last=ts;
   if(bg.complete && bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
@@ -385,29 +406,58 @@ function loop(ts){
       else p.alpha=p.targetAlpha;
       const alphaFinal=p.alpha*masterAlpha;
       const proj=project3D(p.x,p.y,p.z);
-      const wP=img.width*p.scale;
-      const hP=img.height*p.scale;
+      const wP=img.width*p.scale*0.45*proj.scale;
+      const hP=img.height*p.scale*0.45*proj.scale;
       ctx.save();
-      ctx.globalAlpha=alphaFinal;
       ctx.translate(proj.x,proj.y);
       ctx.rotate(p.rot);
-      ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
+      ctx.globalAlpha=alphaFinal;
+      if(img.complete&&img.naturalWidth) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       ctx.restore();
+      if(p.age>p.life){
+        const idx=particles.indexOf(p);
+        if(idx!==-1) particles[idx]=createParticle(layer);
+      }
     }
   }
 
-  idleAnimation();
-  movementAnimation();
+  if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
+    const maxW=canvas.width/2; const maxH=canvas.height/2;
+    const ratio=Math.min(maxW/blinkImg.width,maxH/blinkImg.height);
+    const w=blinkImg.width*ratio; const h=blinkImg.height*ratio;
+    const xPos=canvas.width/8; const yPos=canvas.height-h-canvas.height/8;
+    ctx.drawImage(blinkImg,xPos,yPos,w,h);
+  }
+
+  maybeSwitchMode();
   updateOrbFade();
+  if(orb.mode==='idle') idleAnimation();
+  else movementAnimation();
+  orb.noiseOffsetX += orb.noiseSpeedX;
+  orb.noiseOffsetY += orb.noiseSpeedY;
+  orb.noiseX = Math.sin(orb.noiseOffsetX)*5;
+  orb.noiseY = Math.sin(orb.noiseOffsetY)*5;
+  orb.x = lerp(orb.x, orb.targetX + orb.noiseX, 0.08);
+  orb.y = lerp(orb.y, orb.targetY + orb.noiseY, 0.08);
   drawOrb();
 
   requestAnimationFrame(loop);
 }
 
-initMic();
-initParticles();
-loop(performance.now());
-</script>
+window.addEventListener('load', ()=>{
+  initParticles();
+  requestAnimationFrame(loop);
+  initMic();
+  addLogLine('Auto-Start aktiv: Wolken & Mikrofon laufen.');
+  statusDiv.innerText = `Mikrofon: initialisiert • Gain: ${gainFactor.toFixed(2)}`;
+});
 
+window.addEventListener('resize', ()=>{
+  resizeCanvas();
+  orb.centerX = canvas.width/2;
+  orb.centerY = canvas.height/2;
+});
+</script>
 </body>
-</html>
+ </html>
+ 
