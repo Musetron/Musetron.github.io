@@ -76,52 +76,49 @@
   }
 
   /* ==== Automatische Skalierung für kleine Bildschirme ==== */
-  body {
-    transform-origin: top left;
-  }
+/* ==== Skalierung für kleine Bildschirme ==== */
+#wrapper {
+  transform-origin: top left;
+  width: 100%;
+  height: 100%;
+}
 
-  @media (max-width: 800px) {
-    body {
-      transform: scale(0.8);
-      width: 125%;
-      height: 125%;
-    }
+@media (max-width: 800px) {
+  #wrapper {
+    transform: scale(0.8);
   }
+}
 
-  @media (max-width: 600px) {
-    body {
-      transform: scale(0.7);
-      width: 143%;
-      height: 143%;
-    }
+@media (max-width: 600px) {
+  #wrapper {
+    transform: scale(0.7);
   }
+}
 
-  @media (max-width: 450px) {
-    body {
-      transform: scale(0.6);
-      width: 166%;
-      height: 166%;
-    }
+@media (max-width: 450px) {
+  #wrapper {
+    transform: scale(0.6);
   }
+}
 
-  @media (max-width: 350px) {
-    body {
-      transform: scale(0.5);
-      width: 200%;
-      height: 200%;
-    }
+@media (max-width: 350px) {
+  #wrapper {
+    transform: scale(0.5);
   }
+}
 </style>
 </head>
 <body>
-
-<button id="recordBtn" class="btn">Save Log</button>
-<div id="gainSliderContainer">
-  <input type="range" id="gainSlider" min="0.1" max="5.0" step="0.05" value="1" />
-</div>
-<div id="info">Lade List.txt…</div>
-<canvas id="cloudCanvas"></canvas>
-<div id="status">Initialisiere…</div>
+  <div id="wrapper">
+    <button id="recordBtn" class="btn">Save Log</button>
+    <div id="gainSliderContainer">
+      <input type="range" id="gainSlider" min="0.1" max="5.0" step="0.05" value="1" />
+    </div>
+    <div id="info">Lade List.txt…</div>
+    <canvas id="cloudCanvas"></canvas>
+    <div id="status">Initialisiere…</div>
+  </div>
+</body>
 
 <script>
 /* =========================
@@ -487,4 +484,4 @@ window.addEventListener('resize', ()=>{
 });
 </script>
 </body>
-    </html>
+  </html>
