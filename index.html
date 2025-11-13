@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-<title>Spirit-Logger</title>
+<title>Spirit-Logger mit Orb</title>
 <style>
   html, body {
     height: 100%;
@@ -29,10 +29,7 @@
     z-index: 11;
     box-shadow: 0 4px 14px rgba(0,0,0,0.6);
   }
-  #recordBtn {
-    left: 10px;
-  }
-  /* Vertikaler Gain-Slider */
+  #recordBtn { left: 10px; }
   #gainSliderContainer {
     position: fixed;
     top: 50%;
@@ -42,10 +39,7 @@
     width: 150px;
     z-index: 11;
   }
-  #gainSlider {
-    width: 150px;
-    accent-color: #7CFF7C;
-  }
+  #gainSlider { width: 150px; accent-color: #7CFF7C; }
   #info {
     position: fixed;
     top: 10px;
@@ -75,26 +69,10 @@
     padding: 6px 10px;
     border-radius: 6px;
   }
-
-  /* Mobile Optimierung im Querformat */
   @media (orientation: landscape) and (max-height: 500px) {
-    #info {
-      top: auto;
-      bottom: 10px;
-      right: 10px;
-      width: 45vw;
-      height: 40vh;
-      font-size: 12px;
-    }
-    #recordBtn {
-      top: 10px;
-      left: 10px;
-    }
-    #gainSliderContainer {
-      top: 50%;
-      left: 60px;
-      transform: translateY(-50%) rotate(-90deg);
-    }
+    #info { top: auto; bottom: 10px; width: 45vw; height: 40vh; font-size: 12px; }
+    #recordBtn { top: 10px; left: 10px; }
+    #gainSliderContainer { top: 50%; left: 60px; transform: translateY(-50%) rotate(-90deg); }
   }
 </style>
 </head>
@@ -192,17 +170,15 @@ function getCurrentLevel(){
   return rms * gainFactor;
 }
 
-/* Gain-Slider */
 gainSlider.addEventListener('input', e => {
   gainFactor = parseFloat(e.target.value);
   statusDiv.innerText = `Mikrofon: aktiv • Gain: ${gainFactor.toFixed(2)}`;
 });
 
-/* Pegelerfassung */
 function updateAudio(){
   const level = getCurrentLevel();
   smoothedLevel = smoothedLevel*(1-SMOOTH_ALPHA) + level*SMOOTH_ALPHA;
-  spiritFloat = Math.min(100, smoothedLevel * 600); // Verstärkung *6x!
+  spiritFloat = Math.min(100, smoothedLevel * 600);
   masterAlpha = Math.min(1, spiritFloat / 100);
   windowValues.push(spiritFloat);
   if(windowValues.length > STABILITY_WINDOW) windowValues.shift();
@@ -224,7 +200,6 @@ function getGhostForSpirit(spirit){
   return ghostLines[idx];
 }
 
-/* Logging */
 setInterval(()=>{
   if(!audioCtx) return;
   const now = new Date();
@@ -240,7 +215,7 @@ recordBtn.addEventListener('click', ()=>{
 });
 
 /* =========================
-   Canvas / Wolkenanimation
+   Canvas / Wolkenanimation + Orb
    ========================= */
 const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
 const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
@@ -290,37 +265,146 @@ function project3D(x,y,z){
   return { x: canvas.width/2 + x*scale, y: canvas.height/2 + y*scale, scale: scale };
 }
 
+/* =========================
+   Orb-Logik mit Fade In/Out
+   ========================= */
+function lerp(a,b,t){ return a + (b - a)*t; }
+let orb = {
+  x: canvas.width/2, y: canvas.height/2,
+  targetX: canvas.width/2, targetY: canvas.height/2,
+  baseRadius: 35, radius:35, glow:0.7,
+  mode:'idle', movementType:'circle', targetMovementType:'circle',
+  angle:0, angleSpeed:0, targetAngleSpeed:0,
+  radiusTarget:35, radiusSpeed:0.02,
+  centerX: canvas.width/2, centerY: canvas.height/2,
+  amplitude:0, targetAmplitude:200,
+  direction:1, targetDirection:1, time:0,
+  idleOffset:Math.random()*1000,
+  trail:[],
+  noiseX:0, noiseY:0,
+  noiseSpeedX:0.02 + Math.random()*0.02,
+  noiseSpeedY:0.015 + Math.random()*0.02,
+  noiseOffsetX:Math.random()*1000,
+  noiseOffsetY:Math.random()*1000,
+  fadeAlpha:1,
+  fadeTarget:1,
+  fadeSpeed:0.1
+};
+const MAX_TRAIL = 30;
+
+function idleAnimation(){
+  orb.radius = orb.baseRadius + Math.sin(Date.now()*0.005)*5;
+  orb.glow = 0.7 + Math.random()*0.3;
+  orb.idleOffset += 0.01;
+  orb.targetX = orb.centerX + Math.sin(orb.idleOffset)*10;
+  orb.targetY = orb.centerY + Math.cos(orb.idleOffset*1.2)*10;
+}
+function movementAnimation(){
+  orb.angleSpeed = lerp(orb.angleSpeed, orb.targetAngleSpeed, 0.02);
+  orb.amplitude = lerp(orb.amplitude, orb.targetAmplitude, 0.02);
+  orb.direction = lerp(orb.direction, orb.targetDirection, 0.02);
+  orb.radius = lerp(orb.radius, orb.radiusTarget, 0.02);
+  orb.time += orb.angleSpeed;
+  let ampX = orb.amplitude*(0.8 + Math.sin(orb.time*0.3)*0.2);
+  let ampY = orb.amplitude*(0.8 + Math.cos(orb.time*0.3)*0.2);
+  if(orb.movementType==='circle'){
+    orb.targetX = orb.centerX + Math.cos(orb.time*2*orb.direction)*ampX;
+    orb.targetY = orb.centerY + Math.sin(orb.time*2*orb.direction)*ampY;
+  } else {
+    orb.targetX = orb.centerX + Math.sin(orb.time*3*orb.direction)*ampX;
+    orb.targetY = orb.centerY + Math.sin(orb.time*2*orb.direction)*ampY;
+  }
+  orb.glow = 0.7 + Math.random()*0.2;
+}
+
+function drawOrb(){
+  if(orb.fadeAlpha < 0.01) return;
+
+  // Trail
+  orb.trail.push({x:orb.x, y:orb.y, radius:orb.radius, alpha:orb.fadeAlpha});
+  if(orb.trail.length > MAX_TRAIL) orb.trail.shift();
+  for(let i=0;i<orb.trail.length;i++){
+    let t = i / orb.trail.length;
+    let trailOrb = orb.trail[i];
+    let gradient = ctx.createRadialGradient(trailOrb.x, trailOrb.y, 0, trailOrb.x, trailOrb.y, trailOrb.radius);
+    gradient.addColorStop(0, `rgba(255,255,255,${0.3*t*trailOrb.alpha})`);
+    gradient.addColorStop(0.5, `rgba(255,255,255,${0.05*t*trailOrb.alpha})`);
+    gradient.addColorStop(1, `rgba(255,255,255,0)`);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(trailOrb.x, trailOrb.y, trailOrb.radius, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Orb Glow
+  let pulse = Math.sin(Date.now()*0.02)*0.2;
+  let alphaGlow = (orb.glow + pulse) * orb.fadeAlpha;
+  if(alphaGlow < 0.01) return;
+  let gradient = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.radius);
+  gradient.addColorStop(0, `rgba(255,255,255,${alphaGlow})`);
+  gradient.addColorStop(0.5, `rgba(255,255,255,${0.2*orb.fadeAlpha})`);
+  gradient.addColorStop(1, `rgba(255,255,255,0)`);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function maybeSwitchMode(){
+  if(Math.random()<0.004){
+    if(orb.mode==='idle'){
+      orb.mode='movement';
+      orb.targetMovementType = Math.random()<0.5?'circle':'figure8';
+      orb.movementType = orb.targetMovementType;
+      orb.radiusTarget = 30 + Math.random()*20;
+      orb.targetAngleSpeed = 0.05 + Math.random()*0.08;
+      orb.targetAmplitude = 150 + Math.random()*100;
+      orb.targetDirection = Math.random()<0.5?1:-1;
+      orb.time = 0;
+    } else {
+      orb.mode='idle';
+      orb.targetAngleSpeed=0;
+      orb.targetAmplitude=0;
+    }
+  }
+}
+
+// Orb Fade-In/Out
+function updateOrbFade(){
+  if(Math.random()<0.002 && orb.fadeTarget===1) orb.fadeTarget=0;
+  else if(Math.random()<0.002 && orb.fadeTarget===0) orb.fadeTarget=1;
+  orb.fadeAlpha = lerp(orb.fadeAlpha, orb.fadeTarget, orb.fadeSpeed);
+}
+
+/* =========================
+   Main Loop
+   ========================= */
 function loop(ts){
-  const dt = ts - last; last = ts;
-  if(bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-  masterAlpha = masterAlpha*(1-0.06)+(Math.min(1, spiritFloat/100))*0.06;
+  const dt = ts-last; last=ts;
+  if(bg.complete && bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
+  masterAlpha = masterAlpha*(1-0.06)+(Math.min(1,spiritFloat/100))*0.06;
 
   for(const layer of LAYERS){
     for(const p of particles){
       if(p.layer!==layer) continue;
-      p.age += dt;
-      p.x += p.vx*1.5*(1/p.layer.depth);
-      p.y += p.vy*1.5;
-      p.z += p.vz*1.5;
-      p.rot += p.rotSpeed;
-
+      p.age+=dt;
+      p.x+=p.vx*1.5*(1/p.layer.depth);
+      p.y+=p.vy*1.5;
+      p.z+=p.vz*1.5;
+      p.rot+=p.rotSpeed;
       if(p.age<p.fadeDuration) p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
-      else if(p.age>p.life-p.fadeDuration)
-        p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));
+      else if(p.age>p.life-p.fadeDuration) p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));
       else p.alpha=p.targetAlpha;
-
       const alphaFinal=p.alpha*masterAlpha;
       const proj=project3D(p.x,p.y,p.z);
       const wP=img.width*p.scale*0.45*proj.scale;
       const hP=img.height*p.scale*0.45*proj.scale;
-
       ctx.save();
       ctx.translate(proj.x,proj.y);
       ctx.rotate(p.rot);
       ctx.globalAlpha=alphaFinal;
       if(img.complete&&img.naturalWidth) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
       ctx.restore();
-
       if(p.age>p.life){
         const idx=particles.indexOf(p);
         if(idx!==-1) particles[idx]=createParticle(layer);
@@ -329,19 +413,28 @@ function loop(ts){
   }
 
   if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const maxW=canvas.width/2;
-    const maxH=canvas.height/2;
+    const maxW=canvas.width/2; const maxH=canvas.height/2;
     const ratio=Math.min(maxW/blinkImg.width,maxH/blinkImg.height);
-    const w=blinkImg.width*ratio;
-    const h=blinkImg.height*ratio;
-    const xPos=canvas.width/8;
-    const yPos=canvas.height-h-canvas.height/8;
+    const w=blinkImg.width*ratio; const h=blinkImg.height*ratio;
+    const xPos=canvas.width/8; const yPos=canvas.height-h-canvas.height/8;
     ctx.drawImage(blinkImg,xPos,yPos,w,h);
   }
+
+  maybeSwitchMode();
+  updateOrbFade();
+  if(orb.mode==='idle') idleAnimation();
+  else movementAnimation();
+  orb.noiseOffsetX += orb.noiseSpeedX;
+  orb.noiseOffsetY += orb.noiseSpeedY;
+  orb.noiseX = Math.sin(orb.noiseOffsetX)*5;
+  orb.noiseY = Math.sin(orb.noiseOffsetY)*5;
+  orb.x = lerp(orb.x, orb.targetX + orb.noiseX, 0.08);
+  orb.y = lerp(orb.y, orb.targetY + orb.noiseY, 0.08);
+  drawOrb();
+
   requestAnimationFrame(loop);
 }
 
-/* Starte sofort */
 window.addEventListener('load', ()=>{
   initParticles();
   requestAnimationFrame(loop);
@@ -349,7 +442,12 @@ window.addEventListener('load', ()=>{
   addLogLine('Auto-Start aktiv: Wolken & Mikrofon laufen.');
   statusDiv.innerText = `Mikrofon: initialisiert • Gain: ${gainFactor.toFixed(2)}`;
 });
+
+window.addEventListener('resize', ()=>{
+  resizeCanvas();
+  orb.centerX = canvas.width/2;
+  orb.centerY = canvas.height/2;
+});
 </script>
 </body>
-  </html>
-  
+</html>
