@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Live-Mikrofon-Rauschen</title>
+<title>Live 2D-Mikrofon-Rauschen</title>
 <style>
   body { margin: 0; background: black; overflow: hidden; }
   canvas { display: block; image-rendering: pixelated; }
@@ -14,22 +14,24 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-// Canvas-Größe (Pixelbild klein, wird gestreckt)
-const imgWidth = 128;
-const imgHeight = 128;
+// Canvas-Größe (klein für pixeligen Look)
+const imgWidth = 64;
+const imgHeight = 64;
 canvas.width = imgWidth;
 canvas.height = imgHeight;
-
-// Canvas später skalieren auf Bildschirmgröße
 canvas.style.width = window.innerWidth + "px";
 canvas.style.height = window.innerHeight + "px";
+
+// Stabilisierung: gleitender Mittelwert über Frames
+const alpha = 0.2; // 0=no smoothing, 1=stabil aber träge
+let stabilizedData = new Float32Array(imgWidth * imgHeight);
 
 navigator.mediaDevices.getUserMedia({ audio: true })
 .then(stream => {
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(stream);
   const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 256; // kleine FFT = mehr Samples = mehr Pixel
+  analyser.fftSize = imgWidth * imgHeight * 2; // genug Samples für 2D
   source.connect(analyser);
 
   const bufferLength = analyser.frequencyBinCount;
@@ -38,20 +40,25 @@ navigator.mediaDevices.getUserMedia({ audio: true })
   function draw() {
     requestAnimationFrame(draw);
 
-    // Mikrofon-TimeDomain (Rohsamples)
+    // Rohsamples abrufen
     analyser.getByteTimeDomainData(dataArray);
 
-    // Pixelbild vorbereiten
-    const imgData = ctx.createImageData(imgWidth, imgHeight);
-    for (let i = 0; i < imgData.data.length / 4; i++) {
-      const val = dataArray[i % bufferLength]; // 0..255
-      imgData.data[i * 4 + 0] = val; // R
-      imgData.data[i * 4 + 1] = val; // G
-      imgData.data[i * 4 + 2] = val; // B
-      imgData.data[i * 4 + 3] = 255; // Alpha
+    // In 2D-Matrix gießen + normalisieren
+    for (let i = 0; i < stabilizedData.length; i++) {
+      const val = dataArray[i % bufferLength] / 255; // 0..1
+      stabilizedData[i] = stabilizedData[i] * (1 - alpha) + val * alpha; // gleitender Mittelwert
     }
 
-    // Pixelbild anzeigen
+    // Bild erzeugen
+    const imgData = ctx.createImageData(imgWidth, imgHeight);
+    for (let i = 0; i < stabilizedData.length; i++) {
+      const color = Math.floor(stabilizedData[i] * 255);
+      imgData.data[i * 4 + 0] = color;
+      imgData.data[i * 4 + 1] = color;
+      imgData.data[i * 4 + 2] = color;
+      imgData.data[i * 4 + 3] = 255;
+    }
+
     ctx.putImageData(imgData, 0, 0);
   }
 
