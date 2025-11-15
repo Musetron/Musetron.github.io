@@ -2,9 +2,9 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Live-Mikrofon-Feed</title>
+<title>Live-Mikrofon-Sterne</title>
 <style>
-  body { margin: 0; background: black; }
+  body { margin: 0; background: black; overflow: hidden; }
   canvas { display: block; }
 </style>
 </head>
@@ -17,14 +17,28 @@ const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
+// Anzahl der Sterne
+const numStars = 500;
+
+// Sterne-Objekte
+const stars = [];
+for (let i = 0; i < numStars; i++) {
+  stars.push({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    baseBrightness: Math.random() * 0.5 + 0.2, // Grundhelligkeit
+    brightness: 0
+  });
+}
+
+// Mikrofonzugriff
 navigator.mediaDevices.getUserMedia({ audio: true })
 .then(stream => {
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(stream);
   const analyser = audioCtx.createAnalyser();
-
+  analyser.fftSize = 512;  // gröber = stabiler
   source.connect(analyser);
-  analyser.fftSize = 1024;
 
   const bufferLength = analyser.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
@@ -37,19 +51,21 @@ navigator.mediaDevices.getUserMedia({ audio: true })
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const squareSize = Math.floor(Math.sqrt(bufferLength));
-    let idx = 0;
-
-    for (let y = 0; y < squareSize; y++) {
-      for (let x = 0; x < squareSize; x++) {
-        if (idx >= bufferLength) break;
-        const brightness = dataArray[idx] / 255; // 0-1
-        const color = Math.floor(brightness * 255);
-        ctx.fillStyle = `rgb(${color},${color},${color})`;
-        ctx.fillRect(x * 4, y * 4, 4, 4); // Pixelgröße 4x4
-        idx++;
-      }
+    // Durchschnittliche Lautstärke berechnen
+    let sum = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      sum += Math.abs(dataArray[i] - 128); // Audio-Center = 128
     }
+    const avg = sum / bufferLength / 128; // 0..1
+
+    // Sterne zeichnen
+    stars.forEach(star => {
+      // Helligkeit: Grundhelligkeit + kleine Veränderung durch Audio
+      star.brightness = Math.min(1, star.baseBrightness + avg * 0.5);
+      const color = Math.floor(star.brightness * 255);
+      ctx.fillStyle = `rgb(${color},${color},${color})`;
+      ctx.fillRect(star.x, star.y, 2, 2); // kleine Pixel = Stern
+    });
   }
 
   draw();
