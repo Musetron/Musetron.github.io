@@ -2,10 +2,10 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Live-Mikrofon-Sterne</title>
+<title>Live-Mikrofon-Rauschen</title>
 <style>
   body { margin: 0; background: black; overflow: hidden; }
-  canvas { display: block; }
+  canvas { display: block; image-rendering: pixelated; }
 </style>
 </head>
 <body>
@@ -14,30 +14,22 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+// Canvas-Größe (Pixelbild klein, wird gestreckt)
+const imgWidth = 128;
+const imgHeight = 128;
+canvas.width = imgWidth;
+canvas.height = imgHeight;
 
-// Anzahl der Sterne
-const numStars = 500;
+// Canvas später skalieren auf Bildschirmgröße
+canvas.style.width = window.innerWidth + "px";
+canvas.style.height = window.innerHeight + "px";
 
-// Sterne-Objekte
-const stars = [];
-for (let i = 0; i < numStars; i++) {
-  stars.push({
-    x: Math.random() * canvas.width,
-    y: Math.random() * canvas.height,
-    baseBrightness: Math.random() * 0.5 + 0.2, // Grundhelligkeit
-    brightness: 0
-  });
-}
-
-// Mikrofonzugriff
 navigator.mediaDevices.getUserMedia({ audio: true })
 .then(stream => {
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(stream);
   const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 512;  // gröber = stabiler
+  analyser.fftSize = 256; // kleine FFT = mehr Samples = mehr Pixel
   source.connect(analyser);
 
   const bufferLength = analyser.frequencyBinCount;
@@ -46,26 +38,21 @@ navigator.mediaDevices.getUserMedia({ audio: true })
   function draw() {
     requestAnimationFrame(draw);
 
+    // Mikrofon-TimeDomain (Rohsamples)
     analyser.getByteTimeDomainData(dataArray);
 
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Durchschnittliche Lautstärke berechnen
-    let sum = 0;
-    for (let i = 0; i < bufferLength; i++) {
-      sum += Math.abs(dataArray[i] - 128); // Audio-Center = 128
+    // Pixelbild vorbereiten
+    const imgData = ctx.createImageData(imgWidth, imgHeight);
+    for (let i = 0; i < imgData.data.length / 4; i++) {
+      const val = dataArray[i % bufferLength]; // 0..255
+      imgData.data[i * 4 + 0] = val; // R
+      imgData.data[i * 4 + 1] = val; // G
+      imgData.data[i * 4 + 2] = val; // B
+      imgData.data[i * 4 + 3] = 255; // Alpha
     }
-    const avg = sum / bufferLength / 128; // 0..1
 
-    // Sterne zeichnen
-    stars.forEach(star => {
-      // Helligkeit: Grundhelligkeit + kleine Veränderung durch Audio
-      star.brightness = Math.min(1, star.baseBrightness + avg * 0.5);
-      const color = Math.floor(star.brightness * 255);
-      ctx.fillStyle = `rgb(${color},${color},${color})`;
-      ctx.fillRect(star.x, star.y, 2, 2); // kleine Pixel = Stern
-    });
+    // Pixelbild anzeigen
+    ctx.putImageData(imgData, 0, 0);
   }
 
   draw();
