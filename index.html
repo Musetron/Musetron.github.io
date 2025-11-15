@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Audio zu Raster-Pixel - Echtzeit</title>
+<title>Audio Raster Realtime</title>
 <style>
   body { margin: 0; background: black; overflow: hidden; }
   canvas { display: block; image-rendering: pixelated; }
@@ -16,54 +16,57 @@
   const ctx = canvas.getContext('2d');
 
   // Niedrige Auflösung für Performance
-  const width = 256;
-  const height = 256;
+  const width = 128; // noch kleiner = mehr FPS
+  const height = 128;
   canvas.width = width;
   canvas.height = height;
 
   const imageData = ctx.createImageData(width, height);
   const data = imageData.data;
 
-  // Mikrofon einrichten
+  // Mikrofon
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(stream);
 
-  // ScriptProcessorNode zum Abgreifen von Rohsamples
-  const bufferSize = 4096; // größere Puffer → weniger Aufrufe
-  const processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+  // ScriptProcessor für Rohsamples
+  const processor = audioCtx.createScriptProcessor(2048, 1, 1);
   source.connect(processor);
   processor.connect(audioCtx.destination);
 
-  // Frame-Sample-Puffer
-  const frameSamples = width * height;
-  let frameBuffer = new Float32Array(frameSamples);
+  // Puffer für Frame
+  const framePixels = width * height;
+  let frameBuffer = new Float32Array(framePixels);
   let frameIndex = 0;
 
   processor.onaudioprocess = (e) => {
     const input = e.inputBuffer.getChannelData(0);
-    for (let i = 0; i < input.length; i++) {
-      frameBuffer[frameIndex] = Math.abs(input[i]);
-      frameIndex++;
-      if (frameIndex >= frameSamples) {
-        renderFrame(frameBuffer);
-        frameIndex = 0; // neues Frame beginnen
+
+    // Samples aggregieren: mehrere Samples → 1 Pixel
+    const step = Math.floor(input.length / (framePixels - frameIndex));
+    for (let i = 0; i < framePixels - frameIndex; i++) {
+      let sum = 0;
+      for (let j = 0; j < step; j++) {
+        sum += Math.abs(input[i*step + j] || 0);
       }
+      frameBuffer[frameIndex++] = sum / step;
+      if (frameIndex >= framePixels) break;
+    }
+
+    // Wenn Frame voll → rendern
+    if (frameIndex >= framePixels) {
+      for (let i = 0; i < framePixels; i++) {
+        const b = Math.min(255, Math.floor(frameBuffer[i] * 255));
+        const idx = i * 4;
+        data[idx] = b;
+        data[idx+1] = b;
+        data[idx+2] = b;
+        data[idx+3] = 255;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      frameIndex = 0; // neues Frame
     }
   };
-
-  function renderFrame(buffer) {
-    for (let i = 0; i < buffer.length; i++) {
-      const brightness = Math.min(255, Math.floor(buffer[i] * 255));
-      const idx = i * 4;
-      data[idx] = brightness;
-      data[idx+1] = brightness;
-      data[idx+2] = brightness;
-      data[idx+3] = 255;
-    }
-    ctx.putImageData(imageData, 0, 0);
-  }
-
 })();
 </script>
 </body>
