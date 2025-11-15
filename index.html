@@ -1,463 +1,62 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-<title>Spirit-Logger</title>
+<meta charset="UTF-8">
+<title>Live-Mikrofon-Feed</title>
 <style>
-  html, body {
-    height: 100%;
-    margin: 0;
-    overflow: hidden;
-    background: #040404;
-  }
-  #cloudCanvas {
-    display: block;
-    width: 100vw;
-    height: 100vh;
-  }
-  .btn {
-    position: fixed;
-    top: 10px;
-    padding: 10px 16px;
-    font-size: 15px;
-    border-radius: 6px;
-    border: none;
-    background: #222;
-    color: #fff;
-    cursor: pointer;
-    z-index: 11;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.6);
-  }
-  #recordBtn { left: 10px; }
-  #gainSliderContainer {
-    position: fixed;
-    top: 50%;
-    left: 10px;
-    transform: translateY(-50%) rotate(-90deg);
-    height: 30px;
-    width: 150px;
-    z-index: 11;
-  }
-  #gainSlider { width: 150px; accent-color: #7CFF7C; }
-  #info {
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    width: 380px;
-    max-width: 45vw;
-    height: 300px;
-    overflow: auto;
-    background: rgba(0,0,0,0.66);
-    color: #7CFF7C;
-    font-family: monospace;
-    font-size: 13px;
-    padding: 10px;
-    border-radius: 8px;
-    z-index: 11;
-    line-height: 1.3;
-  }
-  #status {
-    position: fixed;
-    bottom: 12px;
-    left: 12px;
-    color: #ccc;
-    font-family: monospace;
-    font-size: 13px;
-    z-index: 11;
-    background: rgba(0,0,0,0.35);
-    padding: 6px 10px;
-    border-radius: 6px;
-  }
-  @media (orientation: landscape) and (max-height: 500px) {
-    #info { top: auto; bottom: 10px; width: 45vw; height: 40vh; font-size: 12px; }
-    #recordBtn { top: 10px; left: 10px; }
-    #gainSliderContainer { top: 50%; left: 60px; transform: translateY(-50%) rotate(-90deg); }
-  }
+  body { margin: 0; background: black; }
+  canvas { display: block; }
 </style>
 </head>
 <body>
-
-<button id="recordBtn" class="btn">Save Log</button>
-<div id="gainSliderContainer">
-  <input type="range" id="gainSlider" min="0.1" max="5.0" step="0.05" value="1" />
-</div>
-<div id="info">Lade List.txt…</div>
-<canvas id="cloudCanvas"></canvas>
-<div id="status">Initialisiere…</div>
-
+<canvas id="canvas"></canvas>
 <script>
-/* =========================
-   Config / Globals
-   ========================= */
-const LOG_INTERVAL_MS = 5000;
-const STABILITY_WINDOW = 6;
-const SMOOTH_ALPHA = 0.12;
-const LIST_FILENAME = 'List.txt';
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
-const infoDiv = document.getElementById('info');
-const statusDiv = document.getElementById('status');
-const recordBtn = document.getElementById('recordBtn');
-const gainSlider = document.getElementById('gainSlider');
-const canvas = document.getElementById('cloudCanvas');
-const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-let logLines = [];
-function addLogLine(line){
-  logLines.push(line);
-  if(logLines.length > 200) logLines.shift();
-  infoDiv.innerText = logLines.slice(-20).join("\n") || 'Keine Logs';
-}
-function saveTxtFile(filename='spirit_log.txt'){
-  const blob = new Blob([logLines.join("\n")], {type:'text/plain'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+navigator.mediaDevices.getUserMedia({ audio: true })
+.then(stream => {
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(stream);
+  const analyser = audioCtx.createAnalyser();
 
-/* =========================
-   Liste (Geistertexte)
-   ========================= */
-let ghostLines = [];
-fetch(LIST_FILENAME)
-  .then(r => r.ok ? r.text() : Promise.reject('List.txt nicht gefunden'))
-  .then(text => {
-    ghostLines = text.split(/\r?\n/);
-    addLogLine(`List.txt geladen: ${ghostLines.length} Zeilen`);
-    addLogLine('--- Start Log ---');
-  })
-  .catch(err => {
-    addLogLine('Fehler beim Laden von List.txt.');
-    addLogLine(String(err));
-  });
+  source.connect(analyser);
+  analyser.fftSize = 1024;
 
-/* =========================
-   Mikrofon & Audioanalyse
-   ========================= */
-let audioCtx, analyser, micSource, dataArray;
-let gainFactor = 1.0;
-let smoothedLevel = 0;
-let spiritFloat = 0;
-let masterAlpha = 0;
-const windowValues = [];
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
 
-async function initMic(){
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    await audioCtx.resume();
-    micSource = audioCtx.createMediaStreamSource(stream);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 1024;
-    dataArray = new Float32Array(analyser.fftSize);
-    micSource.connect(analyser);
-    addLogLine('🎤 Mikrofon aktiviert.');
-    updateAudio();
-  } catch(err){
-    addLogLine('⚠️ Mikrofonfehler: ' + err);
-  }
-}
+  function draw() {
+    requestAnimationFrame(draw);
 
-function getCurrentLevel(){
-  if(!analyser) return 0;
-  analyser.getFloatTimeDomainData(dataArray);
-  let sum = 0;
-  for(let i=0;i<dataArray.length;i++) sum += dataArray[i]*dataArray[i];
-  const rms = Math.sqrt(sum / dataArray.length);
-  return rms * gainFactor;
-}
+    analyser.getByteTimeDomainData(dataArray);
 
-gainSlider.addEventListener('input', e => {
-  gainFactor = parseFloat(e.target.value);
-  statusDiv.innerText = `Mikrofon: aktiv • Gain: ${gainFactor.toFixed(2)}`;
-});
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-function updateAudio(){
-  const level = getCurrentLevel();
-  smoothedLevel = smoothedLevel*(1-SMOOTH_ALPHA) + level*SMOOTH_ALPHA;
-  spiritFloat = Math.min(100, smoothedLevel * 600);
-  masterAlpha = Math.min(1, spiritFloat / 100);
-  windowValues.push(spiritFloat);
-  if(windowValues.length > STABILITY_WINDOW) windowValues.shift();
-  requestAnimationFrame(updateAudio);
-}
+    const squareSize = Math.floor(Math.sqrt(bufferLength));
+    let idx = 0;
 
-function calcChanceFromWindow(){
-  if(windowValues.length===0) return 0;
-  const mx = Math.max(...windowValues);
-  const mn = Math.min(...windowValues);
-  const diff = mx - mn;
-  const threshold = 20;
-  const raw = 1 - (diff/threshold);
-  return Math.round(Math.max(0,Math.min(1,raw))*100);
-}
-function getGhostForSpirit(spirit){
-  if(!ghostLines.length) return 'Liste nicht geladen';
-  const idx = Math.min(ghostLines.length-1, Math.floor((spirit/100)*ghostLines.length));
-  return ghostLines[idx];
-}
-
-setInterval(()=>{
-  if(!audioCtx) return;
-  const now = new Date();
-  const spirit = spiritFloat;
-  const chance = calcChanceFromWindow();
-  const ghost = getGhostForSpirit(spirit);
-  addLogLine(`[${now.toLocaleTimeString()}] Spirit Pegel: ${spirit.toFixed(2)} | Chance: ${chance}% | Geist: ${ghost}`);
-}, LOG_INTERVAL_MS);
-
-recordBtn.addEventListener('click', ()=>{
-  saveTxtFile();
-  addLogLine('Log gespeichert.');
-});
-
-/* =========================
-   Canvas / Wolkenanimation + Orb
-   ========================= */
-const PARTICLE_SRC='https://i.ibb.co/BHnTHLDB/Add-Text-11-09-09-39-04.png';
-const BACKGROUND_SRC='https://i.ibb.co/tMRLBLnR/neon-green-wireframe-grid-room-3d-perspective-background-futuristic-digital-outline-space-geometric.jpg';
-const BLINK_IMAGE_SRC='https://i.ibb.co/yc5kSK8v/1762683053390.png';
-
-let DPR = Math.max(1, window.devicePixelRatio || 1);
-function resizeCanvas(){
-  DPR = Math.max(1, window.devicePixelRatio || 1);
-  canvas.width = Math.floor(window.innerWidth * DPR);
-  canvas.height = Math.floor(window.innerHeight * DPR);
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-}
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
-
-const img = new Image(); img.crossOrigin='anonymous'; img.src = PARTICLE_SRC;
-const bg = new Image(); bg.crossOrigin='anonymous'; bg.src = BACKGROUND_SRC;
-const blinkImg = new Image(); blinkImg.crossOrigin='anonymous'; blinkImg.src = BLINK_IMAGE_SRC;
-
-let blinkVisible = true;
-setInterval(()=>{ blinkVisible = !blinkVisible; }, 1000);
-
-const LAYERS = [
-  {count:6,speed:0.06,scaleRange:[1.0,1.5],alpha:0.4,depth:0.6},
-  {count:10,speed:0.1,scaleRange:[0.7,1.1],alpha:0.5,depth:0.9},
-  {count:14,speed:0.14,scaleRange:[0.5,0.9],alpha:0.6,depth:1.4}
-];
-
-let particles = [];
-function rand(a,b){ return a + Math.random()*(b-a); }
-function createParticle(layer){
-  const s = rand(layer.scaleRange[0], layer.scaleRange[1]);
-  return {
-    x: rand(-200,200), y: rand(-100,100), z: rand(0,400),
-    vx: rand(-layer.speed, layer.speed), vy: rand(-0.02,0.02), vz: rand(-0.1,0.1),
-    scale: s, alpha:0, targetAlpha: rand(0.4*layer.alpha, 0.8*layer.alpha),
-    rot: rand(0,Math.PI*2), rotSpeed: rand(-0.002,0.002), layer,
-    life: rand(10000,20000), age:0, fadeDuration:2000
-  };
-}
-function initParticles(){ particles = []; for(const l of LAYERS) for(let i=0;i<l.count;i++) particles.push(createParticle(l)); }
-
-let last = performance.now();
-function project3D(x,y,z){
-  const fov = 800;
-  const scale = fov / (fov + z);
-  return { x: canvas.width/2 + x*scale, y: canvas.height/2 + y*scale, scale: scale };
-}
-
-/* =========================
-   Orb-Logik mit Fade In/Out
-   ========================= */
-function lerp(a,b,t){ return a + (b - a)*t; }
-let orb = {
-  x: canvas.width/2, y: canvas.height/2,
-  targetX: canvas.width/2, targetY: canvas.height/2,
-  baseRadius: 35, radius:35, glow:0.7,
-  mode:'idle', movementType:'circle', targetMovementType:'circle',
-  angle:0, angleSpeed:0, targetAngleSpeed:0,
-  radiusTarget:35, radiusSpeed:0.02,
-  centerX: canvas.width/2, centerY: canvas.height/2,
-  amplitude:0, targetAmplitude:200,
-  direction:1, targetDirection:1, time:0,
-  idleOffset:Math.random()*1000,
-  trail:[],
-  noiseX:0, noiseY:0,
-  noiseSpeedX:0.02 + Math.random()*0.02,
-  noiseSpeedY:0.015 + Math.random()*0.02,
-  noiseOffsetX:Math.random()*1000,
-  noiseOffsetY:Math.random()*1000,
-  fadeAlpha:1,
-  fadeTarget:1,
-  fadeSpeed:0.1
-};
-const MAX_TRAIL = 10;
-
-function idleAnimation(){
-  orb.radius = orb.baseRadius + Math.sin(Date.now()*0.005)*5;
-  orb.glow = 0.7 + Math.random()*0.3;
-  orb.idleOffset += 0.01;
-  orb.targetX = orb.centerX + Math.sin(orb.idleOffset)*10;
-  orb.targetY = orb.centerY + Math.cos(orb.idleOffset*1.2)*10;
-}
-function movementAnimation(){
-  orb.angleSpeed = lerp(orb.angleSpeed, orb.targetAngleSpeed, 0.02);
-  orb.amplitude = lerp(orb.amplitude, orb.targetAmplitude, 0.02);
-  orb.direction = lerp(orb.direction, orb.targetDirection, 0.02);
-  orb.radius = lerp(orb.radius, orb.radiusTarget, 0.02);
-  orb.time += orb.angleSpeed;
-  let ampX = orb.amplitude*(0.8 + Math.sin(orb.time*0.3)*0.2);
-  let ampY = orb.amplitude*(0.8 + Math.cos(orb.time*0.3)*0.2);
-  if(orb.movementType==='circle'){
-    orb.targetX = orb.centerX + Math.cos(orb.time*2*orb.direction)*ampX;
-    orb.targetY = orb.centerY + Math.sin(orb.time*2*orb.direction)*ampY;
-  } else {
-    orb.targetX = orb.centerX + Math.sin(orb.time*3*orb.direction)*ampX;
-    orb.targetY = orb.centerY + Math.sin(orb.time*2*orb.direction)*ampY;
-  }
-  orb.glow = 0.7 + Math.random()*0.2;
-}
-
-function drawOrb(){
-  if(orb.fadeAlpha < 0.01) return;
-
-  // Trail
-  orb.trail.push({x:orb.x, y:orb.y, radius:orb.radius, alpha:orb.fadeAlpha});
-  if(orb.trail.length > MAX_TRAIL) orb.trail.shift();
-  for(let i=0;i<orb.trail.length;i++){
-    let t = i / orb.trail.length;
-    let trailOrb = orb.trail[i];
-    let gradient = ctx.createRadialGradient(trailOrb.x, trailOrb.y, 0, trailOrb.x, trailOrb.y, trailOrb.radius);
-    gradient.addColorStop(0, `rgba(255,255,255,${0.3*t*trailOrb.alpha})`);
-    gradient.addColorStop(0.5, `rgba(255,255,255,${0.05*t*trailOrb.alpha})`);
-    gradient.addColorStop(1, `rgba(255,255,255,0)`);
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(trailOrb.x, trailOrb.y, trailOrb.radius, 0, Math.PI*2);
-    ctx.fill();
-  }
-
-  // Orb Glow
-  let pulse = Math.sin(Date.now()*0.02)*0.2;
-  let alphaGlow = (orb.glow + pulse) * orb.fadeAlpha;
-  if(alphaGlow < 0.01) return;
-  let gradient = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.radius);
-  gradient.addColorStop(0, `rgba(255,255,255,${alphaGlow})`);
-  gradient.addColorStop(0.5, `rgba(255,255,255,${0.2*orb.fadeAlpha})`);
-  gradient.addColorStop(1, `rgba(255,255,255,0)`);
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI*2);
-  ctx.fill();
-}
-
-function maybeSwitchMode(){
-  if(Math.random()<0.004){
-    if(orb.mode==='idle'){
-      orb.mode='movement';
-      orb.targetMovementType = Math.random()<0.5?'circle':'figure8';
-      orb.movementType = orb.targetMovementType;
-      orb.radiusTarget = 30 + Math.random()*20;
-      orb.targetAngleSpeed = 0.05 + Math.random()*0.08;
-      orb.targetAmplitude = 150 + Math.random()*100;
-      orb.targetDirection = Math.random()<0.5?1:-1;
-      orb.time = 0;
-    } else {
-      orb.mode='idle';
-      orb.targetAngleSpeed=0;
-      orb.targetAmplitude=0;
-    }
-  }
-}
-
-let orbActive = false;
-
-function updateOrbFade() {
-    // Alte zufällige Fade-Logik entfernen
-    if(spiritFloat >= 30 && spiritFloat <= 50){
-        if(!orbActive){
-            orb.fadeTarget = 1; // Orb erscheint
-            orbActive = true;
-        }
-    } else {
-        orb.fadeTarget = 0; // Orb verschwindet
-        orbActive = false;
-    }
-    orb.fadeAlpha = lerp(orb.fadeAlpha, orb.fadeTarget, orb.fadeSpeed);
-}
-
-/* =========================
-   Main Loop
-   ========================= */
-function loop(ts){
-  const dt = ts-last; last=ts;
-  if(bg.complete && bg.naturalWidth) ctx.drawImage(bg,0,0,canvas.width,canvas.height);
-  masterAlpha = masterAlpha*(1-0.06)+(Math.min(1,spiritFloat/100))*0.06;
-
-  for(const layer of LAYERS){
-    for(const p of particles){
-      if(p.layer!==layer) continue;
-      p.age+=dt;
-      p.x+=p.vx*1.5*(1/p.layer.depth);
-      p.y+=p.vy*1.5;
-      p.z+=p.vz*1.5;
-      p.rot+=p.rotSpeed;
-      if(p.age<p.fadeDuration) p.alpha=(p.age/p.fadeDuration)*p.targetAlpha;
-      else if(p.age>p.life-p.fadeDuration) p.alpha=Math.max(0,p.targetAlpha*((p.life-p.age)/p.fadeDuration));
-      else p.alpha=p.targetAlpha;
-      const alphaFinal=p.alpha*masterAlpha;
-      const proj=project3D(p.x,p.y,p.z);
-      const wP=img.width*p.scale*0.45*proj.scale;
-      const hP=img.height*p.scale*0.45*proj.scale;
-      ctx.save();
-      ctx.translate(proj.x,proj.y);
-      ctx.rotate(p.rot);
-      ctx.globalAlpha=alphaFinal;
-      if(img.complete&&img.naturalWidth) ctx.drawImage(img,-wP/2,-hP/2,wP,hP);
-      ctx.restore();
-      if(p.age>p.life){
-        const idx=particles.indexOf(p);
-        if(idx!==-1) particles[idx]=createParticle(layer);
+    for (let y = 0; y < squareSize; y++) {
+      for (let x = 0; x < squareSize; x++) {
+        if (idx >= bufferLength) break;
+        const brightness = dataArray[idx] / 255; // 0-1
+        const color = Math.floor(brightness * 255);
+        ctx.fillStyle = `rgb(${color},${color},${color})`;
+        ctx.fillRect(x * 4, y * 4, 4, 4); // Pixelgröße 4x4
+        idx++;
       }
     }
   }
 
-  if(blinkVisible && blinkImg.complete && blinkImg.naturalWidth){
-    const maxW=canvas.width/2; const maxH=canvas.height/2;
-    const ratio=Math.min(maxW/blinkImg.width,maxH/blinkImg.height);
-    const w=blinkImg.width*ratio; const h=blinkImg.height*ratio;
-    const xPos=canvas.width/8; const yPos=canvas.height-h-canvas.height/8;
-    ctx.drawImage(blinkImg,xPos,yPos,w,h);
-  }
-
-  maybeSwitchMode();
-  updateOrbFade();
-  if(orb.mode==='idle') idleAnimation();
-  else movementAnimation();
-  orb.noiseOffsetX += orb.noiseSpeedX;
-  orb.noiseOffsetY += orb.noiseSpeedY;
-  orb.noiseX = Math.sin(orb.noiseOffsetX)*5;
-  orb.noiseY = Math.sin(orb.noiseOffsetY)*5;
-  orb.x = lerp(orb.x, orb.targetX + orb.noiseX, 0.08);
-  orb.y = lerp(orb.y, orb.targetY + orb.noiseY, 0.08);
-  drawOrb();
-
-  requestAnimationFrame(loop);
-}
-
-window.addEventListener('load', ()=>{
-  initParticles();
-  requestAnimationFrame(loop);
-  initMic();
-  addLogLine('Auto-Start aktiv: Wolken & Mikrofon laufen.');
-  statusDiv.innerText = `Mikrofon: initialisiert • Gain: ${gainFactor.toFixed(2)}`;
-});
-
-window.addEventListener('resize', ()=>{
-  resizeCanvas();
-  orb.centerX = canvas.width/2;
-  orb.centerY = canvas.height/2;
+  draw();
+})
+.catch(err => {
+  console.error("Mikrofon Zugriff verweigert:", err);
 });
 </script>
 </body>
- </html>
- 
+</html>
