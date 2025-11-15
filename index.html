@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Live 2D-Mikrofon-Rauschen</title>
+<title>Audio zu Raster-Pixel</title>
 <style>
   body { margin: 0; background: black; overflow: hidden; }
   canvas { display: block; image-rendering: pixelated; }
@@ -11,62 +11,58 @@
 <body>
 <canvas id="canvas"></canvas>
 <script>
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+(async function() {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Auf niedrige Auflösung setzen
+  const width = 256;
+  const height = 256;
+  canvas.width = width;
+  canvas.height = height;
 
-// Canvas-Größe (klein für pixeligen Look)
-const imgWidth = 64;
-const imgHeight = 64;
-canvas.width = imgWidth;
-canvas.height = imgHeight;
-canvas.style.width = window.innerWidth + "px";
-canvas.style.height = window.innerHeight + "px";
+  // Bilddaten vorbereiten
+  const imageData = ctx.createImageData(width, height);
+  const data = imageData.data;
 
-// Stabilisierung: gleitender Mittelwert über Frames
-const alpha = 0.2; // 0=no smoothing, 1=stabil aber träge
-let stabilizedData = new Float32Array(imgWidth * imgHeight);
-
-navigator.mediaDevices.getUserMedia({ audio: true })
-.then(stream => {
+  // Mikrofon abrufen
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(stream);
-  const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = imgWidth * imgHeight * 2; // genug Samples für 2D
-  source.connect(analyser);
 
-  const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
+  // ScriptProcessorNode für Rohsamples
+  const bufferSize = 1024;
+  const processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+  source.connect(processor);
+  processor.connect(audioCtx.destination);
 
-  function draw() {
-    requestAnimationFrame(draw);
+  let x = 0;
+  let y = 0;
 
-    // Rohsamples abrufen
-    analyser.getByteTimeDomainData(dataArray);
+  processor.onaudioprocess = (e) => {
+    const input = e.inputBuffer.getChannelData(0);
 
-    // In 2D-Matrix gießen + normalisieren
-    for (let i = 0; i < stabilizedData.length; i++) {
-      const val = dataArray[i % bufferLength] / 255; // 0..1
-      stabilizedData[i] = stabilizedData[i] * (1 - alpha) + val * alpha; // gleitender Mittelwert
+    for (let i = 0; i < input.length; i++) {
+      const sample = Math.abs(input[i]); // Lautstärke
+      const brightness = Math.min(255, Math.floor(sample * 255));
+      const index = (y * width + x) * 4;
+      data[index] = brightness;   // R
+      data[index+1] = brightness; // G
+      data[index+2] = brightness; // B
+      data[index+3] = 255;        // Alpha
+
+      x++;
+      if (x >= width) {
+        x = 0;
+        y++;
+        if (y >= height) y = 0; // Wieder von oben anfangen
+      }
     }
 
-    // Bild erzeugen
-    const imgData = ctx.createImageData(imgWidth, imgHeight);
-    for (let i = 0; i < stabilizedData.length; i++) {
-      const color = Math.floor(stabilizedData[i] * 255);
-      imgData.data[i * 4 + 0] = color;
-      imgData.data[i * 4 + 1] = color;
-      imgData.data[i * 4 + 2] = color;
-      imgData.data[i * 4 + 3] = 255;
-    }
-
-    ctx.putImageData(imgData, 0, 0);
-  }
-
-  draw();
-})
-.catch(err => {
-  console.error("Mikrofon Zugriff verweigert:", err);
-});
+    // Fertigen Frame direkt rendern
+    ctx.putImageData(imageData, 0, 0);
+  };
+})();
 </script>
 </body>
 </html>
