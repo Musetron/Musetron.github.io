@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Audio zu Raster-Pixel</title>
+<title>Audio zu Raster-Pixel - Echtzeit</title>
 <style>
   body { margin: 0; background: black; overflow: hidden; }
   canvas { display: block; image-rendering: pixelated; }
@@ -14,54 +14,56 @@
 (async function() {
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
-  
-  // Auf niedrige Auflösung setzen
+
+  // Niedrige Auflösung für Performance
   const width = 256;
   const height = 256;
   canvas.width = width;
   canvas.height = height;
 
-  // Bilddaten vorbereiten
   const imageData = ctx.createImageData(width, height);
   const data = imageData.data;
 
-  // Mikrofon abrufen
+  // Mikrofon einrichten
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaStreamSource(stream);
 
-  // ScriptProcessorNode für Rohsamples
-  const bufferSize = 1024;
+  // ScriptProcessorNode zum Abgreifen von Rohsamples
+  const bufferSize = 4096; // größere Puffer → weniger Aufrufe
   const processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
   source.connect(processor);
   processor.connect(audioCtx.destination);
 
-  let x = 0;
-  let y = 0;
+  // Frame-Sample-Puffer
+  const frameSamples = width * height;
+  let frameBuffer = new Float32Array(frameSamples);
+  let frameIndex = 0;
 
   processor.onaudioprocess = (e) => {
     const input = e.inputBuffer.getChannelData(0);
-
     for (let i = 0; i < input.length; i++) {
-      const sample = Math.abs(input[i]); // Lautstärke
-      const brightness = Math.min(255, Math.floor(sample * 255));
-      const index = (y * width + x) * 4;
-      data[index] = brightness;   // R
-      data[index+1] = brightness; // G
-      data[index+2] = brightness; // B
-      data[index+3] = 255;        // Alpha
-
-      x++;
-      if (x >= width) {
-        x = 0;
-        y++;
-        if (y >= height) y = 0; // Wieder von oben anfangen
+      frameBuffer[frameIndex] = Math.abs(input[i]);
+      frameIndex++;
+      if (frameIndex >= frameSamples) {
+        renderFrame(frameBuffer);
+        frameIndex = 0; // neues Frame beginnen
       }
     }
-
-    // Fertigen Frame direkt rendern
-    ctx.putImageData(imageData, 0, 0);
   };
+
+  function renderFrame(buffer) {
+    for (let i = 0; i < buffer.length; i++) {
+      const brightness = Math.min(255, Math.floor(buffer[i] * 255));
+      const idx = i * 4;
+      data[idx] = brightness;
+      data[idx+1] = brightness;
+      data[idx+2] = brightness;
+      data[idx+3] = 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+
 })();
 </script>
 </body>
