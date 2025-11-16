@@ -130,6 +130,7 @@
         let audioBuffer;
         let gainNode;
         let tremoloNode;
+        let tremoloGainNode;
 
         const fileInput = document.getElementById('fileInput');
         const gasBtn = document.getElementById('gasBtn');
@@ -170,12 +171,19 @@
             gainNode = audioContext.createGain();
             gainNode.gain.value = idleVolume;
 
-            // Adding tremolo effect when gas is at max
-            tremoloNode = audioContext.createGain();
-            tremoloNode.gain.value = 0; // initially no tremolo
-
-            bufferSource.connect(gainNode).connect(tremoloNode).connect(audioContext.destination);
+            bufferSource.connect(gainNode).connect(audioContext.destination);
             bufferSource.start();
+        }
+
+        // === Tremolo-Effekt ===
+        function setupTremolo() {
+            tremoloNode = audioContext.createGain();
+            tremoloGainNode = audioContext.createGain();
+
+            tremoloGainNode.gain.value = 0.0; // Kein Tremolo anfangs
+
+            tremoloNode.connect(tremoloGainNode);
+            tremoloGainNode.connect(gainNode);
         }
 
         // === Gamepad Unterstützung ===
@@ -227,23 +235,23 @@
             const angle = lerp(-90, 90, tachoValue);
             needle.setAttribute('transform', `rotate(${angle} 200 200)`);
 
-            // Widerstand simulieren: Je höher das Gas, desto höher der Widerstand
-            const resistance = lerp(0.1, 0.9, gasStrength);
-            gainNode.gain.value = currentVolume * resistance;
-
             // Abregeldrehzahl-Effekt (Redline)
             if (gasStrength >= redlineThreshold) {
                 currentPitch = lerp(currentPitch, maxPitch * 1.5, 0.1); // Schnelles Überschreiten der Drehzahlgrenze
+            }
 
-                // Tremolo-Effekt aktivieren (Vibration)
-                tremoloNode.gain.setValueAtTime(Math.sin(audioContext.currentTime * 20) * 0.2, audioContext.currentTime); // Schnelle Modulation
+            // Widerstand und Tremolo
+            if (gasStrength >= 0.9) {
+                tremoloGainNode.gain.value = Math.sin(audioContext.currentTime * 10) * 0.1; // Tremolo-Effekt bei vollem Gas
             } else {
-                tremoloNode.gain.value = 0;
+                tremoloGainNode.gain.value = 0;
             }
 
             requestAnimationFrame(animate);
         }
 
+        // Setup alles
+        setupTremolo();
         animate();
     </script>
 </body>
