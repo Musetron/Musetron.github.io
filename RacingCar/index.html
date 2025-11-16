@@ -220,27 +220,24 @@
         updateGamepad();
 
         // === Animation: Audio & Tachonadel ===
+        let lastGasStrength = 0;
+        let lastBrakeStrength = 0;
+
         function lerp(a, b, t) { return a + (b - a) * t; }
 
         function animate() {
             const gasStrength = parseFloat(gasSlider.value);
             const brakeStrength = parseFloat(brakeSlider.value);
 
-            // Lautstärke
-            if (gasPressed) currentVolume += (1 - currentVolume) * 0.1 * gasStrength;
-            else if (brakePressed) currentVolume += (idleVolume - currentVolume) * 0.05;
-            else currentVolume += (idleVolume - currentVolume) * 0.02;
-
-            // Pitch
-            if (gasPressed) currentPitch += (maxPitch - currentPitch) * 0.05 * gasStrength;
-            else if (brakePressed) currentPitch += (idlePitch - currentPitch) * 0.05;
-            else currentPitch += (idlePitch - currentPitch) * 0.01;
+            // Smooth transitions for volume and pitch
+            currentVolume = lerp(currentVolume, gasStrength > 0 || brakeStrength > 0 ? 1.0 : idleVolume, 0.1);
+            currentPitch = lerp(currentPitch, idlePitch + (gasStrength * (maxPitch - idlePitch)), 0.1);
 
             if (gainNode) gainNode.gain.value = currentVolume;
             if (bufferSource) bufferSource.playbackRate.value = currentPitch;
 
-            // Tachonadel: -90° bis +90°
-            const tachoValue = (gasStrength - brakeStrength); // Gas und Bremse beeinflussen den Wert
+            // Tachonadel: Gas nach rechts (positiv) und Bremse nach links (negativ)
+            const tachoValue = lerp(0, 1, gasStrength) - lerp(0, 1, brakeStrength); // Interpolation
             const angle = lerp(-90, 90, tachoValue);
             needle.setAttribute('transform', `rotate(${angle} 200 200)`);
 
