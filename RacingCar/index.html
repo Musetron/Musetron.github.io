@@ -188,16 +188,34 @@
                 const gp = gamepads[0];
 
                 // Axis 2: Gas (Rechter Trigger oder rechter Stick vertikal)
-                const gas = gp.axes[2]; // Der Wert reicht von -1 (ganz unten) bis 1 (ganz oben)
+                const gas = gp.axes[2];
                 
                 // Axis 5: Brake (Linker Trigger oder linker Stick vertikal)
-                const brake = gp.axes[5]; // Der Wert reicht von -1 (ganz unten) bis 1 (ganz oben)
+                const brake = gp.axes[5];
                 
-                // Gassteuerung (Die Gasstärke wird proportional zur Achse gesetzt)
-                gasSlider.value = Math.max(0, (gas + 1) / 2); // -1 wird auf 0 und 1 wird auf 1 gemappt
-                
-                // Bremssteuerung (Die Bremsstärke wird proportional zur Achse gesetzt)
-                brakeSlider.value = Math.max(0, (brake + 1) / 2); // -1 wird auf 0 und 1 wird auf 1 gemappt
+                // Gassteuerung
+                if (gas < -0.8) {
+                    gasPressed = true;
+                    gasSlider.value = Math.min(1, parseFloat(gasSlider.value) + 0.05); // Gas wird langsam erhöht
+                } else {
+                    gasPressed = false;
+                    gasSlider.value = Math.max(0, parseFloat(gasSlider.value) - 0.05); // Gas wird langsam reduziert
+                }
+
+                // Bremssteuerung
+                if (brake < -0.8) {
+                    brakePressed = true;
+                    brakeSlider.value = Math.min(1, parseFloat(brakeSlider.value) + 0.05); // Bremse wird langsam erhöht
+                } else {
+                    brakePressed = false;
+                    brakeSlider.value = Math.max(0, parseFloat(brakeSlider.value) - 0.05); // Bremse wird langsam reduziert
+                }
+
+                // Vibration
+                if (gp.vibrationActuator) {
+                    if (gasPressed) gp.vibrationActuator.playEffect("dual-rumble", { duration: 30, strongMagnitude: 0.1, weakMagnitude: 0 });
+                    if (brakePressed) gp.vibrationActuator.playEffect("dual-rumble", { duration: 50, strongMagnitude: 0.2, weakMagnitude: 0 });
+                }
             }
             requestAnimationFrame(updateGamepad);
         }
