@@ -194,11 +194,11 @@
                 const brake = gp.axes[5];
                 
                 // Gassteuerung (Slider nach oben drücken)
-                gasSlider.value = Math.min(1, Math.max(0, (gas + 1) / 2)); // Normalisiert von [-1, 1] auf [0, 1]
+                gasSlider.value = Math.max(0, Math.min(1, (1 - (gas + 1) / 2))); // Umgekehrte Achse
                 gasPressed = gasSlider.value > 0.8; // Wenn der Slider oben ist, wird der Gas-Button gedrückt
 
                 // Bremse (Slider nach oben drücken)
-                brakeSlider.value = Math.min(1, Math.max(0, (brake + 1) / 2)); // Normalisiert von [-1, 1] auf [0, 1]
+                brakeSlider.value = Math.max(0, Math.min(1, (1 - (brake + 1) / 2))); // Umgekehrte Achse
                 brakePressed = brakeSlider.value > 0.8; // Wenn der Slider oben ist, wird der Bremse-Button gedrückt
 
                 // Den Button aktivieren/deaktivieren
