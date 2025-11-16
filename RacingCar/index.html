@@ -243,8 +243,8 @@
             if (bufferSource) bufferSource.playbackRate.value = currentPitch;
 
             // Tachonadel: -90° bis +90°
-            const tachoValue = (currentPitch - idlePitch) / (maxPitch - idlePitch);
-            const angle = lerp(-90, 90, tachoValue);
+            const tachoValue = gasStrength - brakeStrength; // Kombinierte Wirkung von Gas und Bremse
+            const angle = lerp(-90, 90, tachoValue); // Berechnung des Winkels für die Nadel
             needle.setAttribute('transform', `rotate(${angle} 200 200)`);
 
             requestAnimationFrame(animate);
