@@ -122,10 +122,6 @@
             <input type="range" id="gasSlider" class="vertical" min="0" max="1" step="0.01" value="0">
             <button id="gasBtn">GAS</button>
         </div>
-        <div class="slider-container">
-            <input type="range" id="brakeSlider" class="vertical" min="0" max="1" step="0.01" value="0">
-            <button id="brakeBtn">BRAKE</button>
-        </div>
     </div>
 
     <script>
@@ -136,13 +132,10 @@
 
         const fileInput = document.getElementById('fileInput');
         const gasBtn = document.getElementById('gasBtn');
-        const brakeBtn = document.getElementById('brakeBtn');
         const gasSlider = document.getElementById('gasSlider');
-        const brakeSlider = document.getElementById('brakeSlider');
         const needle = document.getElementById('needle');
 
         let gasPressed = false;
-        let brakePressed = false;
 
         const idleVolume = 0.2;
         let currentVolume = idleVolume;
@@ -150,6 +143,9 @@
         const idlePitch = 1.0;
         const maxPitch = 2.0;
         let currentPitch = idlePitch;
+
+        const maxRPM = 12000; // Max RPM for the effect
+        const redlineThreshold = 0.9; // Threshold for redline effect
 
         // === Audio laden ===
         fileInput.addEventListener('change', async () => {
@@ -190,28 +186,15 @@
                 // Axis 2: Gas (Rechter Trigger oder rechter Stick vertikal)
                 const gas = gp.axes[2];
                 
-                // Axis 5: Brake (Linker Trigger oder linker Stick vertikal)
-                const brake = gp.axes[5];
-                
                 // Gassteuerung (Slider nach oben drücken)
                 gasSlider.value = Math.max(0, Math.min(1, (1 - (gas + 1) / 2))); // Umgekehrte Achse
                 gasPressed = gasSlider.value > 0.8; // Wenn der Slider oben ist, wird der Gas-Button gedrückt
-
-                // Bremse (Slider nach oben drücken)
-                brakeSlider.value = Math.max(0, Math.min(1, (1 - (brake + 1) / 2))); // Umgekehrte Achse
-                brakePressed = brakeSlider.value > 0.8; // Wenn der Slider oben ist, wird der Bremse-Button gedrückt
 
                 // Den Button aktivieren/deaktivieren
                 if (gasPressed) {
                     gasBtn.classList.add('active');
                 } else {
                     gasBtn.classList.remove('active');
-                }
-
-                if (brakePressed) {
-                    brakeBtn.classList.add('active');
-                } else {
-                    brakeBtn.classList.remove('active');
                 }
             }
             requestAnimationFrame(updateGamepad);
@@ -221,25 +204,28 @@
 
         // === Animation: Audio & Tachonadel ===
         let lastGasStrength = 0;
-        let lastBrakeStrength = 0;
 
         function lerp(a, b, t) { return a + (b - a) * t; }
 
         function animate() {
             const gasStrength = parseFloat(gasSlider.value);
-            const brakeStrength = parseFloat(brakeSlider.value);
 
             // Smooth transitions for volume and pitch
-            currentVolume = lerp(currentVolume, gasStrength > 0 || brakeStrength > 0 ? 1.0 : idleVolume, 0.1);
+            currentVolume = lerp(currentVolume, gasStrength > 0 ? 1.0 : idleVolume, 0.1);
             currentPitch = lerp(currentPitch, idlePitch + (gasStrength * (maxPitch - idlePitch)), 0.1);
 
             if (gainNode) gainNode.gain.value = currentVolume;
             if (bufferSource) bufferSource.playbackRate.value = currentPitch;
 
-            // Tachonadel: Gas nach rechts (positiv) und Bremse nach links (negativ)
-            const tachoValue = lerp(0, 1, gasStrength) - lerp(0, 1, brakeStrength); // Interpolation
+            // Tachonadel: Gas nach rechts (positiv)
+            const tachoValue = lerp(0, 1, gasStrength);
             const angle = lerp(-90, 90, tachoValue);
             needle.setAttribute('transform', `rotate(${angle} 200 200)`);
+
+            // Abregeldrehzahl-Effekt (Redline)
+            if (gasStrength >= redlineThreshold) {
+                currentPitch = lerp(currentPitch, maxPitch * 1.5, 0.1); // Schnelles Überschreiten der Drehzahlgrenze
+            }
 
             requestAnimationFrame(animate);
         }
