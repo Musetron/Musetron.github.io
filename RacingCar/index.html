@@ -204,13 +204,17 @@ function updateGamepad() {
         const gas = gp.axes[2] || 0;   // Axis 2 für Gas
         const brake = gp.axes[5] || 0; // Axis 5 für Bremse
 
-        // Achsen sind in einem Bereich von -1 bis 1, daher invertieren wir den Gas-Wert
-        // Gas-Wert: -1 (Vollgas) -> 0 (Gas abgestellt)
-        gasSlider.value = (gas + 1) / 2;  // Skaliert den Wert von -1..1 auf 0..1
-        brakeSlider.value = (brake + 1) / 2;  // Skaliert den Wert von -1..1 auf 0..1
+        // Skaliert die Achsen von -1..1 auf 0..1
+        gasSlider.value = (gas + 1) / 2;
+        brakeSlider.value = (brake + 1) / 2;
 
-        gasPressed = gas < -0.05;  // Wenn Gasachse negativ (Vollgas)
-        brakePressed = brake < -0.05;  // Wenn Bremseachse negativ (volle Bremse)
+        // Gas-Button wird aktiviert, wenn Gasachse unter -0.1 ist
+        gasPressed = gas < -0.1;
+        brakePressed = brake < -0.1;
+
+        // Button-Status ändern je nach Achse
+        gasBtn.disabled = !gasPressed;
+        brakeBtn.disabled = !brakePressed;
 
         // Vibration (falls verfügbar)
         if (gp.vibrationActuator) {
@@ -234,12 +238,11 @@ function animate() {
     const gasStrength = parseFloat(gasSlider.value);
     const brakeStrength = parseFloat(brakeSlider.value);
 
-    // Lautstärke
+    // Lautstärke und Pitch basierend auf Gas/Bremse
     if (gasPressed) currentVolume += (1 - currentVolume) * 0.1 * gasStrength;
     else if (brakePressed) currentVolume += (idleVolume - currentVolume) * 0.05;
     else currentVolume += (idleVolume - currentVolume) * 0.02;
 
-    // Pitch
     if (gasPressed) currentPitch += (maxPitch - currentPitch) * 0.05 * gasStrength;
     else if (brakePressed) currentPitch += (idlePitch - currentPitch) * 0.05;
     else currentPitch += (idlePitch - currentPitch) * 0.01;
