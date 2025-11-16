@@ -232,8 +232,8 @@
 
             // Tachonadel: Gas nach rechts (positiv)
             const tachoValue = lerp(0, 1, gasStrength);
-            const angle = lerp(-90, 90, tachoValue);
-            needle.setAttribute('transform', `rotate(${angle} 200 200)`);
+            const angle = lerp(-90, 90, tachoValue); // Nadelbewegung: Von -90 bis 90 Grad
+            needle.setAttribute('transform', `rotate(${angle} 200 200)`); // Nadel entsprechend drehen
 
             // Abregeldrehzahl-Effekt (Redline)
             if (gasStrength >= redlineThreshold) {
@@ -244,7 +244,7 @@
             if (gasStrength >= 0.9) {
                 tremoloGainNode.gain.value = Math.sin(audioContext.currentTime * 10) * 0.1; // Tremolo-Effekt bei vollem Gas
             } else {
-                tremoloGainNode.gain.value = 0;
+                tremoloGainNode.gain.value = 0; // Kein Tremolo, wenn Gas nicht am Anschlag
             }
 
             requestAnimationFrame(animate);
