@@ -193,29 +193,11 @@
                 // Axis 5: Brake (Linker Trigger oder linker Stick vertikal)
                 const brake = gp.axes[5]; // Der Wert reicht von -1 (ganz unten) bis 1 (ganz oben)
                 
-                // Gassteuerung (nur bei -1 als vollgas aktiv)
-                if (gas < -0.8) {
-                    gasPressed = true;
-                    gasSlider.value = 1; // Maximaler Gaswert
-                } else {
-                    gasPressed = false;
-                    gasSlider.value = 0; // Kein Gas
-                }
-
-                // Bremssteuerung (nur bei -1 als volle Bremse aktiv)
-                if (brake < -0.8) {
-                    brakePressed = true;
-                    brakeSlider.value = 1; // Maximaler Bremswert
-                } else {
-                    brakePressed = false;
-                    brakeSlider.value = 0; // Keine Bremse
-                }
-
-                // Vibration (falls verfügbar)
-                if (gp.vibrationActuator) {
-                    if (gasPressed) gp.vibrationActuator.playEffect("dual-rumble", { duration: 30, strongMagnitude: 0.1, weakMagnitude: 0 });
-                    if (brakePressed) gp.vibrationActuator.playEffect("dual-rumble", { duration: 50, strongMagnitude: 0.2, weakMagnitude: 0 });
-                }
+                // Gassteuerung (Die Gasstärke wird proportional zur Achse gesetzt)
+                gasSlider.value = Math.max(0, (gas + 1) / 2); // -1 wird auf 0 und 1 wird auf 1 gemappt
+                
+                // Bremssteuerung (Die Bremsstärke wird proportional zur Achse gesetzt)
+                brakeSlider.value = Math.max(0, (brake + 1) / 2); // -1 wird auf 0 und 1 wird auf 1 gemappt
             }
             requestAnimationFrame(updateGamepad);
         }
