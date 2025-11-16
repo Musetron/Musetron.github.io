@@ -129,8 +129,6 @@
         let bufferSource;
         let audioBuffer;
         let gainNode;
-        let tremoloNode;
-        let tremoloGainNode;
 
         const fileInput = document.getElementById('fileInput');
         const gasBtn = document.getElementById('gasBtn');
@@ -173,17 +171,6 @@
 
             bufferSource.connect(gainNode).connect(audioContext.destination);
             bufferSource.start();
-        }
-
-        // === Tremolo-Effekt ===
-        function setupTremolo() {
-            tremoloNode = audioContext.createGain();
-            tremoloGainNode = audioContext.createGain();
-
-            tremoloGainNode.gain.value = 0.0; // Kein Tremolo anfangs
-
-            tremoloNode.connect(tremoloGainNode);
-            tremoloGainNode.connect(gainNode);
         }
 
         // === Gamepad Unterstützung ===
@@ -232,27 +219,19 @@
 
             // Tachonadel: Gas nach rechts (positiv)
             const tachoValue = lerp(0, 1, gasStrength);
-            const angle = lerp(-90, 90, tachoValue); // Nadelbewegung: Von -90 bis 90 Grad
-            needle.setAttribute('transform', `rotate(${angle} 200 200)`); // Nadel entsprechend drehen
+            const angle = lerp(-90, 90, tachoValue);
+            needle.setAttribute('transform', `rotate(${angle} 200 200)`);
 
             // Abregeldrehzahl-Effekt (Redline)
             if (gasStrength >= redlineThreshold) {
                 currentPitch = lerp(currentPitch, maxPitch * 1.5, 0.1); // Schnelles Überschreiten der Drehzahlgrenze
             }
 
-            // Widerstand und Tremolo
-            if (gasStrength >= 0.9) {
-                tremoloGainNode.gain.value = Math.sin(audioContext.currentTime * 10) * 0.1; // Tremolo-Effekt bei vollem Gas
-            } else {
-                tremoloGainNode.gain.value = 0; // Kein Tremolo, wenn Gas nicht am Anschlag
-            }
-
             requestAnimationFrame(animate);
         }
 
-        // Setup alles
-        setupTremolo();
         animate();
     </script>
 </body>
 </html>
+
