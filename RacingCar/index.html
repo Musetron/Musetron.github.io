@@ -199,20 +199,27 @@ function updateGamepad() {
     const gamepads = navigator.getGamepads();
     if (gamepads[0]) {
         const gp = gamepads[0];
-        // Logitech / Thrustmaster Standard Mapping
-        const gas = gp.buttons[7]?.value || 0;   // RT
-        const brake = gp.buttons[6]?.value || 0; // LT
+        
+        // Gamepad Achsen für Gas (Axis 2) und Bremse (Axis 5)
+        const gas = gp.axes[2] || 0;   // Axis 2 für Gas
+        const brake = gp.axes[5] || 0; // Axis 5 für Bremse
 
-        gasSlider.value = gas;
-        brakeSlider.value = brake;
+        // Achsen sind in einem Bereich von -1 bis 1, daher invertieren wir den Gas-Wert
+        // Gas-Wert: -1 (Vollgas) -> 0 (Gas abgestellt)
+        gasSlider.value = (gas + 1) / 2;  // Skaliert den Wert von -1..1 auf 0..1
+        brakeSlider.value = (brake + 1) / 2;  // Skaliert den Wert von -1..1 auf 0..1
 
-        gasPressed = gas > 0.05;
-        brakePressed = brake > 0.05;
+        gasPressed = gas < -0.05;  // Wenn Gasachse negativ (Vollgas)
+        brakePressed = brake < -0.05;  // Wenn Bremseachse negativ (volle Bremse)
 
         // Vibration (falls verfügbar)
         if (gp.vibrationActuator) {
-            if (gasPressed) gp.vibrationActuator.playEffect("dual-rumble", { duration: 30, strongMagnitude: 0.1, weakMagnitude: 0 });
-            if (brakePressed) gp.vibrationActuator.playEffect("dual-rumble", { duration: 50, strongMagnitude: 0.2, weakMagnitude: 0 });
+            if (gasPressed) {
+                gp.vibrationActuator.playEffect("dual-rumble", { duration: 30, strongMagnitude: 0.1, weakMagnitude: 0 });
+            }
+            if (brakePressed) {
+                gp.vibrationActuator.playEffect("dual-rumble", { duration: 50, strongMagnitude: 0.2, weakMagnitude: 0 });
+            }
         }
     }
     requestAnimationFrame(updateGamepad);
