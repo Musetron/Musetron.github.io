@@ -184,11 +184,21 @@
                 const gp = gamepads[0];
 
                 // Axis 2: Gas (Rechter Trigger oder rechter Stick vertikal)
-                const gas = gp.axes[2];
+                const gas = gp.axes[1];
                 
                 // Gassteuerung (Slider nach oben drücken)
-                gasSlider.value = Math.max(0, Math.min(1, (1 - (gas + 1) / 2))); // Umgekehrte Achse
-                gasPressed = gasSlider.value > 0.8; // Wenn der Slider oben ist, wird der Gas-Button gedrückt
+                let gasStrength = Math.max(0, Math.min(1, (1 - (gas + 1) / 2))); // Umgekehrte Achse
+                
+                // Ignoriere die erste Hälfte der Achse
+                if (gasStrength < 0.5) {
+                    gasStrength = 0;  // Wenn Gas unter der Mitte ist, keine Wirkung
+                } else {
+                    gasStrength = (gasStrength - 0.5) * 2; // Skaliere den Bereich auf [0, 1] ab der Mitte
+                }
+                
+                gasSlider.value = gasStrength;
+
+                gasPressed = gasStrength > 0.8; // Wenn der Slider oben ist, wird der Gas-Button gedrückt
 
                 // Den Button aktivieren/deaktivieren
                 if (gasPressed) {
@@ -208,19 +218,25 @@
         function lerp(a, b, t) { return a + (b - a) * t; }
 
         function animate() {
-            const gasStrength = parseFloat(gasSlider.value);
+            let gasStrength = parseFloat(gasSlider.value);
 
-            // Smooth transitions for volume and pitch
+            // Gasstärke direkt proportional zum Slider-Wert
+            // Skaliere Gasstärke auf den Bereich [0, 1]
+            gasStrength = Math.max(0, Math.min(1, gasStrength));
+
+            // Berechnung des Nadelwinkels:
+            // -90° bis 90° für die Drehung (Vollgas -> Leerlauf)
+            const angle = lerp(-90, 90, gasStrength);
+
+            // Setze den Nadelwinkel
+            needle.setAttribute('transform', `rotate(${angle} 200 200)`);
+
+            // Volumen und Tonhöhe anpassen:
             currentVolume = lerp(currentVolume, gasStrength > 0 ? 1.0 : idleVolume, 0.1);
             currentPitch = lerp(currentPitch, idlePitch + (gasStrength * (maxPitch - idlePitch)), 0.1);
 
             if (gainNode) gainNode.gain.value = currentVolume;
             if (bufferSource) bufferSource.playbackRate.value = currentPitch;
-
-            // Tachonadel: Gas nach rechts (positiv)
-            const tachoValue = lerp(0, 1, gasStrength);
-            const angle = lerp(-90, 90, tachoValue);
-            needle.setAttribute('transform', `rotate(${angle} 200 200)`);
 
             // Abregeldrehzahl-Effekt (Redline)
             if (gasStrength >= redlineThreshold) {
@@ -234,4 +250,3 @@
     </script>
 </body>
 </html>
-
