@@ -144,8 +144,7 @@
         const maxPitch = 2.0;
         let currentPitch = idlePitch;
 
-        const maxRPM = 12000; // Max RPM for the effect
-        const redlineThreshold = 0.9; // Threshold for redline effect
+        const redlineThreshold = 0.9;
 
         // === Audio laden ===
         fileInput.addEventListener('change', async () => {
@@ -173,38 +172,54 @@
             bufferSource.start();
         }
 
-        // === Gamepad Unterstützung ===
+        // === Gamepad-Unterstützung für Android + Desktop ===
+        let gamepadIndex = null;
+
         window.addEventListener("gamepadconnected", (e) => {
+            gamepadIndex = e.gamepad.index;
             console.log("Gamepad verbunden:", e.gamepad.id);
         });
 
+        window.addEventListener("gamepaddisconnected", () => {
+            gamepadIndex = null;
+        });
+
+        // Android benötigt user interaction, um Audio und Gamepad freizugeben
+        function unlockAudio() {
+            if (audioContext && audioContext.state === "suspended") {
+                audioContext.resume();
+            }
+        }
+        document.body.addEventListener("touchstart", unlockAudio);
+        document.body.addEventListener("click", unlockAudio);
+
         function updateGamepad() {
-            const gamepads = navigator.getGamepads();
-            if (gamepads[0]) {
-                const gp = gamepads[0];
+            if (gamepadIndex !== null) {
+                const gp = navigator.getGamepads()[gamepadIndex];
 
-                // Axis 2: Gas (Rechter Trigger oder rechter Stick vertikal)
-                const gas = gp.axes[1];
-                
-                // Gassteuerung (Slider nach oben drücken)
-                let gasStrength = Math.max(0, Math.min(1, (1 - (gas + 1) / 2))); // Umgekehrte Achse
-                
-                // Ignoriere die erste Hälfte der Achse
-                if (gasStrength < 0.5) {
-                    gasStrength = 0;  // Wenn Gas unter der Mitte ist, keine Wirkung
-                } else {
-                    gasStrength = (gasStrength - 0.5) * 2; // Skaliere den Bereich auf [0, 1] ab der Mitte
-                }
-                
-                gasSlider.value = gasStrength;
+                if (gp) {
+                    let gasRaw = gp.axes[5] ?? gp.axes[4] ?? gp.axes[2] ?? null;
 
-                gasPressed = gasStrength > 0.8; // Wenn der Slider oben ist, wird der Gas-Button gedrückt
+                    // Für PS Controller, Android manchmal als Button
+                    if (gasRaw === null && gp.buttons[7]) {
+                        gasRaw = gp.buttons[7].value;
+                    }
 
-                // Den Button aktivieren/deaktivieren
-                if (gasPressed) {
-                    gasBtn.classList.add('active');
-                } else {
-                    gasBtn.classList.remove('active');
+                    if (gasRaw !== null) {
+                        let gasStrength = (gasRaw + 1) / 2;
+
+                        if (gasStrength < 0.1) gasStrength = 0;
+
+                        gasSlider.value = gasStrength;
+
+                        gasPressed = gasStrength > 0.8;
+
+                        if (gasPressed) {
+                            gasBtn.classList.add("active");
+                        } else {
+                            gasBtn.classList.remove("active");
+                        }
+                    }
                 }
             }
             requestAnimationFrame(updateGamepad);
@@ -213,34 +228,23 @@
         updateGamepad();
 
         // === Animation: Audio & Tachonadel ===
-        let lastGasStrength = 0;
-
         function lerp(a, b, t) { return a + (b - a) * t; }
 
         function animate() {
             let gasStrength = parseFloat(gasSlider.value);
-
-            // Gasstärke direkt proportional zum Slider-Wert
-            // Skaliere Gasstärke auf den Bereich [0, 1]
             gasStrength = Math.max(0, Math.min(1, gasStrength));
 
-            // Berechnung des Nadelwinkels:
-            // -90° bis 90° für die Drehung (Vollgas -> Leerlauf)
             const angle = lerp(-90, 90, gasStrength);
-
-            // Setze den Nadelwinkel
             needle.setAttribute('transform', `rotate(${angle} 200 200)`);
 
-            // Volumen und Tonhöhe anpassen:
             currentVolume = lerp(currentVolume, gasStrength > 0 ? 1.0 : idleVolume, 0.1);
             currentPitch = lerp(currentPitch, idlePitch + (gasStrength * (maxPitch - idlePitch)), 0.1);
 
             if (gainNode) gainNode.gain.value = currentVolume;
             if (bufferSource) bufferSource.playbackRate.value = currentPitch;
 
-            // Abregeldrehzahl-Effekt (Redline)
             if (gasStrength >= redlineThreshold) {
-                currentPitch = lerp(currentPitch, maxPitch * 1.5, 0.1); // Schnelles Überschreiten der Drehzahlgrenze
+                currentPitch = lerp(currentPitch, maxPitch * 1.5, 0.1);
             }
 
             requestAnimationFrame(animate);
