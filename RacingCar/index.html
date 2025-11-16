@@ -240,7 +240,7 @@
             if (bufferSource) bufferSource.playbackRate.value = currentPitch;
 
             // Tachonadel: -90° bis +90°
-            const tachoValue = (currentPitch - idlePitch) / (maxPitch - idlePitch);
+            const tachoValue = (gasStrength - brakeStrength); // Gas und Bremse beeinflussen den Wert
             const angle = lerp(-90, 90, tachoValue);
             needle.setAttribute('transform', `rotate(${angle} 200 200)`);
 
