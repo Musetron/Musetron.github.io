@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Racing Car</title>
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #121212;
+        color: #d6c2f0;
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    h1 {
+        font-size: 2em;
+        color: #d6c2f0;
+        margin: 0;
+        text-align: center;
+    }
+
+    input[type="file"] {
+        margin: 10px 0 30px 0;
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        background-color: #1e1e1e;
+        color: #d6c2f0;
+        font-size: 16px;
+        cursor: pointer;
+    }
+
+    .pedal-container {
+        display: flex;
+        justify-content: space-between;
+        width: 400px;
+        margin-top: 40px;
+    }
+
+    .slider-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    input[type="range"].vertical {
+        -webkit-appearance: slider-vertical;
+        width: 40px;
+        height: 150px;
+        writing-mode: bt-lr;
+        background: #1e1e1e;
+        border-radius: 10px;
+        accent-color: #d6c2f0;
+        cursor: grab;
+        margin-bottom: 10px;
+    }
+
+    button {
+        background-color: #d6c2f0;
+        color: #121212;
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        font-weight: bold;
+        cursor: pointer;
+        transition: 0.2s;
+    }
+
+    button:hover {
+        background-color: #9a67ea;
+    }
+
+    .tacho-container {
+        width: 400px;
+        height: 200px;
+        position: relative;
+        margin-top: 20px;
+    }
+
+    .tacho-bg {
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100%;
+        height: auto;
+        z-index: 1;
+    }
+
+    .tacho {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 2;
+        pointer-events: none;
+    }
+</style>
+</head>
+<body>
+<h1>Racing Car Simulator</h1>
+<input type="file" id="fileInput" accept=".wav">
+
+<div class="tacho-container">
+    <img src="https://i.ibb.co/7dc4fnhT/speedometer-PNG36.png" alt="Tacho" class="tacho-bg"/>
+    <svg class="tacho" viewBox="0 0 400 200">
+        <line id="needle" x1="200" y1="200" x2="200" y2="40" stroke="#ff0000" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="200" cy="200" r="8" fill="#ff0000"/>
+    </svg>
+</div>
+
+<div class="pedal-container">
+    <div class="slider-container">
+        <input type="range" id="gasSlider" class="vertical" min="0" max="1" step="0.01" value="0">
+        <button id="gasBtn">GAS</button>
+    </div>
+    <div class="slider-container">
+        <input type="range" id="brakeSlider" class="vertical" min="0" max="1" step="0.01" value="0">
+        <button id="brakeBtn">BRAKE</button>
+    </div>
+</div>
+
+<script>
+let audioContext;
+let bufferSource;
+let audioBuffer;
+let gainNode;
+
+const fileInput = document.getElementById('fileInput');
+const gasBtn = document.getElementById('gasBtn');
+const brakeBtn = document.getElementById('brakeBtn');
+const gasSlider = document.getElementById('gasSlider');
+const brakeSlider = document.getElementById('brakeSlider');
+const needle = document.getElementById('needle');
+
+let gasPressed = false;
+let brakePressed = false;
+
+const idleVolume = 0.2;
+let currentVolume = idleVolume;
+
+const idlePitch = 1.0;
+const maxPitch = 2.0;
+let currentPitch = idlePitch;
+
+// === Audio laden ===
+fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file || file.type !== 'audio/wav') {
+        alert("Bitte wähle eine gültige WAV-Datei aus.");
+        return;
+    }
+    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const arrayBuffer = await file.arrayBuffer();
+    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    playBuffer();
+});
+
+function playBuffer() {
+    if (bufferSource) bufferSource.stop();
+    bufferSource = audioContext.createBufferSource();
+    bufferSource.buffer = audioBuffer;
+    bufferSource.loop = true;
+
+    gainNode = audioContext.createGain();
+    gainNode.gain.value = idleVolume;
+
+    bufferSource.connect(gainNode).connect(audioContext.destination);
+    bufferSource.start();
+}
+
+// === Button Events für Testzwecke ===
+gasBtn.addEventListener('mousedown', () => gasPressed = true);
+gasBtn.addEventListener('mouseup', () => gasPressed = false);
+gasBtn.addEventListener('mouseleave', () => gasPressed = false);
+gasBtn.addEventListener('touchstart', e => { e.preventDefault(); gasPressed = true; });
+gasBtn.addEventListener('touchend', e => { e.preventDefault(); gasPressed = false; });
+
+brakeBtn.addEventListener('mousedown', () => brakePressed = true);
+brakeBtn.addEventListener('mouseup', () => brakePressed = false);
+brakeBtn.addEventListener('mouseleave', () => brakePressed = false);
+brakeBtn.addEventListener('touchstart', e => { e.preventDefault(); brakePressed = true; });
+brakeBtn.addEventListener('touchend', e => { e.preventDefault(); brakePressed = false; });
+
+// === Gamepad Unterstützung ===
+window.addEventListener("gamepadconnected", (e) => {
+    console.log("Gamepad verbunden:", e.gamepad.id);
+});
+
+function updateGamepad() {
+    const gamepads = navigator.getGamepads();
+    if (gamepads[0]) {
+        const gp = gamepads[0];
+        // Logitech / Thrustmaster Standard Mapping
+        const gas = gp.buttons[7]?.value || 0;   // RT
+        const brake = gp.buttons[6]?.value || 0; // LT
+
+        gasSlider.value = gas;
+        brakeSlider.value = brake;
+
+        gasPressed = gas > 0.05;
+        brakePressed = brake > 0.05;
+
+        // Vibration (falls verfügbar)
+        if (gp.vibrationActuator) {
+            if (gasPressed) gp.vibrationActuator.playEffect("dual-rumble", { duration: 30, strongMagnitude: 0.1, weakMagnitude: 0 });
+            if (brakePressed) gp.vibrationActuator.playEffect("dual-rumble", { duration: 50, strongMagnitude: 0.2, weakMagnitude: 0 });
+        }
+    }
+    requestAnimationFrame(updateGamepad);
+}
+
+updateGamepad();
+
+// === Animation: Audio & Tachonadel ===
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function animate() {
+    const gasStrength = parseFloat(gasSlider.value);
+    const brakeStrength = parseFloat(brakeSlider.value);
+
+    // Lautstärke
+    if (gasPressed) currentVolume += (1 - currentVolume) * 0.1 * gasStrength;
+    else if (brakePressed) currentVolume += (idleVolume - currentVolume) * 0.05;
+    else currentVolume += (idleVolume - currentVolume) * 0.02;
+
+    // Pitch
+    if (gasPressed) currentPitch += (maxPitch - currentPitch) * 0.05 * gasStrength;
+    else if (brakePressed) currentPitch += (idlePitch - currentPitch) * 0.05;
+    else currentPitch += (idlePitch - currentPitch) * 0.01;
+
+    if (gainNode) gainNode.gain.value = currentVolume;
+    if (bufferSource) bufferSource.playbackRate.value = currentPitch;
+
+    // Tachonadel: -90° bis +90°
+    const tachoValue = (currentPitch - idlePitch) / (maxPitch - idlePitch);
+    const angle = lerp(-90, 90, tachoValue);
+    needle.setAttribute('transform', `rotate(${angle} 200 200)`);
+
+    requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
