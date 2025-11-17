@@ -52,17 +52,17 @@ button:hover {
 <h2>Drum Machine</h2>
 
 <div class="drumgrid">
-  <button data-sound="k">K</button>
-  <button data-sound="s">S</button>
-  <button data-sound="hh">HH</button>
-
-  <button data-sound="c">C</button>
-  <button data-sound="bd">BD</button>
-  <button data-sound="ohh">OHH</button>
-
-  <button data-sound="t1">T1</button>
-  <button data-sound="t2">T2</button>
   <button data-sound="t3">T3</button>
+  <button data-sound="t2">T2</button>
+  <button data-sound="t1">T1</button>
+
+  <button data-sound="ohh">OHH</button>
+  <button data-sound="bd">BD</button>
+  <button data-sound="c">C</button>
+
+  <button data-sound="hh">HH</button>
+  <button data-sound="s">S</button>
+  <button data-sound="k">K</button>
 </div>
 
 <script>
@@ -81,79 +81,69 @@ const urls = {
   t3: "https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t3.wav"
 };
 
-let audioCtx;
+let audioCtx = null;
 let buffers = {};
-let audioUnlocked = false;
+let loaded = false;
 
 // ------------------------
-// UNLOCK + PRELOAD
+// INIT + PRELOAD
 // ------------------------
-async function unlockAndLoad() {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
+async function initAudio() {
+  if (loaded) return;
 
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  await audioCtx.resume();
 
-  // Android Chrome unlock hack: play silent buffer
   const silent = audioCtx.createBuffer(1, 1, 22050);
   const src = audioCtx.createBufferSource();
   src.buffer = silent;
   src.connect(audioCtx.destination);
   src.start(0);
 
-  await audioCtx.resume();
-
-  // PRELOAD AUDIO
   const keys = Object.keys(urls);
-  await Promise.all(
-    keys.map(async (key) => {
-      const arr = await fetch(urls[key]).then(r => r.arrayBuffer());
-      buffers[key] = await audioCtx.decodeAudioData(arr);
-    })
-  );
 
-  console.log("Audio unlocked + samples loaded");
+  for (const k of keys) {
+    const arr = await fetch(urls[k]).then(r => r.arrayBuffer());
+    buffers[k] = await audioCtx.decodeAudioData(arr);
+  }
+
+  loaded = true;
+  console.log("Samples geladen + Audio freigeschaltet");
 }
 
-function ensureAudio() {
-  if (!audioUnlocked) unlockAndLoad();
-  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
-}
-
-document.addEventListener("touchstart", ensureAudio, { once: true });
-document.addEventListener("click", ensureAudio, { once: true });
+// Trigger Load on ANY first interaction
+["click", "touchstart", "keydown"].forEach(ev => {
+  document.addEventListener(ev, initAudio, { once: true });
+});
 
 // ------------------------
-// PLAY SOUND (polyphonic)
+// PLAY SOUND (polyphon)
 // ------------------------
 function play(key) {
-  ensureAudio();
-  const b = buffers[key];
-  if (!b) return;
+  if (!buffers[key]) return;
 
-  const s = audioCtx.createBufferSource();
-  s.buffer = b;
-  s.connect(audioCtx.destination);
-  s.start(0);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffers[key];
+  src.connect(audioCtx.destination);
+  src.start();
 }
 
-// Buttons
 document.querySelectorAll("button").forEach(btn =>
   btn.addEventListener("click", () => play(btn.dataset.sound))
 );
 
-// Keyboard
+// ------------------------
+// NUMPAD MAPPING (1 unten links → 9 oben rechts)
+// ------------------------
 const keymap = {
-  "Numpad7": "k", "Numpad8": "s", "Numpad9": "hh",
-  "Numpad4": "c", "Numpad5": "bd", "Numpad6": "ohh",
-  "Numpad1": "t1", "Numpad2": "t2", "Numpad3": "t3"
+  "Numpad1": "t3", "Numpad2": "t2", "Numpad3": "t1",
+  "Numpad4": "ohh","Numpad5": "bd","Numpad6": "c",
+  "Numpad7": "hh", "Numpad8": "s",  "Numpad9": "k"
 };
 
 document.addEventListener("keydown", e => {
-  if (keymap[e.code]) play(keymap[e.code]);
+  if (keymap[e.code] && loaded) play(keymap[e.code]);
 });
-
 </script>
 </body>
-  </html>
-  
+</html>
