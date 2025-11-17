@@ -51,6 +51,7 @@ button:hover {
 
 <h2>Drum Machine</h2>
 
+<!-- GRID angepasst an das neue Layout (1 unten, 9 oben) -->
 <div class="drumgrid">
   <button data-sound="t3">T3</button>
   <button data-sound="t2">T2</button>
@@ -66,83 +67,51 @@ button:hover {
 </div>
 
 <script>
-// ------------------------
-// SOUND URLs
-// ------------------------
-const urls = {
-  k:  "https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/k.wav",
-  s:  "https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/s.wav",
-  hh: "https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/hh.wav",
-  c:  "https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/c.wav",
-  bd: "https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/bd.wav",
-  ohh:"https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/ohh.wav",
-  t1: "https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t1.wav",
-  t2: "https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t2.wav",
-  t3: "https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t3.wav"
+// ------------------------------------
+// Audio als HTMLAudioElement (funktioniert immer)
+// ------------------------------------
+const sounds = {
+  k:  new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/k.wav"),
+  s:  new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/s.wav"),
+  hh: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/hh.wav"),
+  c:  new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/c.wav"),
+  bd: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/bd.wav"),
+  ohh:new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/ohh.wav"),
+  t1: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t1.wav"),
+  t2: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t2.wav"),
+  t3: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t3.wav")
 };
 
-let audioCtx = null;
-let buffers = {};
-let loaded = false;
-
-// ------------------------
-// INIT + PRELOAD
-// ------------------------
-async function initAudio() {
-  if (loaded) return;
-
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  await audioCtx.resume();
-
-  const silent = audioCtx.createBuffer(1, 1, 22050);
-  const src = audioCtx.createBufferSource();
-  src.buffer = silent;
-  src.connect(audioCtx.destination);
-  src.start(0);
-
-  const keys = Object.keys(urls);
-
-  for (const k of keys) {
-    const arr = await fetch(urls[k]).then(r => r.arrayBuffer());
-    buffers[k] = await audioCtx.decodeAudioData(arr);
-  }
-
-  loaded = true;
-  console.log("Samples geladen + Audio freigeschaltet");
-}
-
-// Trigger Load on ANY first interaction
-["click", "touchstart", "keydown"].forEach(ev => {
-  document.addEventListener(ev, initAudio, { once: true });
-});
-
-// ------------------------
-// PLAY SOUND (polyphon)
-// ------------------------
+// polyphon: wir klonen den Sound und spielen ihn ab
 function play(key) {
-  if (!buffers[key]) return;
-
-  const src = audioCtx.createBufferSource();
-  src.buffer = buffers[key];
-  src.connect(audioCtx.destination);
-  src.start();
+  const audio = sounds[key].cloneNode();
+  audio.play().catch(err => console.log(err));
 }
 
+// Buttons
 document.querySelectorAll("button").forEach(btn =>
   btn.addEventListener("click", () => play(btn.dataset.sound))
 );
 
-// ------------------------
-// NUMPAD MAPPING (1 unten links → 9 oben rechts)
-// ------------------------
+// ------------------------------------
+// NUMPAD-Mapping (1 unten → 9 oben)
+// ------------------------------------
 const keymap = {
-  "Numpad1": "t3", "Numpad2": "t2", "Numpad3": "t1",
-  "Numpad4": "ohh","Numpad5": "bd","Numpad6": "c",
-  "Numpad7": "hh", "Numpad8": "s",  "Numpad9": "k"
+  "Numpad1": "t3", 
+  "Numpad2": "t2", 
+  "Numpad3": "t1",
+
+  "Numpad4": "ohh",
+  "Numpad5": "bd",
+  "Numpad6": "c",
+
+  "Numpad7": "hh",
+  "Numpad8": "s",
+  "Numpad9": "k"
 };
 
 document.addEventListener("keydown", e => {
-  if (keymap[e.code] && loaded) play(keymap[e.code]);
+  if (keymap[e.code]) play(keymap[e.code]);
 });
 </script>
 </body>
