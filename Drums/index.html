@@ -1,26 +1,27 @@
 <!DOCTYPE html>
 <html lang="de">
 <body>
-<h2>3×3 Drum Machine + Numpad</h2>
+<h2>3×3 Drum Machine – Android Ready + Numpad</h2>
 
 <div style="display:grid; grid-template-columns:repeat(3,100px); gap:10px; width:320px;">
 
-  <button onclick="play('k')">K (7)</button>
-  <button onclick="play('s')">S (8)</button>
-  <button onclick="play('hh')">HH (9)</button>
+  <button data-sound="k">K (7)</button>
+  <button data-sound="s">S (8)</button>
+  <button data-sound="hh">HH (9)</button>
 
-  <button onclick="play('c')">C (4)</button>
-  <button onclick="play('bd')">BD (5)</button>
-  <button onclick="play('ohh')">OHH (6)</button>
+  <button data-sound="c">C (4)</button>
+  <button data-sound="bd">BD (5)</button>
+  <button data-sound="ohh">OHH (6)</button>
 
-  <button onclick="play('t1')">T1 (1)</button>
-  <button onclick="play('t2')">T2 (2)</button>
-  <button onclick="play('t3')">T3 (3)</button>
+  <button data-sound="t1">T1 (1)</button>
+  <button data-sound="t2">T2 (2)</button>
+  <button data-sound="t3">T3 (3)</button>
 
 </div>
 
 <script>
-const sounds = {
+// ---------- SOUNDS ----------
+const urls = {
   k:  "https://musetron.github.io/raw/refs/heads/main/Drums/k.wav",
   s:  "https://musetron.github.io/raw/refs/heads/main/Drums/s.wav",
   hh: "https://musetron.github.io/raw/refs/heads/main/Drums/hh.wav",
@@ -32,12 +33,52 @@ const sounds = {
   t3: "https://musetron.github.io/raw/refs/heads/main/Drums/t3.wav"
 };
 
-function play(key){
-  const audio = new Audio(sounds[key]);
-  audio.play();
+// ---------- ANDROID AUDIO UNLOCK ----------
+let audioCtx = null;
+let buffers = {};
+
+async function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // lade alle Sounds in AudioBuffer (super schnell)
+    for (let key in urls) {
+      const data = await fetch(urls[key]).then(r => r.arrayBuffer());
+      buffers[key] = await audioCtx.decodeAudioData(data);
+    }
+  }
+
+  // Falls der Kontext gesperrt ist → wieder starten
+  if (audioCtx.state === "suspended") {
+    await audioCtx.resume();
+  }
 }
 
-// NUMPAD-MAPPING
+function play(key) {
+  if (!buffers[key]) return;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffers[key];
+  src.connect(audioCtx.destination);
+  src.start();
+}
+
+// ---------- USER GESTURE UNLOCK ----------
+function unlock() {
+  initAudio();        // lädt und aktiviert Audio
+  document.removeEventListener("touchstart", unlock);
+  document.removeEventListener("click", unlock);
+}
+
+document.addEventListener("touchstart", unlock, { once:true });
+document.addEventListener("click", unlock, { once:true });
+
+// ---------- BUTTON EVENTS ----------
+document.querySelectorAll("button").forEach(btn => {
+  btn.addEventListener("click", () => play(btn.dataset.sound));
+  btn.addEventListener("touchstart", () => play(btn.dataset.sound));
+});
+
+// ---------- NUMPAD ----------
 const keymap = {
   "Numpad7": "k",
   "Numpad8": "s",
