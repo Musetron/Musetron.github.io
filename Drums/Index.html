@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="de">
+<body>
+<h2>3×3 Drum Machine + Numpad</h2>
+
+<div style="display:grid; grid-template-columns:repeat(3,100px); gap:10px; width:320px;">
+
+  <button onclick="play('k')">K (7)</button>
+  <button onclick="play('s')">S (8)</button>
+  <button onclick="play('hh')">HH (9)</button>
+
+  <button onclick="play('c')">C (4)</button>
+  <button onclick="play('bd')">BD (5)</button>
+  <button onclick="play('ohh')">OHH (6)</button>
+
+  <button onclick="play('t1')">T1 (1)</button>
+  <button onclick="play('t2')">T2 (2)</button>
+  <button onclick="play('t3')">T3 (3)</button>
+
+</div>
+
+<script>
+const sounds = {
+  k:  "https://musetron.github.io/raw/refs/heads/main/Drums/k.wav",
+  s:  "https://musetron.github.io/raw/refs/heads/main/Drums/s.wav",
+  hh: "https://musetron.github.io/raw/refs/heads/main/Drums/hh.wav",
+  c:  "https://musetron.github.io/raw/refs/heads/main/Drums/c.wav",
+  bd: "https://musetron.github.io/raw/refs/heads/main/Drums/bd.wav",
+  ohh:"https://musetron.github.io/raw/refs/heads/main/Drums/ohh.wav",
+  t1: "https://musetron.github.io/raw/refs/heads/main/Drums/t1.wav",
+  t2: "https://musetron.github.io/raw/refs/heads/main/Drums/t2.wav",
+  t3: "https://musetron.github.io/raw/refs/heads/main/Drums/t3.wav"
+};
+
+function play(key){
+  const audio = new Audio(sounds[key]);
+  audio.play();
+}
+
+// NUMPAD-MAPPING
+const keymap = {
+  "Numpad7": "k",
+  "Numpad8": "s",
+  "Numpad9": "hh",
+  "Numpad4": "c",
+  "Numpad5": "bd",
+  "Numpad6": "ohh",
+  "Numpad1": "t1",
+  "Numpad2": "t2",
+  "Numpad3": "t3"
+};
+
+document.addEventListener("keydown", e => {
+  if (keymap[e.code]) {
+    play(keymap[e.code]);
+  }
+});
+</script>
+
+</body>
+</html>
