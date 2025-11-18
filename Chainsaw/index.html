@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Kettensäge Simulator – Smooth & Organisch</title>
+<style>
+body {
+  font-family: sans-serif;
+  text-align: center;
+  padding: 50px;
+  background: #111;
+  color: #eee;
+}
+button, input[type=range] {
+  font-size: 1.2em;
+  margin-top: 20px;
+}
+input[type=range] {
+  width: 300px;
+}
+</style>
+</head>
+<body>
+
+<h1>Chainsaw</h1>
+<button id="startBtn">GO</button>
+<br>
+<label for="sawSlider"></label>
+<input type="range" id="sawSlider" min="0" max="0.7" step="0.01" value="0">
+
+<script>
+let audioCtx;
+let gainNode;
+let oscillator;
+let lfo;
+let lfoGain;
+let waveShaper;
+let randomness = 0.08; // Idle kratzig
+const idleFreq = 30;
+const idleLFO = 10;
+
+// Vibrato / organisches Rauschen
+let vibratoGain = 0.5;
+
+document.getElementById('startBtn').addEventListener('click', () => {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        gainNode = audioCtx.createGain();
+        gainNode.gain.value = 0.8;
+        gainNode.connect(audioCtx.destination);
+    }
+
+    oscillator = audioCtx.createOscillator();
+    oscillator.type = 'sawtooth';
+    oscillator.frequency.value = idleFreq;
+
+    // LFO für Amplitudenmodulation
+    lfo = audioCtx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = idleLFO;
+
+    lfoGain = audioCtx.createGain();
+    lfoGain.gain.value = 0.3;
+    lfo.connect(lfoGain);
+    lfoGain.connect(gainNode.gain);
+    lfo.start();
+
+    // ScriptProcessor für kaputten Sound
+    const bufferSize = 4096;
+    waveShaper = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+    waveShaper.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
+        const output = e.outputBuffer.getChannelData(0);
+        for (let i = 0; i < input.length; i++) {
+            // Aggressives Noise + Vibrato
+            let noise = (Math.random() * 2 - 1) * randomness * 1.3;
+            let vibrato = (Math.random() * 2 - 1) * vibratoGain * 0.05;
+            let val = input[i] + noise + vibrato;
+
+            // Harsches Clipping / Distortion
+            if (val > 0.15) val = 0.15 + (Math.random() * 0.05);
+            if (val < -0.15) val = -0.15 + (Math.random() * -0.05);
+
+            val = Math.tanh(val * 5);
+
+            output[i] = val;
+        }
+    };
+
+    oscillator.connect(waveShaper);
+    waveShaper.connect(gainNode);
+    oscillator.start();
+});
+
+// Slider steuert Sägen-Effekt
+document.getElementById('sawSlider').addEventListener('input', (e) => {
+    let value = parseFloat(e.target.value); // 0-0.7
+    if (!oscillator) return;
+
+    const now = audioCtx.currentTime;
+
+    // Smooth & organisch: setTargetAtTime
+    let targetFreq = idleFreq + Math.pow(value / 0.7, 2.2) * 220; // max Pitch reduziert
+    oscillator.frequency.setTargetAtTime(targetFreq, now, 0.1);
+
+    let targetLFO = idleLFO + Math.pow(value / 0.7, 1.8) * 40;
+    lfo.frequency.setTargetAtTime(targetLFO, now, 0.1);
+    lfoGain.gain.setTargetAtTime(0.3 + (value / 0.7) * 1.5, now, 0.1);
+
+    gainNode.gain.setTargetAtTime(0.8 + Math.pow(value / 0.7,1.5)*1.5, now, 0.1);
+
+    randomness = 0.08 + (value / 0.7) * 0.65; // noch mehr Noise beim Sägen
+    vibratoGain = 0.5 + (value / 0.7) * 0.8;
+});
+
+// Gamepad-Polling: nur Joystick nach oben
+function updateGamepad() {
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    if (gamepads[0]) {
+        const gp = gamepads[0];
+        let yAxis = gp.axes[1]; // linker Joystick Y-Achse
+
+        if (yAxis < 0) { // nur nach oben
+            let sliderValue = (-yAxis) * 0.7; // Mitte=0, Max=0.7
+            document.getElementById('sawSlider').value = sliderValue;
+            document.getElementById('sawSlider').dispatchEvent(new Event('input'));
+        } else {
+            document.getElementById('sawSlider').value = 0; // unten oder Mitte = 0
+            document.getElementById('sawSlider').dispatchEvent(new Event('input'));
+        }
+    }
+    requestAnimationFrame(updateGamepad);
+}
+
+window.addEventListener("gamepadconnected", (e) => {
+    console.log("Gamepad verbunden:", e.gamepad);
+    updateGamepad();
+});
+</script>
+
+</body>
+  </html>
