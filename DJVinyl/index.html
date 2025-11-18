@@ -103,7 +103,7 @@ window.addEventListener("gamepadconnected", e=>gamepadIndex=e.gamepad.index);
 window.addEventListener("gamepaddisconnected", e=>gamepadIndex=null);
 
 // --- Audio ScriptProcessorNode ---
-let scriptNode = audioCtx.createScriptProcessor(1024, 1, 1);
+let scriptNode = audioCtx.createScriptProcessor(8192, 1, 1);
 scriptNode.onaudioprocess = function(e){
     if(!audioBuffer || paused) return;
     const outData = e.outputBuffer.getChannelData(0);
