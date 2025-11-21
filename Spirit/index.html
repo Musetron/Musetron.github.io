@@ -1,213 +1,79 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Spirit-Viewer Android</title>
+<meta charset="UTF-8">
+<title>Simple Voice Echo</title>
 <style>
-  html, body { margin:0; padding:0; height:100%; overflow:hidden; background:#000; color:#fff; font-family: Arial, sans-serif;}
-  canvas { display:block; background:#000; width:100%; height:100%; }
-  #hint { position:absolute; top:8px; left:8px; font-size:14px; color:#fff; z-index:10; }
+  body {
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 50px;
+  }
+  button {
+    padding: 10px 20px;
+    margin: 10px;
+    font-size: 16px;
+  }
+  p {
+    font-weight: bold;
+  }
 </style>
 </head>
 <body>
-<div id="hint">Erlaube Mikrofonzugriff...</div>
-<canvas id="screen"></canvas>
+<h1>Sprach-Echo</h1>
+<p>Klicke auf Start und sprich ins Mikrofon</p>
+<button id="startBtn">Start</button>
+<button id="stopBtn" disabled>Stop</button>
 
 <script>
-/* ========== PARAMS ========== */
-const WIDTH = 64, HEIGHT = 64;     // TV-Auflösung
-const FFT_SIZE = 512;
-const SPEC_HISTORY = 128;          // für Mobil kleiner
-const SAMPLE_RATE = 44100;
-const BAND_LOW = 300;              // f_low
-const BAND_HIGH = 3000;            // f_high
-let brightness = 0.5;
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
 
-/* ========== Canvas Setup ========== */
-const canvas = document.getElementById('screen');
-const ctx = canvas.getContext('2d');
+// Sprachsynthese
+const synth = window.speechSynthesis;
 
-function resizeCanvas(){
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
+// Aufnahme
+let recognition;
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'de-DE';
 
-/* ========== RingBuffer ========== */
-class RingBuffer {
-    constructor(maxlen){
-        this.buf = new Float32Array(maxlen);
-        this.maxlen = maxlen;
-        this.start = 0;
-        this.length = 0;
-    }
-    push(val){
-        if(this.length < this.maxlen){
-            this.buf[(this.start+this.length)%this.maxlen]=val;
-            this.length++;
-        } else {
-            this.buf[this.start]=val;
-            this.start=(this.start+1)%this.maxlen;
-        }
-    }
-    pushArray(arr){ for(let v of arr) this.push(v); }
-    pop(){ if(this.length===0)return 0; const v=this.buf[this.start]; this.start=(this.start+1)%this.maxlen; this.length--; return v; }
-    peekLastN(n){ n=Math.min(n,this.length); let out=new Float32Array(n); for(let i=0;i<n;i++){ out[i]=this.buf[(this.start+this.length-n+i)%this.maxlen]; } return out; }
-    available(){return this.length;}
-}
-const frame_buffer = new RingBuffer(WIDTH*HEIGHT*4);
-const spec_buffer = new Float32Array(SPEC_HISTORY*WIDTH);
+    recognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                const text = event.results[i][0].transcript;
+                console.log("Erkannt:", text);
 
-/* ========== FFT/IFFT simple ========== */
-function fft(input){
-    const N = input.length;
-    const real = new Float32Array(N);
-    const imag = new Float32Array(N);
-    for(let i=0;i<N;i++){ real[i]=input[i]; imag[i]=0; }
-    function bitReverse(n){ let r=0; let bits=Math.log2(N)|0; for(let i=0;i<bits;i++){ r=(r<<1)|(n&1); n>>=1; } return r; }
-    for(let i=0;i<N;i++){ const j=bitReverse(i); if(j>i){ let t=real[i]; real[i]=real[j]; real[j]=t; t=imag[i]; imag[i]=imag[j]; imag[j]=t; } }
-    for(let len=2;len<=N;len*=2){
-        const half=len/2;
-        const theta=-2*Math.PI/len;
-        const wlen_r=Math.cos(theta), wlen_i=Math.sin(theta);
-        for(let i=0;i<N;i+=len){
-            let wr=1,wi=0;
-            for(let j=0;j<half;j++){
-                const ur=real[i+j], ui=imag[i+j];
-                const vr=real[i+j+half]*wr - imag[i+j+half]*wi;
-                const vi=real[i+j+half]*wi + imag[i+j+half]*wr;
-                real[i+j]=ur+vr; imag[i+j]=ui+vi;
-                real[i+j+half]=ur-vr; imag[i+j+half]=ui-vi;
-                const tmp=wr*wlen_r - wi*wlen_i; wi=wr*wlen_i + wi*wlen_r; wr=tmp;
+                // Sprache ausgeben
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'de-DE';
+                synth.speak(utterance);
             }
         }
-    }
-    return {real,imag};
-}
-function ifft(real,imag){
-    for(let i=0;i<real.length;i++) imag[i]*=-1;
-    fftIter(real,imag);
-    for(let i=0;i<real.length;i++){ real[i]/=real.length; imag[i]*=-1; }
-}
-function fftIter(real,imag){
-    const N=real.length;
-    function bitReverse(n){ let r=0; let bits=Math.log2(N)|0; for(let i=0;i<bits;i++){ r=(r<<1)|(n&1); n>>=1; } return r; }
-    for(let i=0;i<N;i++){ const j=bitReverse(i); if(j>i){ let t=real[i]; real[i]=real[j]; real[j]=t; t=imag[i]; imag[i]=imag[j]; imag[j]=t; } }
-    for(let len=2;len<=N;len*=2){
-        const half=len/2;
-        const theta=-2*Math.PI/len;
-        const wlen_r=Math.cos(theta), wlen_i=Math.sin(theta);
-        for(let i=0;i<N;i+=len){
-            let wr=1,wi=0;
-            for(let j=0;j<half;j++){
-                const ur=real[i+j], ui=imag[i+j];
-                const vr=real[i+j+half]*wr - imag[i+j+half]*wi;
-                const vi=real[i+j+half]*wi + imag[i+j+half]*wr;
-                real[i+j]=ur+vr; imag[i+j]=ui+vi;
-                real[i+j+half]=ur-vr; imag[i+j+half]=ui-vi;
-                const tmp=wr*wlen_r - wi*wlen_i; wi=wr*wlen_i + wi*wlen_r; wr=tmp;
-            }
-        }
-    }
-}
-
-/* ========== getUserMedia Audio ========== */
-let audioCtx;
-async function startAudio(){
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)({sampleRate:SAMPLE_RATE});
-    const stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
-    const source = audioCtx.createMediaStreamSource(stream);
-    const processor = audioCtx.createScriptProcessor(512,1,1);
-    processor.onaudioprocess=(e)=>{
-        const input=e.inputBuffer.getChannelData(0);
-        frame_buffer.pushArray(input.map(v=>v*brightness));
     };
-    source.connect(processor);
-    processor.connect(audioCtx.destination);
-    document.getElementById('hint').textContent='Mikrofon aktiv!';
-}
-startAudio();
 
-/* ========== Spectrogram helper ========== */
-function pushSpecRow(row){
-    for(let r=0;r<SPEC_HISTORY-1;r++){
-        spec_buffer.set(spec_buffer.subarray((r+1)*WIDTH,(r+2)*WIDTH), r*WIDTH);
-    }
-    spec_buffer.set(row,(SPEC_HISTORY-1)*WIDTH);
+    recognition.onerror = (e) => console.error(e);
+} else {
+    alert("Dein Browser unterstützt keine Spracherkennung.");
 }
 
-/* ========== Render loop ========== */
-function render(){
-    ctx.fillStyle='black';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
+// Buttons
+startBtn.onclick = () => {
+    recognition.start();
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+};
 
-    // TV-Bild
-    if(frame_buffer.available()>=WIDTH*HEIGHT){
-        const samples = frame_buffer.peekLastN(WIDTH*HEIGHT);
-        const {real,imag}=fft(samples);
-        // Bandpass mask
-        for(let k=0;k<real.length;k++){
-            const freq=k*SAMPLE_RATE/real.length;
-            if(freq<BAND_LOW||freq>BAND_HIGH){ real[k]=0; imag[k]=0; }
-        }
-        const tvTime = new Float32Array(real.length);
-        const tvImag = new Float32Array(imag.length);
-        tvTime.set(real); tvImag.set(imag);
-        ifft(tvTime,tvImag);
-        const imgData = ctx.createImageData(WIDTH,HEIGHT);
-        for(let r=0;r<HEIGHT;r++){
-            for(let c=0;c<WIDTH;c++){
-                const v = Math.pow(Math.abs(tvTime[r*WIDTH+c]||0),0.6)*255;
-                const p=(r*WIDTH+c)*4;
-                const vv=Math.max(0,Math.min(255,v));
-                imgData.data[p+0]=vv; imgData.data[p+1]=vv; imgData.data[p+2]=vv; imgData.data[p+3]=255;
-            }
-        }
-        const tmp = document.createElement('canvas'); tmp.width=WIDTH; tmp.height=HEIGHT;
-        tmp.getContext('2d').putImageData(imgData,0,0);
-        ctx.drawImage(tmp,0,0,canvas.width,canvas.height*2/3);
-    }
-
-    // Spectrogram
-    if(frame_buffer.available()>=FFT_SIZE){
-        const samples = frame_buffer.popN(FFT_SIZE);
-        const {real,imag}=fft(samples);
-        const mag = new Float32Array(real.length/2+1);
-        let maxMag=1e-9;
-        for(let k=0;k<mag.length;k++){
-            mag[k]=Math.log1p(Math.hypot(real[k],imag[k]));
-            if(mag[k]>maxMag) maxMag=mag[k];
-        }
-        for(let k=0;k<mag.length;k++) mag[k]/=maxMag;
-        const magResized = new Float32Array(WIDTH);
-        for(let x=0;x<WIDTH;x++){
-            const idx=x*(mag.length-1)/(WIDTH-1);
-            const i0=Math.floor(idx),i1=Math.min(mag.length-1,i0+1);
-            const frac=idx-i0;
-            magResized[x]=mag[i0]*(1-frac)+mag[i1]*frac;
-        }
-        pushSpecRow(magResized);
-    }
-
-    const specCanvas = document.createElement('canvas'); specCanvas.width=WIDTH; specCanvas.height=SPEC_HISTORY;
-    const sctx = specCanvas.getContext('2d');
-    const specImg = sctx.createImageData(WIDTH,SPEC_HISTORY);
-    for(let r=0;r<SPEC_HISTORY;r++){
-        for(let c=0;c<WIDTH;c++){
-            const v = spec_buffer[r*WIDTH+c]||0;
-            const vv=Math.max(0,Math.min(255,Math.floor(v*255)));
-            const p=(r*WIDTH+c)*4;
-            specImg.data[p+0]=vv; specImg.data[p+1]=vv; specImg.data[p+2]=vv; specImg.data[p+3]=255;
-        }
-    }
-    sctx.putImageData(specImg,0,0);
-    ctx.drawImage(specCanvas,0,canvas.height*2/3,canvas.width,canvas.height/3);
-
-    requestAnimationFrame(render);
-}
-requestAnimationFrame(render);
+stopBtn.onclick = () => {
+    recognition.stop();
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+};
 </script>
 </body>
 </html>
