@@ -3,56 +3,77 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Spirit-Viewer</title>
+<title>Spirit-Viewer — FFT-Klon</title>
 <style>
-  html,body { height:100%; margin:0; background:#000; color:#fff; font-family: Arial, sans-serif; }
+  html,body { height:100%; margin:0; background:#000; color:#fff; font-family: Arial, sans-serif; overflow:hidden; }
   canvas { display:block; background:#000; }
-  #info { position:fixed; left:8px; top:8px; font-size:12px; opacity:0.9; }
-  /* keine zusätzliche UI-Elemente sichtbar — alles wird in Canvas gezeichnet */
+  #hint { position:fixed; left:8px; top:8px; font-size:12px; opacity:0.9; z-index:10; }
 </style>
 </head>
 <body>
-<canvas id="cv"></canvas>
-<div id="info">Spirit-Viewer</div>
+<canvas id="screen"></canvas>
+<div id="hint">Spirit-Viewer (FFT-Klon) — Erlaube Mikrofonzugriff</div>
 
 <script>
-/* -----------------------
-   Parameter (gleiche Namen)
-   ----------------------- */
+/* ===========================
+   Params (wie im Python)
+   =========================== */
 let WINDOW_WIDTH = 420, WINDOW_HEIGHT = 600;
 const FPS = 60;
 const WIDTH = 64, HEIGHT = 64; // TV-Auflösung
-const SAMPLE_RATE_REQUEST = 44100; // Wunsch, tatsächl. kann audioCtx.sampleRate weichen
+const SAMPLE_RATE = 44100;
 const SAMPLES_PER_FRAME = WIDTH * HEIGHT;
 const FFT_SIZE = 512;
 const SPEC_HISTORY = 256;
 
-/* -----------------------
-   Puffer (Ringbuffer)
-   ----------------------- */
-class RingFloat {
+/* ===========================
+   Utilities: clamp, etc.
+   =========================== */
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const clamp01 = v => Math.max(0, Math.min(1, v));
+
+/* =================================================
+   Ringbuffer (Float) - similar behavior to deque
+   ================================================= */
+class RingBuffer {
   constructor(maxlen){
     this.maxlen = maxlen;
     this.buf = new Float32Array(maxlen);
     this.start = 0;
     this.length = 0;
   }
-  pushArray(arr){
-    for(let i=0;i<arr.length;i++) this.push(arr[i]);
-  }
-  push(v){
+  push(val){
     if(this.length < this.maxlen){
-      this.buf[(this.start + this.length) % this.maxlen] = v;
+      this.buf[(this.start + this.length) % this.maxlen] = val;
       this.length++;
     } else {
       // overwrite oldest
-      this.buf[this.start] = v;
+      this.buf[this.start] = val;
       this.start = (this.start + 1) % this.maxlen;
     }
   }
-  peekLast(n){
-    // return last n samples as Float32Array (not removing)
-    if(n > this.length) n = this.length;
+  pushArray(arr){
+    for(let i=0;i<arr.length;i++) this.push(arr[i]);
+  }
+  pop(){
+    if(this.length === 0) return undefined;
+    const v = this.buf[this.start];
+    this.start = (this.start + 1) % this.maxlen;
+    this.length--;
+    return v;
+  }
+  popN(n){
+    if(n <= 0) return new Float32Array(0);
+    n = Math.min(n, this.length);
+    const out = new Float32Array(n);
+    for(let i=0;i<n;i++){
+      out[i] = this.pop();
+    }
+    return out;
+  }
+  peekLastN(n){
+    if(n <= 0) return new Float32Array(0);
+    n = Math.min(n, this.length);
     const out = new Float32Array(n);
     for(let i=0;i<n;i++){
       const idx = (this.start + this.length - n + i) % this.maxlen;
@@ -60,30 +81,111 @@ class RingFloat {
     }
     return out;
   }
-  popFirst(n){
-    if(n > this.length) n = this.length;
-    const out = new Float32Array(n);
-    for(let i=0;i<n;i++){
-      out[i] = this.buf[(this.start + i) % this.maxlen];
-    }
-    this.start = (this.start + n) % this.maxlen;
-    this.length -= n;
-    if(this.length < 0) this.length = 0;
-    return out;
-  }
   available(){ return this.length; }
+  clear(){ this.start = 0; this.length = 0; }
 }
-let frame_buffer = new RingFloat(SAMPLES_PER_FRAME * 4);
-let output_buffer = new RingFloat(SAMPLES_PER_FRAME * 4);
-let spec_buffer = new Float32Array(SPEC_HISTORY * WIDTH); // row-major: row0..rowN-1 each width long
 
-/* -----------------------
-   Layout
-   ----------------------- */
-let canvas = document.getElementById('cv');
-let ctx = canvas.getContext('2d');
-let TV_HEIGHT, SPEC_TOP, SPEC_HEIGHT;
-let slider_rect;
+/* ===========================
+   FFT / IFFT implementation
+   iterative Cooley-Tukey radix-2
+   Input: real[], imag[] in-place
+   N must be power of two
+   =========================== */
+function buildBitReverse(n) {
+  const rev = new Uint32Array(n);
+  const bits = Math.log2(n) | 0;
+  for (let i = 0; i < n; i++) {
+    let x = i, r = 0;
+    for (let j = 0; j < bits; j++) {
+      r = (r << 1) | (x & 1);
+      x >>= 1;
+    }
+    rev[i] = r;
+  }
+  return rev;
+}
+function fftIterative(real, imag) {
+  const n = real.length;
+  const rev = buildBitReverse(n);
+  for (let i = 0; i < n; i++) {
+    const j = rev[i];
+    if (j > i) {
+      let t = real[i]; real[i] = real[j]; real[j] = t;
+      t = imag[i]; imag[i] = imag[j]; imag[j] = t;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const half = len >>> 1;
+    const theta = -2 * Math.PI / len;
+    const wlen_r = Math.cos(theta);
+    const wlen_i = Math.sin(theta);
+    for (let i = 0; i < n; i += len) {
+      let wr = 1, wi = 0;
+      for (let j = 0; j < half; j++) {
+        const ur = real[i + j];
+        const ui = imag[i + j];
+        const vr = real[i + j + half] * wr - imag[i + j + half] * wi;
+        const vi = real[i + j + half] * wi + imag[i + j + half] * wr;
+        real[i + j] = ur + vr;
+        imag[i + j] = ui + vi;
+        real[i + j + half] = ur - vr;
+        imag[i + j + half] = ui - vi;
+        // multiply wr,wi by wlen
+        const tmp = wr * wlen_r - wi * wlen_i;
+        wi = wr * wlen_i + wi * wlen_r;
+        wr = tmp;
+      }
+    }
+  }
+}
+function ifftIterative(real, imag) {
+  // conjugate, fft, conjugate, divide by n
+  for (let i = 0; i < real.length; i++) imag[i] = -imag[i];
+  fftIterative(real, imag);
+  const n = real.length;
+  for (let i = 0; i < n; i++) {
+    real[i] = real[i] / n;
+    imag[i] = -imag[i] / n;
+  }
+}
+
+/* Helper: rfft -> compute complex FFT of real input (real[], imag[])
+   We create imag zeros and call fftIterative.
+*/
+function rfftFromReal(realIn) {
+  const n = realIn.length;
+  const real = new Float32Array(n);
+  const imag = new Float32Array(n);
+  for (let i = 0; i < n; i++) real[i] = realIn[i];
+  fftIterative(real, imag);
+  return { real, imag }; // full-spectrum complex (complex conjugate symmetry applies)
+}
+function irfftToReal(realC, imagC) {
+  // inverse FFT, result is real (imag ~ 0)
+  const n = realC.length;
+  const real = new Float32Array(n);
+  const imag = new Float32Array(n);
+  for (let i=0;i<n;i++){ real[i]=realC[i]; imag[i]=imagC[i]; }
+  ifftIterative(real, imag);
+  return real;
+}
+
+/* ===========================
+   Buffers
+   =========================== */
+let frame_buffer = new RingBuffer(SAMPLES_PER_FRAME * 4);
+let output_buffer = new RingBuffer(SAMPLES_PER_FRAME * 4);
+let spec_buffer = new Float32Array(SPEC_HISTORY * WIDTH); // row-major: rows 0..SPEC_HISTORY-1 each WIDTH length
+
+/* Initialize spec_buffer zeros */
+for(let i=0;i<spec_buffer.length;i++) spec_buffer[i] = 0;
+
+/* ===========================
+   Layout & Interaction
+   =========================== */
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+let TV_HEIGHT, SPEC_TOP, SPEC_HEIGHT, slider_rect;
 function update_layout(){
   TV_HEIGHT = Math.floor(WINDOW_HEIGHT * 2 / 3);
   SPEC_TOP = TV_HEIGHT + 20;
@@ -92,118 +194,40 @@ function update_layout(){
 }
 update_layout();
 
-/* -----------------------
-   Slider & Bandpass
-   ----------------------- */
-let slider_pos = slider_rect.x + Math.floor(slider_rect.width / 2);
-let dragging_slider = false;
-let brightness = 0.5;   // Lautstärke/Helligkeit (0..1)
-let contrast = 0.5;     // Gain/Kontrast (0..1)
-
-let line_left = Math.floor(WINDOW_WIDTH / 4);
-let line_right = Math.floor(WINDOW_WIDTH * 3 / 4);
-let line_middle = Math.floor((line_left + line_right) / 2);
-let dragging_line = null;
-
-/* -----------------------
-   WebAudio Setup
-   ----------------------- */
-let audioCtx;
-let micStream;
-let sourceNode;
-let analyser;
-let filterNode; // bandpass approx
-let gainNode;
-let scriptNodeVis; // to capture samples for visualization (filtered)
-let scriptNodeRaw; // optional
-let actualSampleRate = SAMPLE_RATE_REQUEST;
-
-async function startAudio(){
-  try{
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)({sampleRate: SAMPLE_RATE_REQUEST});
-    actualSampleRate = audioCtx.sampleRate;
-    // getUserMedia
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, sampleRate: actualSampleRate }, video:false });
-    sourceNode = audioCtx.createMediaStreamSource(micStream);
-
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = FFT_SIZE;
-    analyser.smoothingTimeConstant = 0.2;
-
-    // Bandpass: we'll use a cascade to mimic adjustable bandpass width
-    filterNode = audioCtx.createBiquadFilter();
-    filterNode.type = 'bandpass';
-    // We'll compute center frequency and Q dynamically from lines
-
-    gainNode = audioCtx.createGain();
-    gainNode.gain.value = 1.0;
-
-    // ScriptProcessorNode (not ideal but simple) for visualization of filtered audio
-    const bufferSize = 512; // matches FFT_SIZE
-    scriptNodeVis = audioCtx.createScriptProcessor(bufferSize, 1, 1);
-    scriptNodeVis.onaudioprocess = (e)=>{
-      const input = e.inputBuffer.getChannelData(0);
-      // apply brightness to captured visualization samples (like multiplying earlier)
-      const scaled = new Float32Array(input.length);
-      for(let i=0;i<input.length;i++){
-        scaled[i] = input[i] * (brightness * 2);
-      }
-      frame_buffer.pushArray(scaled);
-      // also push to output_buffer for safety (we actually route audio to dest separately)
-      output_buffer.pushArray(scaled);
-    };
-
-    // Connect graph:
-    // source -> analyser -> filter -> scriptNodeVis -> gain -> destination
-    sourceNode.connect(analyser);
-    analyser.connect(filterNode);
-    filterNode.connect(scriptNodeVis);
-    scriptNodeVis.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-
-    // Also keep a tap before filter if needed (not necessary)
-
-    // Initialize spec_buffer to zeros
-    for(let i=0;i<spec_buffer.length;i++) spec_buffer[i] = 0;
-
-    console.log("Audio started. sampleRate:", actualSampleRate);
-  } catch (err){
-    console.error("Audio error:", err);
-    document.getElementById('info').textContent = 'Fehler beim Zugriff auf Mikrofon: ' + err.message;
-  }
-}
-
-/* -----------------------
-   User Interaction / Canvas Events
-   ----------------------- */
 function resizeCanvas(){
-  canvas.width = WINDOW_WIDTH;
-  canvas.height = WINDOW_HEIGHT;
-  update_layout();
-}
-function setCanvasSizeFromWindow(){
-  const dpr = window.devicePixelRatio || 1;
   canvas.style.width = WINDOW_WIDTH + 'px';
   canvas.style.height = WINDOW_HEIGHT + 'px';
-  canvas.width = WINDOW_WIDTH * dpr;
-  canvas.height = WINDOW_HEIGHT * dpr;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(WINDOW_WIDTH * dpr);
+  canvas.height = Math.floor(WINDOW_HEIGHT * dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0);
 }
-setCanvasSizeFromWindow();
+resizeCanvas();
 
-window.addEventListener('resize', ()=> {
-  // keep user's requested size when window resized? We'll adapt to browser window smaller/larger.
-  // For parity with original, we allow manual resize via window size change
+window.addEventListener('resize', ()=>{
+  // adapt to window size but keep some minimums
   WINDOW_WIDTH = Math.max(320, Math.floor(window.innerWidth * 0.6));
   WINDOW_HEIGHT = Math.max(480, Math.floor(window.innerHeight * 0.8));
-  setCanvasSizeFromWindow();
-  // recompute lines
+  update_layout();
+  resizeCanvas();
+  // recompute lines based on new width
   line_left = Math.floor(WINDOW_WIDTH / 4);
   line_right = Math.floor(WINDOW_WIDTH * 3 / 4);
   line_middle = Math.floor((line_left + line_right) / 2);
   spec_buffer = new Float32Array(SPEC_HISTORY * WIDTH);
 });
 
+/* Slider & lines initial values */
+let slider_pos = slider_rect.x + Math.floor(slider_rect.width / 2);
+let dragging_slider = false;
+let brightness = 0.5;
+let contrast = 0.5;
+let line_left = Math.floor(WINDOW_WIDTH / 4);
+let line_right = Math.floor(WINDOW_WIDTH * 3 / 4);
+let line_middle = Math.floor((line_left + line_right) / 2);
+let dragging_line = null;
+
+/* Mouse events */
 let isMouseDown = false;
 canvas.addEventListener('mousedown', (ev)=>{
   const rect = canvas.getBoundingClientRect();
@@ -213,7 +237,6 @@ canvas.addEventListener('mousedown', (ev)=>{
   if(pointInRect(x,y, slider_rect)){
     dragging_slider = true;
   } else {
-    // check lines (vertical area from SPEC_TOP to WINDOW_HEIGHT)
     if(y >= SPEC_TOP && y <= WINDOW_HEIGHT){
       if(Math.abs(x - line_left) < 12) dragging_line = 'left';
       else if(Math.abs(x - line_right) < 12) dragging_line = 'right';
@@ -221,7 +244,7 @@ canvas.addEventListener('mousedown', (ev)=>{
     }
   }
 });
-window.addEventListener('mouseup', (ev)=>{
+window.addEventListener('mouseup', ()=> {
   dragging_slider = false;
   dragging_line = null;
   isMouseDown = false;
@@ -230,7 +253,7 @@ canvas.addEventListener('mousemove', (ev)=>{
   const rect = canvas.getBoundingClientRect();
   const x = ev.clientX - rect.left;
   const y = ev.clientY - rect.top;
-  const dx = (ev.movementX || 0);
+  const dx = ev.movementX || 0;
   if(dragging_slider){
     slider_pos = clamp(x, slider_rect.x, slider_rect.x + slider_rect.width);
     if(slider_pos <= slider_rect.x + slider_rect.width/2){
@@ -251,149 +274,268 @@ canvas.addEventListener('mousemove', (ev)=>{
       if(0 <= newLeft && newRight <= WINDOW_WIDTH){
         line_left = Math.floor(newLeft);
         line_right = Math.floor(newRight);
-        line_middle = Math.floor((line_left + line_right) / 2);
       }
     }
     if(dragging_line !== 'middle'){
       line_middle = Math.floor((line_left + line_right) / 2);
+    } else {
+      line_middle = Math.floor((line_left + line_right) / 2);
     }
   }
 });
+function pointInRect(x,y,rect){ return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height; }
 
-/* -----------------------
-   Utility
-   ----------------------- */
-function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-function clamp01(v){ return Math.max(0, Math.min(1, v)); }
-function pointInRect(x,y,rect){ return x >= rect.x && x <= rect.x+rect.width && y >= rect.y && y <= rect.y+rect.height; }
+/* ===========================
+   Audio: getUserMedia + ScriptProcessor
+   =========================== */
+let audioCtx = null;
+let inNode = null;
+let processorIn = null;
+let processorOut = null;
+let actualSampleRate = SAMPLE_RATE;
 
-/* -----------------------
+async function startAudio(){
+  try{
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+    actualSampleRate = audioCtx.sampleRate;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, sampleRate: actualSampleRate }, video: false });
+    inNode = audioCtx.createMediaStreamSource(stream);
+
+    // Input processor: read microphone samples and push to frame_buffer & output_buffer
+    const blockSize = 4096; // like Python blocksize
+    processorIn = audioCtx.createScriptProcessor(blockSize, 1, 1);
+    processorIn.onaudioprocess = (e) => {
+      const input = e.inputBuffer.getChannelData(0);
+      // Multiply by brightness*2 for "left brightness" like Python
+      const scale = brightness * 2;
+      // push scaled samples to frame_buffer and output_buffer (like original)
+      for(let i=0;i<input.length;i++){
+        const s = input[i] * scale;
+        frame_buffer.push(s);
+        output_buffer.push(s);
+      }
+    };
+
+    // Output processor: fills output with samples from output_buffer
+    processorOut = audioCtx.createScriptProcessor(blockSize, 1, 1);
+    processorOut.onaudioprocess = (e) => {
+      const out = e.outputBuffer.getChannelData(0);
+      for(let i=0;i<out.length;i++){
+        if(output_buffer.available() > 0){
+          out[i] = output_buffer.pop() || 0;
+        } else {
+          out[i] = 0;
+        }
+      }
+    };
+
+    // Connect graph: mic -> inProcessor -> destination (we still don't want direct loop)
+    inNode.connect(processorIn);
+    processorIn.connect(audioCtx.destination); // keeping chain, but processorIn doesn't write to dest
+    processorOut.connect(audioCtx.destination);
+
+    // Also connect mic to processorOut? No — output is from buffer we fill ourselves using main loop processing
+
+    document.getElementById('hint').textContent = 'Mikrofon aktiv (sample rate: ' + actualSampleRate + ' Hz)';
+  } catch (err){
+    console.error(err);
+    document.getElementById('hint').textContent = 'Fehler: ' + (err && err.message ? err.message : String(err));
+  }
+}
+startAudio();
+
+/* ===========================
    Spectrogram helpers
-   ----------------------- */
+   =========================== */
 function pushSpecRow(row){
-  // row: Float32Array length WIDTH (normalized 0..1)
-  // shift up (drop oldest)
-  // spec_buffer is row-major: [r0..rSPEC_HISTORY-1] each WIDTH long
-  // move everything one row up:
-  // Instead of memmove we copy
-  const total = SPEC_HISTORY * WIDTH;
-  // shift: move rows 1..end to 0..end-1
+  // row: Float32Array length WIDTH
+  // shift up n-1 rows to 0..n-2
   for(let r=0;r<SPEC_HISTORY-1;r++){
     const src = (r+1)*WIDTH;
     const dst = r*WIDTH;
-    spec_buffer.copyWithin(dst, src, src + WIDTH);
+    spec_buffer.copyWithin(dst, src, src+WIDTH);
   }
   // write last row
-  const last = (SPEC_HISTORY-1) * WIDTH;
+  const last = (SPEC_HISTORY-1)*WIDTH;
   for(let i=0;i<WIDTH;i++) spec_buffer[last + i] = row[i];
 }
 
-/* -----------------------
-   Main Processing Loop
-   ----------------------- */
-let lastTime = performance.now();
-let fpsAccumulator = 0;
+/* ===========================
+   Main processing loop (audio FFT, bandpass, tv frame, spectrogram)
+   =========================== */
+function linspace(a,b,n){
+  const out = new Float32Array(n);
+  if(n===1){ out[0]=a; return out; }
+  const step=(b-a)/(n-1);
+  for(let i=0;i<n;i++) out[i]=a + i*step;
+  return out;
+}
 
-function render(){
-  // update filter parameters from lines
-  const nyq = actualSampleRate / 2;
-  const f_low = (line_left / WINDOW_WIDTH) * nyq;
-  const f_high = (line_right / WINDOW_WIDTH) * nyq;
-  const center = Math.max(20, (f_low + f_high) / 2);
-  const bw = Math.max(20, Math.abs(f_high - f_low));
-  const Q = center / bw;
-  if(filterNode){
-    filterNode.frequency.value = center;
-    filterNode.Q.value = clamp(Q, 0.1, 30);
+function interp1(xArr, yArr, x) {
+  // xArr ascending, yArr same length, linear interpolation for scalar x
+  const n = xArr.length;
+  if(x <= xArr[0]) return yArr[0];
+  if(x >= xArr[n-1]) return yArr[n-1];
+  let lo = 0, hi = n-1;
+  while(hi - lo > 1){
+    const mid = (lo + hi) >> 1;
+    if(xArr[mid] <= x) lo = mid; else hi = mid;
   }
+  const t = (x - xArr[lo]) / (xArr[hi] - xArr[lo]);
+  return yArr[lo] * (1-t) + yArr[hi] * t;
+}
 
-  // --- Spectrogram berechnen (ungefiltert via analyser) ---
-  if(analyser){
-    const freqData = new Float32Array(analyser.frequencyBinCount);
-    analyser.getFloatFrequencyData(freqData); // in dB negative values usually
-    // convert to magnitude-like 0..1
-    // freqData min around -100..0. We'll map -100 -> 0, 0 -> 1
-    const minDB = analyser.minDecibels || -100;
-    const maxDB = analyser.maxDecibels || -30;
-    // compute linear 0..1
-    const mag = new Float32Array(freqData.length);
-    for(let i=0;i<freqData.length;i++){
-      mag[i] = (freqData[i] - minDB) / (maxDB - minDB);
-      mag[i] = clamp01(mag[i]);
+function processAudioFrame(){
+  // if we have >= FFT_SIZE samples, process one FFT block
+  if(frame_buffer.available() >= FFT_SIZE){
+    // pop FFT_SIZE samples
+    const samples = frame_buffer.popN(FFT_SIZE);
+    // --- Spectrogram (unfiltered) ---
+    // rfft
+    const specFFT = rfftFromReal(samples);
+    // magnitude
+    const mag = new Float32Array(specFFT.real.length/2 + 1); // use only non-redundant
+    const nfft = specFFT.real.length;
+    const half = Math.floor(nfft/2);
+    let maxMag = 1e-9;
+    for(let k=0;k<=half;k++){
+      const re = specFFT.real[k];
+      const im = specFFT.imag[k];
+      const m = Math.hypot(re, im);
+      const v = Math.log1p(m);
+      mag[k] = v;
+      if(v > maxMag) maxMag = v;
     }
-    // resize/interpolate to WIDTH
-    const mapped = new Float32Array(WIDTH);
+    // normalize by maxMag
+    for(let k=0;k<=half;k++) mag[k] /= (maxMag + 1e-12);
+    // resize to WIDTH
+    const magResized = new Float32Array(WIDTH);
+    // create freq indices map
+    const srcLen = mag.length;
     for(let x=0;x<WIDTH;x++){
-      const t = x / (WIDTH - 1);
-      const idx = t * (mag.length - 1);
+      const idx = x * (srcLen - 1) / (WIDTH - 1);
       const i0 = Math.floor(idx);
-      const i1 = Math.min(mag.length-1, i0+1);
+      const i1 = Math.min(srcLen-1, i0+1);
       const frac = idx - i0;
-      mapped[x] = mag[i0] * (1-frac) + mag[i1] * frac;
+      magResized[x] = mag[i0] * (1-frac) + mag[i1] * frac;
     }
-    pushSpecRow(mapped);
-  }
+    pushSpecRow(magResized);
 
-  // --- Audio Verarbeitung für Bandpass -> output_buffer already collected in scriptNodeVis ---
-  // In addition apply contrast/gain before sending to output (gainNode already applied to destination)
-  if(gainNode){
-    // We'll map contrast to gainNode.gain
-    gainNode.gain.value = 1 + contrast * 2;
+    // --- Bandpass for audio (FFT mask, then IFFT) ---
+    // compute FFT freqs
+    const fftN = nfft;
+    const fftFreqs = new Float32Array(half+1);
+    for(let k=0;k<=half;k++) fftFreqs[k] = k * actualSampleRate / fftN;
+    // compute nyquist
+    const nyq = actualSampleRate/2;
+    const f_low = (line_left / WINDOW_WIDTH) * nyq;
+    const f_high = (line_right / WINDOW_WIDTH) * nyq;
+    // apply mask on specFFT (we will zero both positive and mirrored negative bins)
+    // specFFT.real/imag length = nfft, symmetry: X[n-k] = conj(X[k])
+    // We'll zero any k where freq not in [f_low,f_high]
+    for(let k=0;k<=half;k++){
+      const freq = fftFreqs[k];
+      if(freq < f_low || freq > f_high){
+        specFFT.real[k] = 0; specFFT.imag[k] = 0;
+        // mirror
+        if(k !== 0 && k !== half){
+          const mirror = nfft - k;
+          specFFT.real[mirror] = 0; specFFT.imag[mirror] = 0;
+        }
+      }
+    }
+    // inverse FFT to get bandpassed audio
+    const bandpassed = irfftToReal(specFFT.real, specFFT.imag);
+    // apply contrast gain and clip
+    const gain = 1 + contrast * 2;
+    for(let i=0;i<bandpassed.length;i++){
+      let v = bandpassed[i] * gain;
+      if(v > 1) v = 1;
+      if(v < -1) v = -1;
+      output_buffer.push(v);
+    }
   }
+}
 
-  // -----------------------
-  // Rendering
-  // -----------------------
-  // Clear
+/* ===========================
+   TV frame processing & rendering
+   =========================== */
+function renderFrame(){
+  // clear
   ctx.fillStyle = 'black';
   ctx.fillRect(0,0,WINDOW_WIDTH,WINDOW_HEIGHT);
 
-  // TV-Bild (Bandpass gleiche Frequenzen wie Audio)
-  if(frame_buffer.available() >= WIDTH * HEIGHT){
-    // get last WIDTH*HEIGHT samples (without popping)
-    const frame_samples = frame_buffer.peekLast(WIDTH * HEIGHT);
-    // shape into HEIGHT x WIDTH
-    // apply brightness (and a mild gamma like original **0.6)
-    const img = ctx.createImageData(WIDTH, HEIGHT);
+  // TV image: if we have enough samples for WIDTH*HEIGHT
+  if(frame_buffer.available() >= WIDTH*HEIGHT){
+    // get last WIDTH*HEIGHT samples without removing
+    const frame_samples = frame_buffer.peekLastN(WIDTH*HEIGHT);
+    // do FFT length N = WIDTH*HEIGHT (4096)
+    const N = WIDTH*HEIGHT;
+    // Prepare arrays
+    const inReal = new Float32Array(N);
+    const inImag = new Float32Array(N);
+    // fill real with samples
+    for(let i=0;i<N;i++){ inReal[i] = frame_samples[i]; inImag[i] = 0; }
+    // FFT
+    fftIterative(inReal, inImag);
+    // compute mask using same frequency mapping as in audio
+    const half = N >> 1;
+    // compute per-bin freq
+    const nyq = actualSampleRate/2;
+    const f_low = (line_left / WINDOW_WIDTH) * nyq;
+    const f_high = (line_right / WINDOW_WIDTH) * nyq;
+    // apply mask
+    for(let k=0;k<=half;k++){
+      const freq = k * actualSampleRate / N;
+      if(freq < f_low || freq > f_high){
+        inReal[k] = 0; inImag[k] = 0;
+        if(k !== 0 && k !== half){
+          const mirror = N - k;
+          inReal[mirror] = 0; inImag[mirror] = 0;
+        }
+      }
+    }
+    // IFFT
+    ifftIterative(inReal, inImag);
+    // resulting time-domain signal is in inReal (should be length N)
+    // reshape into HEIGHT x WIDTH
+    // map amplitude to pixel brightness: abs(value)**0.6 * brightness * 255
+    const imgData = ctx.createImageData(WIDTH, HEIGHT);
     for(let r=0;r<HEIGHT;r++){
       for(let c=0;c<WIDTH;c++){
         const idx = r*WIDTH + c;
-        // note: original used abs(bandpassed) ** 0.6 * brightness * 255
-        const v = Math.pow(Math.abs(frame_samples[idx]) || 0, 0.6) * brightness * 255;
+        const v = Math.pow(Math.abs(inReal[idx]) || 0, 0.6) * brightness * 255;
         const vv = Math.max(0, Math.min(255, Math.floor(v)));
         const p = (r*WIDTH + c) * 4;
-        img.data[p+0] = vv;
-        img.data[p+1] = vv;
-        img.data[p+2] = vv;
-        img.data[p+3] = 255;
+        imgData.data[p+0] = vv;
+        imgData.data[p+1] = vv;
+        imgData.data[p+2] = vv;
+        imgData.data[p+3] = 255;
       }
     }
-    // draw small image then scale to TV_HEIGHT x WINDOW_WIDTH
-    // create temporary canvas to scale
+    // create temp canvas to scale image to TV area
     const tmp = document.createElement('canvas');
     tmp.width = WIDTH; tmp.height = HEIGHT;
     const tctx = tmp.getContext('2d');
-    tctx.putImageData(img, 0, 0);
+    tctx.putImageData(imgData, 0, 0);
     ctx.drawImage(tmp, 0, 0, WINDOW_WIDTH, TV_HEIGHT);
   } else {
-    // empty TV area
+    // draw black TV area
     ctx.fillStyle = 'black';
-    ctx.fillRect(0,0,WINDOW_WIDTH, TV_HEIGHT);
+    ctx.fillRect(0,0,WINDOW_WIDTH,TV_HEIGHT);
   }
 
-  // Spektrogramm
-  // Create image from spec_buffer (SPEC_HISTORY x WIDTH)
+  // Draw spectrogram: spec_buffer rows -> image (rows = SPEC_HISTORY)
   const specCanvas = document.createElement('canvas');
   specCanvas.width = WIDTH;
   specCanvas.height = SPEC_HISTORY;
   const sctx = specCanvas.getContext('2d');
   const specImg = sctx.createImageData(WIDTH, SPEC_HISTORY);
-  // spec_buffer row-major rows 0..SPEC_HISTORY-1 (older..newest)
   for(let r=0;r<SPEC_HISTORY;r++){
     for(let c=0;c<WIDTH;c++){
-      const v = spec_buffer[r*WIDTH + c] || 0; // 0..1
+      const v = spec_buffer[r*WIDTH + c] || 0;
       const vv = Math.max(0, Math.min(255, Math.floor(v * 255)));
-      const p = (r*WIDTH + c)*4;
+      const p = (r*WIDTH + c) * 4;
       specImg.data[p+0] = vv;
       specImg.data[p+1] = vv;
       specImg.data[p+2] = vv;
@@ -401,10 +543,9 @@ function render(){
     }
   }
   sctx.putImageData(specImg, 0, 0);
-  // scale to full width and SPEC_HEIGHT
   ctx.drawImage(specCanvas, 0, SPEC_TOP, WINDOW_WIDTH, SPEC_HEIGHT);
 
-  // Linien (vertical lines from SPEC_TOP..WINDOW_HEIGHT)
+  // Draw vertical lines
   ctx.strokeStyle = 'white';
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -416,22 +557,21 @@ function render(){
   ctx.lineTo(line_right, WINDOW_HEIGHT);
   ctx.stroke();
 
-  // Slider
+  // Draw slider
   ctx.fillStyle = 'rgb(100,100,100)';
   ctx.fillRect(slider_rect.x, slider_rect.y, slider_rect.width, slider_rect.height);
   ctx.fillStyle = 'white';
-  const handleX = slider_pos - 5;
-  ctx.fillRect(handleX, slider_rect.y, 10, slider_rect.height);
+  ctx.fillRect(slider_pos - 5, slider_rect.y, 10, slider_rect.height);
 
-  // Hz Skala under TV
+  // Hz scale
   ctx.fillStyle = 'white';
   ctx.font = '12px Arial';
   ctx.textBaseline = 'top';
-  const nyq = actualSampleRate / 2;
+  const nyq2 = actualSampleRate / 2;
   for(let i=0;i<=10;i++){
     const x = Math.round((i/10) * WINDOW_WIDTH);
-    const hz = Math.round((i/10) * nyq);
-    const label = (hz >= 1000) ? (Math.round(hz/1000) + 'k') : (hz + ''); // keep similar to original which showed //1000k
+    const hz = Math.round((i/10) * nyq2);
+    const label = (hz >= 1000) ? (Math.round(hz/1000) + 'k') : (hz + '');
     ctx.fillText(label, x - 10, TV_HEIGHT + 2);
     ctx.strokeStyle = 'rgb(150,150,150)';
     ctx.lineWidth = 1;
@@ -441,30 +581,36 @@ function render(){
     ctx.stroke();
   }
 
-  // small info text
+  // debug text: brightness/contrast
   ctx.fillStyle = '#ddd';
   ctx.font = '12px Arial';
   ctx.fillText('brightness: ' + brightness.toFixed(2) + ' contrast: ' + contrast.toFixed(2), 10, WINDOW_HEIGHT - 50);
-
-  requestAnimationFrame(render);
 }
 
-/* -----------------------
-   Start
-   ----------------------- */
-startAudio().then(()=> {
-  requestAnimationFrame(render);
-});
+/* ===========================
+   Animation / processing loop
+   =========================== */
+let lastTime = performance.now();
+function mainLoop(){
+  // process as many FFT blocks as available (to keep up)
+  // In Python loop they processed one block per main loop iteration,
+  // but here we try to process multiple to reduce backlog.
+  let cnt = 0;
+  while(frame_buffer.available() >= FFT_SIZE && cnt < 4){
+    processAudioFrame();
+    cnt++;
+  }
+  // render
+  renderFrame();
+  requestAnimationFrame(mainLoop);
+}
+requestAnimationFrame(mainLoop);
 
-/* -----------------------
-   Graceful stop on page unload
-   ----------------------- */
+/* ===========================
+   Optional: graceful stop
+   =========================== */
 window.addEventListener('beforeunload', ()=>{
   try{
-    if(micStream){
-      const tracks = micStream.getTracks();
-      tracks.forEach(t=>t.stop());
-    }
     if(audioCtx) audioCtx.close();
   } catch(e){}
 });
