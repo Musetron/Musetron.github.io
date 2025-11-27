@@ -1,10 +1,10 @@
 <!DOCTYPE html><html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Stabile Sampler Engine</title>
+<title>Live Effekt Audio Sampler</title>
 </head>
 <body>
-<h1>Stabile Sampler Engine ohne Stottern</h1>
+<h1>Live Effekt Audio Sampler</h1>
 <button id="startBtn">Start</button>
 <script>
 const startBtn = document.getElementById('startBtn');startBtn.onclick = async () => {
@@ -18,38 +18,37 @@ source.connect(analyser);
 const dataArray = new Float32Array(analyser.fftSize);
 
 const SILENCE_THRESHOLD = 0.02;
-const MIN_WORD_DURATION = 0.3; // 0.3s Minimum
+const MIN_WORD_DURATION = 0.25; // Sekunden
 let recording = false;
 let currentBuffer = [];
-let bufferSampleRate = audioCtx.sampleRate;
-
+const bufferSampleRate = audioCtx.sampleRate;
 let savedWords = [];
 let playbackBusy = false;
 
-function rms(arr) {
+function rms(arr){
     let sum = 0;
     for (let i=0;i<arr.length;i++) sum += arr[i]*arr[i];
     return Math.sqrt(sum/arr.length);
 }
 
-function processAudio() {
+function processAudio(){
     analyser.getFloatTimeDomainData(dataArray);
     const level = rms(dataArray);
 
-    if (level > SILENCE_THRESHOLD) {
+    if(level > SILENCE_THRESHOLD){
         recording = true;
         currentBuffer.push(...dataArray);
-    } else if (recording) {
+    } else if(recording){
         recording = false;
         const duration = currentBuffer.length / bufferSampleRate;
-        if (duration >= MIN_WORD_DURATION) {
+        if(duration >= MIN_WORD_DURATION){
             saveWord(currentBuffer.slice());
         }
         currentBuffer = [];
     }
 
-    // selten selbst abspielen
-    if (!playbackBusy && savedWords.length > 0 && Math.random() < 0.001) {
+    // Selbstständiges Abspielen
+    if(!playbackBusy && savedWords.length > 0 && Math.random() < 0.002){
         playRandomWords();
     }
 
@@ -58,77 +57,66 @@ function processAudio() {
 
 processAudio();
 
-async function saveWord(floatArray) {
+function saveWord(floatArray){
     const buffer = audioCtx.createBuffer(1, floatArray.length, bufferSampleRate);
-    buffer.copyToChannel(Float32Array.from(floatArray), 0, 0);
+    buffer.copyToChannel(Float32Array.from(floatArray),0,0);
+    savedWords.push(buffer);
 
-    const processed = await applyEffects(buffer, audioCtx);
-    savedWords.push(processed);
-
-    if (!playbackBusy) {
+    // Sofort abspielen, falls frei
+    if(!playbackBusy){
         playRandomWords();
     }
 }
 
-async function applyEffects(buffer, context) {
-    const offlineCtx = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
-    const src = offlineCtx.createBufferSource();
-    src.buffer = buffer;
-
-    src.playbackRate.value = 0.707; // Pitch Down
-
-    const distortion = offlineCtx.createWaveShaper();
-    distortion.curve = new Float32Array(65536).map((v,i)=>Math.tanh((i-32768)/32768*10));
-    distortion.oversample = '4x';
-
-    const tremolo = offlineCtx.createGain();
-    const lfo = offlineCtx.createOscillator();
-    lfo.type = 'sawtooth';
-    lfo.frequency.value = 100;
-    const lfoGain = offlineCtx.createGain();
-    lfoGain.gain.value = 1.0;
-    lfo.connect(lfoGain);
-    lfoGain.connect(tremolo.gain);
-    lfo.start();
-
-    const bandpass = offlineCtx.createBiquadFilter();
-    bandpass.type = 'bandpass';
-    bandpass.frequency.value = 800;
-    bandpass.Q.value = 1.0;
-
-    src.connect(distortion);
-    distortion.connect(tremolo);
-    tremolo.connect(bandpass);
-    bandpass.connect(offlineCtx.destination);
-
-    src.start();
-    const rendered = await offlineCtx.startRendering();
-    return rendered;
-}
-
-function playRandomWords() {
-    if (savedWords.length === 0) return;
+function playRandomWords(){
+    if(savedWords.length === 0) return;
     playbackBusy = true;
     const numWords = Math.floor(Math.random()*3)+1;
-    let time = audioCtx.currentTime;
-
-    for (let i=0;i<numWords;i++) {
+    let delay = 0;
+    for(let i=0;i<numWords;i++){
         const word = savedWords[Math.floor(Math.random()*savedWords.length)];
         const src = audioCtx.createBufferSource();
         src.buffer = word;
-        src.connect(audioCtx.destination);
-        src.start(time);
-        // Pause zwischen 0.3–0.7s
-        time += word.duration + 0.3 + Math.random()*0.4;
+
+        // Effekte live
+        const distortion = audioCtx.createWaveShaper();
+        distortion.curve = new Float32Array(65536).map((v,j)=>Math.tanh((j-32768)/32768*10));
+        distortion.oversample='4x';
+
+        const tremolo = audioCtx.createGain();
+        const lfo = audioCtx.createOscillator();
+        lfo.type='sawtooth';
+        lfo.frequency.value = 100;
+        const lfoGain = audioCtx.createGain();
+        lfoGain.gain.value = 1.0;
+        lfo.connect(lfoGain);
+        lfoGain.connect(tremolo.gain);
+        lfo.start();
+
+        // Telefon Bandpass 400–3200 Hz
+        const bandpass = audioCtx.createBiquadFilter();
+        bandpass.type='bandpass';
+        bandpass.frequency.value=1800; // Mittenfrequenz
+        bandpass.Q.value = 0.7; // Bandbreite = ungefähr 400–3200 Hz
+
+        // Pitch Down
+        src.playbackRate.value = 0.707;
+
+        src.connect(distortion);
+        distortion.connect(tremolo);
+        tremolo.connect(bandpass);
+        bandpass.connect(audioCtx.destination);
+
+        src.start(audioCtx.currentTime + delay);
+        delay += word.duration + 0.3 + Math.random()*0.4; // Pause zwischen 0.3–0.7 s
     }
 
-    // Nach Ende Playback markieren
-    const lastWord = savedWords[Math.floor(Math.random()*savedWords.length)];
-    setTimeout(()=>{ playbackBusy = false; }, (lastWord.duration + 0.5)*1000);
+    // Nach Playback frei geben
+    setTimeout(()=>{playbackBusy=false;}, (delay+0.1)*1000);
 }
 
 };
 </script>
 
 </body>
-</html>
+    </html>
