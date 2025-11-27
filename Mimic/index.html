@@ -1,117 +1,83 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Offline Word Recorder</title>
+<meta charset="UTF-8">
+<title>Wort + Audio Recorder</title>
 </head>
 <body>
-<h1>Offline Word Recorder</h1>
-<button id="start">Start Recording</button>
-<button id="stop">Stop Recording</button>
-<div id="words"></div>
+<h1>Wort + Audio Recorder</h1>
+<button id="start">Start</button>
+<button id="stop">Stop</button>
+<div id="log"></div>
 
 <script>
-let audioContext;
-let processor;
-let stream;
+let mediaRecorder;
+let audioChunks = [];
 let recording = false;
-let wordBuffers = [];
-let currentWord = [];
-const threshold = 0.02; // Lautstärke Schwelle
+let recognition;
+let wordId = 0;
 
-document.getElementById("start").onclick = async () => {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const source = audioContext.createMediaStreamSource(stream);
+const logDiv = document.getElementById('log');
 
-    processor = audioContext.createScriptProcessor(4096, 1, 1);
-    source.connect(processor);
-    processor.connect(audioContext.destination);
+// Start Recording + Speech Recognition
+document.getElementById('start').onclick = async () => {
+    // Mikrofon starten
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.start();
+    audioChunks = [];
 
-    processor.onaudioprocess = e => {
-        if (!recording) return;
-        const input = e.inputBuffer.getChannelData(0);
-        const max = Math.max(...input.map(x => Math.abs(x)));
-        if (max > threshold) {
-            // Laut -> Teil des Wortes
-            currentWord.push(new Float32Array(input));
-        } else {
-            // Leise -> Wort Ende
-            if (currentWord.length > 0) {
-                saveWord(currentWord);
-                currentWord = [];
+    mediaRecorder.ondataavailable = e => {
+        if (recording) audioChunks.push(e.data);
+    };
+
+    recording = true;
+
+    // SpeechRecognition
+    window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'de-DE'; // Deutsche Sprache
+
+    recognition.onresult = event => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+                const word = event.results[i][0].transcript.trim();
+                saveWordAudio(word);
             }
         }
     };
 
-    recording = true;
+    recognition.start();
 };
 
-document.getElementById("stop").onclick = () => {
+// Stop Recording + Recognition
+document.getElementById('stop').onclick = () => {
     recording = false;
-    if (currentWord.length > 0) saveWord(currentWord);
-    processor.disconnect();
-    stream.getTracks().forEach(track => track.stop());
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    if (recognition) recognition.stop();
 };
 
-function saveWord(buffers) {
-    // Alle Float32Arrays zusammenfügen
-    let length = buffers.reduce((sum, arr) => sum + arr.length, 0);
-    let result = new Float32Array(length);
-    let offset = 0;
-    for (let b of buffers) {
-        result.set(b, offset);
-        offset += b.length;
-    }
+// Speichert das Audio + Wort
+function saveWordAudio(word) {
+    if (audioChunks.length === 0) return;
 
-    // WAV Blob erstellen
-    const wavBlob = float32ToWav(result, audioContext.sampleRate);
-    const wordId = wordBuffers.length;
-    wordBuffers.push({ word: `word${wordId}`, blob: wavBlob });
+    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+    audioChunks = []; // reset für nächste Aufnahme
 
-    // Download Link anzeigen
+    // Download-Link erstellen
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(wavBlob);
-    a.download = `word${wordId}.wav`;
-    a.textContent = `Download word${wordId}`;
-    document.getElementById('words').appendChild(a);
-    document.getElementById('words').appendChild(document.createElement('br'));
-}
+    a.href = url;
+    a.download = `word_${wordId}.webm`;
+    a.textContent = `Download word ${wordId}: ${word}`;
+    logDiv.appendChild(a);
+    logDiv.appendChild(document.createElement('br'));
 
-// Float32 → WAV
-function float32ToWav(float32Array, sampleRate) {
-    const buffer = new ArrayBuffer(44 + float32Array.length * 2);
-    const view = new DataView(buffer);
-
-    function writeString(view, offset, string) {
-        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
-    }
-
-    let offset = 0;
-    writeString(view, offset, 'RIFF'); offset += 4;
-    view.setUint32(offset, 36 + float32Array.length * 2, true); offset += 4;
-    writeString(view, offset, 'WAVE'); offset += 4;
-    writeString(view, offset, 'fmt '); offset += 4;
-    view.setUint32(offset, 16, true); offset += 4;
-    view.setUint16(offset, 1, true); offset += 2;
-    view.setUint16(offset, 1, true); offset += 2;
-    view.setUint32(offset, sampleRate, true); offset += 4;
-    view.setUint32(offset, sampleRate * 2, true); offset += 4;
-    view.setUint16(offset, 2, true); offset += 2;
-    view.setUint16(offset, 16, true); offset += 2;
-    writeString(view, offset, 'data'); offset += 4;
-    view.setUint32(offset, float32Array.length * 2, true); offset += 4;
-
-    // PCM
-    let idx = 44;
-    for (let i = 0; i < float32Array.length; i++) {
-        let s = Math.max(-1, Math.min(1, float32Array[i]));
-        view.setInt16(idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        idx += 2;
-    }
-
-    return new Blob([view], { type: 'audio/wav' });
+    console.log("Erkanntes Wort:", word);
+    wordId++;
 }
 </script>
 </body>
-  </html>
+</html>
