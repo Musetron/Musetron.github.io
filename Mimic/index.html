@@ -1,31 +1,31 @@
 <!DOCTYPE html><html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Extreme Audio Effekte</title>
+<title>Random Wiedergabe</title>
 </head>
 <body>
-<h1>Extreme Effekte + Telefon Filter</h1>
+<h1>Random Audio Replay</h1>
 <button id="startBtn">Start</button>
 <script>
-const startBtn = document.getElementById('startBtn');
-let wordCount = 1;startBtn.onclick = async () => {
+const startBtn = document.getElementById('startBtn');startBtn.onclick = async () => {
 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const source = audioCtx.createMediaStreamSource(stream);
-
-let mediaRecorder = new MediaRecorder(stream);
-let audioChunks = [];
-mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-mediaRecorder.start(100); // kleine Blöcke
 
 const analyser = audioCtx.createAnalyser();
 analyser.fftSize = 2048;
 source.connect(analyser);
 const dataArray = new Uint8Array(analyser.fftSize);
 
-let silenceStart = null;
 const SILENCE_THRESHOLD = 5;
-const SILENCE_DURATION = 300;
+const SILENCE_DURATION = 300; // ms
+let silenceStart = null;
+let mediaRecorder = new MediaRecorder(stream);
+let audioChunks = [];
+let savedWords = []; // Array von AudioBuffer
+
+mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+mediaRecorder.start(100);
 
 function checkSilence() {
     analyser.getByteTimeDomainData(dataArray);
@@ -38,18 +38,24 @@ function checkSilence() {
     if (max < SILENCE_THRESHOLD) {
         if (!silenceStart) silenceStart = performance.now();
         else if (performance.now() - silenceStart > SILENCE_DURATION) {
-            saveChunk();
+            saveWord();
             silenceStart = null;
         }
     } else {
         silenceStart = null;
     }
+
+    // Zufällig selbst abspielen
+    if (Math.random() < 0.001 && savedWords.length > 0) { // sehr selten
+        playRandomWords();
+    }
+
     requestAnimationFrame(checkSilence);
 }
 
 checkSilence();
 
-async function saveChunk() {
+async function saveWord() {
     if (audioChunks.length === 0) return;
     const blob = new Blob(audioChunks, { type: 'audio/webm' });
     audioChunks = [];
@@ -57,36 +63,45 @@ async function saveChunk() {
     const arrayBuffer = await blob.arrayBuffer();
     const buffer = await audioCtx.decodeAudioData(arrayBuffer);
 
+    // Effekte anwenden (z.B. Distortion, Pitch, Bitcrush, Tremolo)
+    const processed = await applyEffects(buffer, audioCtx);
+
+    savedWords.push(processed);
+
+    // Sofort abspielen: zufällige Reihenfolge 1-3 Wörter
+    playRandomWords();
+}
+
+async function applyEffects(buffer, context) {
     const offlineCtx = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
     const src = offlineCtx.createBufferSource();
     src.buffer = buffer;
 
-    // Pitch 6 Halbtöne runter
+    // Pitch Down
     src.playbackRate.value = 0.707;
 
-    // Distortion stark
+    // Distortion
     const distortion = offlineCtx.createWaveShaper();
-    distortion.curve = new Float32Array(65536).map((v,i)=>Math.tanh((i-32768)/32768*10)); // härter
+    distortion.curve = new Float32Array(65536).map((v,i)=>Math.tanh((i-32768)/32768*10));
     distortion.oversample = '4x';
 
-    // Tremolo aggressiv
+    // Tremolo
     const tremolo = offlineCtx.createGain();
     const lfo = offlineCtx.createOscillator();
     lfo.type = 'sawtooth';
-    lfo.frequency.value = 100; // schneller
+    lfo.frequency.value = 100;
     const lfoGain = offlineCtx.createGain();
-    lfoGain.gain.value = 1.0; // große Amplitude
+    lfoGain.gain.value = 1.0;
     lfo.connect(lfoGain);
     lfoGain.connect(tremolo.gain);
     lfo.start();
 
-    // Telefon Bandpass 300-3400 Hz
+    // Telefon Bandpass
     const bandpass = offlineCtx.createBiquadFilter();
     bandpass.type = 'bandpass';
-    bandpass.frequency.value = 800; // Mittenfrequenz
-    bandpass.Q.value = 1.0; // Breite anpassen
+    bandpass.frequency.value = 800;
+    bandpass.Q.value = 1.0;
 
-    // Verkabelung: src -> distortion -> tremolo -> bandpass -> destination
     src.connect(distortion);
     distortion.connect(tremolo);
     tremolo.connect(bandpass);
@@ -94,58 +109,22 @@ async function saveChunk() {
 
     src.start();
     const rendered = await offlineCtx.startRendering();
-
-    const crushed = bitcrushBuffer(rendered, 3); // stärkerer Bitcrush (3 Bits)
-    const wavBlob = bufferToWave(crushed);
-    const url = URL.createObjectURL(wavBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'word' + wordCount + '.wav';
-    a.click();
-    wordCount++;
+    return rendered;
 }
 
-function bitcrushBuffer(buffer, bits) {
-    const newBuffer = new AudioBuffer({length: buffer.length, numberOfChannels: buffer.numberOfChannels, sampleRate: buffer.sampleRate});
-    const step = Math.pow(0.5, bits);
-    for (let c = 0; c < buffer.numberOfChannels; c++) {
-        const oldData = buffer.getChannelData(c);
-        const newData = newBuffer.getChannelData(c);
-        for (let i = 0; i < oldData.length; i++) {
-            newData[i] = Math.round(oldData[i]/step)*step;
-        }
+function playRandomWords() {
+    if (savedWords.length === 0) return;
+    const numWords = Math.floor(Math.random() * 3) + 1; // 1-3 Wörter
+    let time = audioCtx.currentTime;
+    for (let i = 0; i < numWords; i++) {
+        const wordBuffer = savedWords[Math.floor(Math.random() * savedWords.length)];
+        const src = audioCtx.createBufferSource();
+        src.buffer = wordBuffer;
+        src.connect(audioCtx.destination);
+        src.start(time);
+        // zufällige Pause zwischen 0-500ms
+        time += wordBuffer.duration + Math.random() * 0.5;
     }
-    return newBuffer;
-}
-
-function bufferToWave(abuffer) {
-    const numOfChan = abuffer.numberOfChannels;
-    const length = abuffer.length * numOfChan * 2 + 44;
-    const buffer = new ArrayBuffer(length);
-    const view = new DataView(buffer);
-    let offset = 0;
-
-    function writeString(s){ for (let i=0;i<s.length;i++) view.setUint8(offset++,s.charCodeAt(i)); }
-
-    writeString('RIFF'); view.setUint32(offset, length-8, true); offset+=4;
-    writeString('WAVE'); writeString('fmt '); view.setUint32(offset, 16, true); offset+=4;
-    view.setUint16(offset, 1, true); offset+=2;
-    view.setUint16(offset, numOfChan, true); offset+=2;
-    view.setUint32(offset, abuffer.sampleRate, true); offset+=4;
-    view.setUint32(offset, abuffer.sampleRate*numOfChan*2, true); offset+=4;
-    view.setUint16(offset, numOfChan*2, true); offset+=2;
-    view.setUint16(offset, 16, true); offset+=2;
-    writeString('data'); view.setUint32(offset, abuffer.length*numOfChan*2, true); offset+=4;
-
-    for(let i=0;i<abuffer.length;i++){
-        for(let ch=0;ch<numOfChan;ch++){
-            let sample = abuffer.getChannelData(ch)[i];
-            sample = Math.max(-1, Math.min(1, sample));
-            view.setInt16(offset, sample<0 ? sample*0x8000 : sample*0x7FFF, true);
-            offset+=2;
-        }
-    }
-    return new Blob([buffer], {type:"audio/wav"});
 }
 
 };
