@@ -1,139 +1,52 @@
 <!DOCTYPE html><html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Audio Effekte</title>
+<title>Mikrofon Test</title>
 </head>
 <body>
-<h1>Sprache aufnehmen und Effekte anwenden</h1>
-<button id="startBtn">Start</button>
+<h1>Mikrofon Test</h1>
+<button id="startBtn">Starte Aufnahme</button>
 <script>
-const startBtn = document.getElementById('startBtn');let recognition;
-let mediaRecorder;
-let audioChunks = [];
-
-startBtn.onclick = async () => {
+const startBtn = document.getElementById('startBtn');startBtn.onclick = async () => {
+try {
+// Mikrofonzugriff anfordern
 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-mediaRecorder = new MediaRecorder(stream);
+alert('Mikrofonzugriff erlaubt!');
 
-mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-mediaRecorder.start();
+    // MediaRecorder starten
+    const mediaRecorder = new MediaRecorder(stream);
+    let audioChunks = [];
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.start();
+    console.log('Aufnahme gestartet...');
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-recognition = new SpeechRecognition();
-recognition.lang = 'de-DE';
-recognition.continuous = true;
-recognition.interimResults = false;
-
-recognition.onresult = (event) => {
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-        const word = event.results[i][0].transcript.trim();
-        console.log('Erkannt:', word);
-
-        mediaRecorder.stop();
-        mediaRecorder.onstop = async () => {
-            const blob = new Blob(audioChunks, { type: 'audio/webm' });
-            const arrayBuffer = await blob.arrayBuffer();
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-            // AudioBuffer Effekte anwenden
-            const offlineCtx = new OfflineAudioContext(audioBuffer.numberOfChannels, audioBuffer.length, audioBuffer.sampleRate);
-            const source = offlineCtx.createBufferSource();
-            source.buffer = audioBuffer;
-
-            // Pitch: 6 Halbtöne runter => 2^(-6/12) ≈ 0.707
-            source.playbackRate.value = 0.707;
-
-            // Distortion
-            const distortion = offlineCtx.createWaveShaper();
-            distortion.curve = new Float32Array(65536).map((v,i)=>Math.tanh((i-32768)/32768*3));
-            distortion.oversample = '4x';
-
-            // Tremolo (Amplitude modulation) sehr schnell
-            const tremolo = offlineCtx.createGain();
-            const lfo = offlineCtx.createOscillator();
-            lfo.type = 'sawtooth';
-            lfo.frequency.value = 50; // extrem schnell
-            const lfoGain = offlineCtx.createGain();
-            lfoGain.gain.value = 0.5;
-            lfo.connect(lfoGain);
-            lfoGain.connect(tremolo.gain);
-            lfo.start();
-
-            // Verkabelung: source -> distortion -> tremolo -> destination
-            source.connect(distortion);
-            distortion.connect(tremolo);
-            tremolo.connect(offlineCtx.destination);
-
-            source.start();
-            const renderedBuffer = await offlineCtx.startRendering();
-
-            // Bitcrush
-            const bitCrushed = await bitcrushBuffer(renderedBuffer, 4);
-
-            // WAV export
-            const wavBlob = bufferToWave(bitCrushed);
-            const url = URL.createObjectURL(wavBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = word + '.wav';
-            a.click();
-
-            audioChunks = [];
-            mediaRecorder.start();
-        };
+    // Speech Recognition starten
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        alert('SpeechRecognition wird in deinem Browser nicht unterstützt.');
+        return;
     }
-};
-recognition.start();
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'de-DE';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const word = event.results[i][0].transcript.trim();
+            console.log('Erkannt:', word);
+        }
+    };
+
+    recognition.start();
+    console.log('Spracherkennung gestartet...');
+} catch (err) {
+    console.error('Fehler beim Zugriff auf Mikrofon:', err);
+    alert('Fehler: ' + err.message);
+}
 
 };
-
-// Simple Bitcrush
-async function bitcrushBuffer(buffer, bits) {
-const newBuffer = new AudioBuffer({length: buffer.length, numberOfChannels: buffer.numberOfChannels, sampleRate: buffer.sampleRate});
-const step = Math.pow(0.5, bits);
-for (let c = 0; c < buffer.numberOfChannels; c++) {
-const oldData = buffer.getChannelData(c);
-const newData = newBuffer.getChannelData(c);
-for (let i = 0; i < oldData.length; i++) {
-newData[i] = Math.round(oldData[i]/step)*step;
-}
-}
-return newBuffer;
-}
-
-// WAV Export
-function bufferToWave(abuffer) {
-const numOfChan = abuffer.numberOfChannels;
-const length = abuffer.length * numOfChan * 2 + 44;
-const buffer = new ArrayBuffer(length);
-const view = new DataView(buffer);
-let offset = 0;
-
-function writeString(s){ for (let i=0;i<s.length;i++) view.setUint8(offset++,s.charCodeAt(i)); }
-
-writeString('RIFF'); view.setUint32(offset, length-8, true); offset+=4;
-writeString('WAVE'); writeString('fmt '); view.setUint32(offset, 16, true); offset+=4;
-view.setUint16(offset, 1, true); offset+=2;
-view.setUint16(offset, numOfChan, true); offset+=2;
-view.setUint32(offset, abuffer.sampleRate, true); offset+=4;
-view.setUint32(offset, abuffer.sampleRate*numOfChan*2, true); offset+=4;
-view.setUint16(offset, numOfChan*2, true); offset+=2;
-view.setUint16(offset, 16, true); offset+=2;
-writeString('data'); view.setUint32(offset, abuffer.length*numOfChan*2, true); offset+=4;
-
-for(let i=0;i<abuffer.length;i++){
-    for(let ch=0;ch<numOfChan;ch++){
-        let sample = abuffer.getChannelData(ch)[i];
-        sample = Math.max(-1, Math.min(1, sample));
-        view.setInt16(offset, sample<0 ? sample*0x8000 : sample*0x7FFF, true);
-        offset+=2;
-    }
-}
-return new Blob([buffer], {type:"audio/wav"});
-
-}
 </script>
 
 </body>
-    </html>
+</html>
