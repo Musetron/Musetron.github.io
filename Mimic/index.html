@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Offline Mikrofonaufnahme</title>
+</head>
+<body>
+  <h1>Offline Mikrofonaufnahme</h1>
+  <button id="start">Start Recording</button>
+  <button id="stop">Stop Recording</button>
+  <div id="downloads"></div>
+
+<script>
+let mediaRecorder;
+let audioChunks = [];
+let clipCount = 0;
+
+document.getElementById("start").onclick = async () => {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mediaRecorder = new MediaRecorder(stream);
+
+  mediaRecorder.ondataavailable = e => {
+    audioChunks.push(e.data);
+  }
+
+  mediaRecorder.onstop = e => {
+    const blob = new Blob(audioChunks, { type: 'audio/wav' });
+    audioChunks = [];
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `clip_${clipCount}.wav`;
+    a.textContent = `Download clip ${clipCount}`;
+    clipCount++;
+    document.getElementById('downloads').appendChild(a);
+    document.getElementById('downloads').appendChild(document.createElement('br'));
+  }
+
+  mediaRecorder.start();
+}
+
+document.getElementById("stop").onclick = () => {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    mediaRecorder.stop();
+  }
+}
+</script>
+</body>
+</html>
