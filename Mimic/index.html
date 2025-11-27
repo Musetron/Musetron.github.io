@@ -1,13 +1,14 @@
 <!DOCTYPE html><html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Continuous Audio Effects</title>
+<title>Extreme Audio Effekte</title>
 </head>
 <body>
-<h1>Kontinuierliche Aufnahme mit Effekten</h1>
+<h1>Extreme Effekte + Telefon Filter</h1>
 <button id="startBtn">Start</button>
 <script>
-const startBtn = document.getElementById('startBtn');startBtn.onclick = async () => {
+const startBtn = document.getElementById('startBtn');
+let wordCount = 1;startBtn.onclick = async () => {
 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const source = audioCtx.createMediaStreamSource(stream);
@@ -17,15 +18,14 @@ let audioChunks = [];
 mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
 mediaRecorder.start(100); // kleine Blöcke
 
-// Lautstärkeanalyse
 const analyser = audioCtx.createAnalyser();
 analyser.fftSize = 2048;
 source.connect(analyser);
 const dataArray = new Uint8Array(analyser.fftSize);
 
 let silenceStart = null;
-const SILENCE_THRESHOLD = 5; // Lautstärke
-const SILENCE_DURATION = 300; // ms
+const SILENCE_THRESHOLD = 5;
+const SILENCE_DURATION = 300;
 
 function checkSilence() {
     analyser.getByteTimeDomainData(dataArray);
@@ -51,14 +51,12 @@ checkSilence();
 
 async function saveChunk() {
     if (audioChunks.length === 0) return;
-
     const blob = new Blob(audioChunks, { type: 'audio/webm' });
     audioChunks = [];
 
     const arrayBuffer = await blob.arrayBuffer();
     const buffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-    // Effekte anwenden
     const offlineCtx = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
     const src = offlineCtx.createBufferSource();
     src.buffer = buffer;
@@ -66,38 +64,45 @@ async function saveChunk() {
     // Pitch 6 Halbtöne runter
     src.playbackRate.value = 0.707;
 
-    // Distortion
+    // Distortion stark
     const distortion = offlineCtx.createWaveShaper();
-    distortion.curve = new Float32Array(65536).map((v,i)=>Math.tanh((i-32768)/32768*3));
+    distortion.curve = new Float32Array(65536).map((v,i)=>Math.tanh((i-32768)/32768*10)); // härter
     distortion.oversample = '4x';
 
-    // Tremolo
+    // Tremolo aggressiv
     const tremolo = offlineCtx.createGain();
     const lfo = offlineCtx.createOscillator();
     lfo.type = 'sawtooth';
-    lfo.frequency.value = 50;
+    lfo.frequency.value = 100; // schneller
     const lfoGain = offlineCtx.createGain();
-    lfoGain.gain.value = 0.5;
+    lfoGain.gain.value = 1.0; // große Amplitude
     lfo.connect(lfoGain);
     lfoGain.connect(tremolo.gain);
     lfo.start();
 
+    // Telefon Bandpass 300-3400 Hz
+    const bandpass = offlineCtx.createBiquadFilter();
+    bandpass.type = 'bandpass';
+    bandpass.frequency.value = 800; // Mittenfrequenz
+    bandpass.Q.value = 1.0; // Breite anpassen
+
+    // Verkabelung: src -> distortion -> tremolo -> bandpass -> destination
     src.connect(distortion);
     distortion.connect(tremolo);
-    tremolo.connect(offlineCtx.destination);
+    tremolo.connect(bandpass);
+    bandpass.connect(offlineCtx.destination);
 
     src.start();
     const rendered = await offlineCtx.startRendering();
 
-    // Bitcrush
-    const crushed = bitcrushBuffer(rendered, 4);
-
+    const crushed = bitcrushBuffer(rendered, 3); // stärkerer Bitcrush (3 Bits)
     const wavBlob = bufferToWave(crushed);
     const url = URL.createObjectURL(wavBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'word.wav';
+    a.download = 'word' + wordCount + '.wav';
     a.click();
+    wordCount++;
 }
 
 function bitcrushBuffer(buffer, bits) {
