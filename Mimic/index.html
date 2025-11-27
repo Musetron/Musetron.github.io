@@ -2,48 +2,116 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Offline Mikrofonaufnahme</title>
+  <title>Offline Word Recorder</title>
 </head>
 <body>
-  <h1>Offline Mikrofonaufnahme</h1>
-  <button id="start">Start Recording</button>
-  <button id="stop">Stop Recording</button>
-  <div id="downloads"></div>
+<h1>Offline Word Recorder</h1>
+<button id="start">Start Recording</button>
+<button id="stop">Stop Recording</button>
+<div id="words"></div>
 
 <script>
-let mediaRecorder;
-let audioChunks = [];
-let clipCount = 0;
+let audioContext;
+let processor;
+let stream;
+let recording = false;
+let wordBuffers = [];
+let currentWord = [];
+const threshold = 0.02; // Lautstärke Schwelle
 
 document.getElementById("start").onclick = async () => {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  mediaRecorder = new MediaRecorder(stream);
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const source = audioContext.createMediaStreamSource(stream);
 
-  mediaRecorder.ondataavailable = e => {
-    audioChunks.push(e.data);
-  }
+    processor = audioContext.createScriptProcessor(4096, 1, 1);
+    source.connect(processor);
+    processor.connect(audioContext.destination);
 
-  mediaRecorder.onstop = e => {
-    const blob = new Blob(audioChunks, { type: 'audio/wav' });
-    audioChunks = [];
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `clip_${clipCount}.wav`;
-    a.textContent = `Download clip ${clipCount}`;
-    clipCount++;
-    document.getElementById('downloads').appendChild(a);
-    document.getElementById('downloads').appendChild(document.createElement('br'));
-  }
+    processor.onaudioprocess = e => {
+        if (!recording) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const max = Math.max(...input.map(x => Math.abs(x)));
+        if (max > threshold) {
+            // Laut -> Teil des Wortes
+            currentWord.push(new Float32Array(input));
+        } else {
+            // Leise -> Wort Ende
+            if (currentWord.length > 0) {
+                saveWord(currentWord);
+                currentWord = [];
+            }
+        }
+    };
 
-  mediaRecorder.start();
-}
+    recording = true;
+};
 
 document.getElementById("stop").onclick = () => {
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    mediaRecorder.stop();
-  }
+    recording = false;
+    if (currentWord.length > 0) saveWord(currentWord);
+    processor.disconnect();
+    stream.getTracks().forEach(track => track.stop());
+};
+
+function saveWord(buffers) {
+    // Alle Float32Arrays zusammenfügen
+    let length = buffers.reduce((sum, arr) => sum + arr.length, 0);
+    let result = new Float32Array(length);
+    let offset = 0;
+    for (let b of buffers) {
+        result.set(b, offset);
+        offset += b.length;
+    }
+
+    // WAV Blob erstellen
+    const wavBlob = float32ToWav(result, audioContext.sampleRate);
+    const wordId = wordBuffers.length;
+    wordBuffers.push({ word: `word${wordId}`, blob: wavBlob });
+
+    // Download Link anzeigen
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(wavBlob);
+    a.download = `word${wordId}.wav`;
+    a.textContent = `Download word${wordId}`;
+    document.getElementById('words').appendChild(a);
+    document.getElementById('words').appendChild(document.createElement('br'));
+}
+
+// Float32 → WAV
+function float32ToWav(float32Array, sampleRate) {
+    const buffer = new ArrayBuffer(44 + float32Array.length * 2);
+    const view = new DataView(buffer);
+
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+    }
+
+    let offset = 0;
+    writeString(view, offset, 'RIFF'); offset += 4;
+    view.setUint32(offset, 36 + float32Array.length * 2, true); offset += 4;
+    writeString(view, offset, 'WAVE'); offset += 4;
+    writeString(view, offset, 'fmt '); offset += 4;
+    view.setUint32(offset, 16, true); offset += 4;
+    view.setUint16(offset, 1, true); offset += 2;
+    view.setUint16(offset, 1, true); offset += 2;
+    view.setUint32(offset, sampleRate, true); offset += 4;
+    view.setUint32(offset, sampleRate * 2, true); offset += 4;
+    view.setUint16(offset, 2, true); offset += 2;
+    view.setUint16(offset, 16, true); offset += 2;
+    writeString(view, offset, 'data'); offset += 4;
+    view.setUint32(offset, float32Array.length * 2, true); offset += 4;
+
+    // PCM
+    let idx = 44;
+    for (let i = 0; i < float32Array.length; i++) {
+        let s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        idx += 2;
+    }
+
+    return new Blob([view], { type: 'audio/wav' });
 }
 </script>
 </body>
-</html>
+  </html>
