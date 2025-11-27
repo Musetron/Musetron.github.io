@@ -1,35 +1,32 @@
-<!DOCTYPE html>
-
-<html lang="de">
+<!DOCTYPE html><html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Streaming Plattform</title>
+<title>DJMusetron</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsmediatags@3.9.5/dist/jsmediatags.min.js"></script>
 <style>
   body { background-color: #121212; color: white; }
-  .track:hover { transform: scale(1.03); transition: 0.2s; }
+  .track:hover { transform: scale(1.03); transition: 0.2s; cursor: pointer; }
 </style>
 </head>
-<body class="flex flex-col min-h-screen">
-
-<header class="bg-gray-900 p-4 flex justify-center sticky top-0 z-50">
+<body class="flex flex-col min-h-screen"><header class="bg-gray-900 p-4 flex justify-center sticky top-0 z-50">
   <input type="text" id="search" placeholder="Suche..." 
          class="w-full max-w-xl p-3 rounded-lg text-black" onkeyup="filterTracks()">
-</header>
-
-<main class="flex-1 p-6">
+</header><main class="flex-1 p-6">
   <div id="trackList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"></div>
-</main>
-
-<script>
-// Hier die MP3-Dateien festhalten, die angezeigt werden sollen
-let trackFiles = [
-  "1.mp3",
-  "song2.mp3",
-  "song3.mp3"
-];
+</main><!-- Player Modal --><div id="playerModal" class="fixed inset-0 bg-black bg-opacity-80 flex flex-col justify-center items-center p-6 hidden z-50">
+  <button onclick="closePlayer()" class="absolute top-6 right-6 text-white text-3xl font-bold">&times;</button>
+  <img id="playerCover" src="" alt="Cover" class="w-64 h-64 object-cover rounded-lg mb-4">
+  <div id="playerTitle" class="text-xl font-bold mb-2 text-center"></div>
+  <audio id="playerAudio" controls class="w-full max-w-xl">
+    <source id="playerSource" src="" type="audio/mpeg">
+    Dein Browser unterstützt kein Audio.
+  </audio>
+</div><script>
+// Alle MP3-Dateien von 1 bis 14
+let trackFiles = [];
+for(let i = 1; i <= 14; i++) { trackFiles.push(i + '.mp3'); }
 
 let tracks = [];
 
@@ -42,11 +39,8 @@ function displayTracks(trackArray) {
     div.innerHTML = `
       <img src="${track.cover}" alt="${track.title}" class="w-full h-48 object-cover rounded-lg mb-3" onerror="this.src='default_cover.jpg'">
       <div class="font-bold mb-2 text-center truncate w-full">${track.title}</div>
-      <audio controls class="w-full">
-        <source src="${track.file}" type="audio/mpeg">
-        Dein Browser unterstützt kein Audio.
-      </audio>
     `;
+    div.onclick = () => openPlayer(track);
     container.appendChild(div);
   });
 }
@@ -57,8 +51,27 @@ function filterTracks() {
   displayTracks(filtered);
 }
 
+// Player öffnen
+function openPlayer(track) {
+  document.getElementById('playerCover').src = track.cover;
+  document.getElementById('playerTitle').innerText = track.title;
+  document.getElementById('playerSource').src = track.file;
+  const audio = document.getElementById('playerAudio');
+  audio.load();
+  audio.play();
+  document.getElementById('playerModal').classList.remove('hidden');
+}
+
+// Player schließen
+function closePlayer() {
+  const audio = document.getElementById('playerAudio');
+  audio.pause();
+  document.getElementById('playerModal').classList.add('hidden');
+}
+
 // ID3-Tags auslesen und Tracks erstellen
 function loadTracks() {
+  let loadedCount = 0;
   trackFiles.forEach(file => {
     jsmediatags.read(file, {
       onSuccess: function(tag) {
@@ -68,20 +81,22 @@ function loadTracks() {
           const data = tag.tags.picture.data;
           const format = tag.tags.picture.format;
           let base64String = "";
-          for (let i = 0; i < data.length; i++) {
-            base64String += String.fromCharCode(data[i]);
-          }
+          for (let i = 0; i < data.length; i++) { base64String += String.fromCharCode(data[i]); }
           cover = `data:${format};base64,${btoa(base64String)}`;
         }
         tracks.push({title, file, cover});
-        if(tracks.length === trackFiles.length) {
+        loadedCount++;
+        if(loadedCount === trackFiles.length) {
+          tracks.sort((a,b) => a.title.localeCompare(b.title)); // Alphabetisch sortieren
           displayTracks(tracks);
         }
       },
       onError: function(error) {
         console.log("Fehler beim Lesen von " + file, error);
         tracks.push({title: file, file, cover: 'default_cover.jpg'});
-        if(tracks.length === trackFiles.length) {
+        loadedCount++;
+        if(loadedCount === trackFiles.length) {
+          tracks.sort((a,b) => a.title.localeCompare(b.title));
           displayTracks(tracks);
         }
       }
@@ -90,7 +105,5 @@ function loadTracks() {
 }
 
 loadTracks();
-</script>
-
-</body>
+</script></body>
 </html>
