@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Streaming Plattform</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsmediatags@3.9.5/dist/jsmediatags.min.js"></script>
+<style>
+  body { background-color: #121212; color: white; }
+  .track:hover { transform: scale(1.03); transition: 0.2s; }
+</style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+<header class="bg-gray-900 p-4 flex justify-center sticky top-0 z-50">
+  <input type="text" id="search" placeholder="Suche..." 
+         class="w-full max-w-xl p-3 rounded-lg text-black" onkeyup="filterTracks()">
+</header>
+
+<main class="flex-1 p-6">
+  <div id="trackList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"></div>
+</main>
+
+<script>
+// Hier die MP3-Dateien festhalten, die angezeigt werden sollen
+let trackFiles = [
+  "song1.mp3",
+  "song2.mp3",
+  "song3.mp3"
+];
+
+let tracks = [];
+
+function displayTracks(trackArray) {
+  const container = document.getElementById('trackList');
+  container.innerHTML = '';
+  trackArray.forEach(track => {
+    const div = document.createElement('div');
+    div.className = 'track bg-gray-800 p-4 rounded-xl flex flex-col items-center';
+    div.innerHTML = `
+      <img src="${track.cover}" alt="${track.title}" class="w-full h-48 object-cover rounded-lg mb-3" onerror="this.src='default_cover.jpg'">
+      <div class="font-bold mb-2 text-center truncate w-full">${track.title}</div>
+      <audio controls class="w-full">
+        <source src="${track.file}" type="audio/mpeg">
+        Dein Browser unterstützt kein Audio.
+      </audio>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function filterTracks() {
+  const query = document.getElementById('search').value.toLowerCase();
+  const filtered = tracks.filter(track => track.title.toLowerCase().includes(query));
+  displayTracks(filtered);
+}
+
+// ID3-Tags auslesen und Tracks erstellen
+function loadTracks() {
+  trackFiles.forEach(file => {
+    jsmediatags.read(file, {
+      onSuccess: function(tag) {
+        let title = tag.tags.title || file;
+        let cover = 'default_cover.jpg';
+        if(tag.tags.picture) {
+          const data = tag.tags.picture.data;
+          const format = tag.tags.picture.format;
+          let base64String = "";
+          for (let i = 0; i < data.length; i++) {
+            base64String += String.fromCharCode(data[i]);
+          }
+          cover = `data:${format};base64,${btoa(base64String)}`;
+        }
+        tracks.push({title, file, cover});
+        if(tracks.length === trackFiles.length) {
+          displayTracks(tracks);
+        }
+      },
+      onError: function(error) {
+        console.log("Fehler beim Lesen von " + file, error);
+        tracks.push({title: file, file, cover: 'default_cover.jpg'});
+        if(tracks.length === trackFiles.length) {
+          displayTracks(tracks);
+        }
+      }
+    });
+  });
+}
+
+loadTracks();
+</script>
+
+</body>
+</html>
