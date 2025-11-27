@@ -1,10 +1,10 @@
 <!DOCTYPE html><html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Stabile Audio Sampler Engine</title>
+<title>Stabile Sampler Engine</title>
 </head>
 <body>
-<h1>Stabile Audio Sampler Engine</h1>
+<h1>Stabile Sampler Engine ohne Stottern</h1>
 <button id="startBtn">Start</button>
 <script>
 const startBtn = document.getElementById('startBtn');startBtn.onclick = async () => {
@@ -17,13 +17,14 @@ analyser.fftSize = 2048;
 source.connect(analyser);
 const dataArray = new Float32Array(analyser.fftSize);
 
-const SILENCE_THRESHOLD = 0.02; // RMS
-const MIN_WORD_DURATION = 0.2; // Sekunden
+const SILENCE_THRESHOLD = 0.02;
+const MIN_WORD_DURATION = 0.3; // 0.3s Minimum
 let recording = false;
 let currentBuffer = [];
 let bufferSampleRate = audioCtx.sampleRate;
 
 let savedWords = [];
+let playbackBusy = false;
 
 function rms(arr) {
     let sum = 0;
@@ -47,21 +48,26 @@ function processAudio() {
         currentBuffer = [];
     }
 
+    // selten selbst abspielen
+    if (!playbackBusy && savedWords.length > 0 && Math.random() < 0.001) {
+        playRandomWords();
+    }
+
     requestAnimationFrame(processAudio);
 }
 
 processAudio();
 
 async function saveWord(floatArray) {
-    // AudioBuffer erstellen
     const buffer = audioCtx.createBuffer(1, floatArray.length, bufferSampleRate);
     buffer.copyToChannel(Float32Array.from(floatArray), 0, 0);
 
     const processed = await applyEffects(buffer, audioCtx);
     savedWords.push(processed);
 
-    // sofort zufällig abspielen
-    playRandomWords();
+    if (!playbackBusy) {
+        playRandomWords();
+    }
 }
 
 async function applyEffects(buffer, context) {
@@ -69,7 +75,7 @@ async function applyEffects(buffer, context) {
     const src = offlineCtx.createBufferSource();
     src.buffer = buffer;
 
-    src.playbackRate.value = 0.707;
+    src.playbackRate.value = 0.707; // Pitch Down
 
     const distortion = offlineCtx.createWaveShaper();
     distortion.curve = new Float32Array(65536).map((v,i)=>Math.tanh((i-32768)/32768*10));
@@ -102,16 +108,23 @@ async function applyEffects(buffer, context) {
 
 function playRandomWords() {
     if (savedWords.length === 0) return;
+    playbackBusy = true;
     const numWords = Math.floor(Math.random()*3)+1;
     let time = audioCtx.currentTime;
+
     for (let i=0;i<numWords;i++) {
         const word = savedWords[Math.floor(Math.random()*savedWords.length)];
         const src = audioCtx.createBufferSource();
         src.buffer = word;
         src.connect(audioCtx.destination);
         src.start(time);
-        time += word.duration + Math.random()*0.5;
+        // Pause zwischen 0.3–0.7s
+        time += word.duration + 0.3 + Math.random()*0.4;
     }
+
+    // Nach Ende Playback markieren
+    const lastWord = savedWords[Math.floor(Math.random()*savedWords.length)];
+    setTimeout(()=>{ playbackBusy = false; }, (lastWord.duration + 0.5)*1000);
 }
 
 };
