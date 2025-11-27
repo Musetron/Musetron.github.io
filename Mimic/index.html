@@ -2,10 +2,10 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Wort + Audio Recorder</title>
+<title>Mini Wort-Recorder</title>
 </head>
 <body>
-<h1>Wort + Audio Recorder</h1>
+<h1>Kleinwort-Erkennung vom Mikrofon</h1>
 <button id="start">Start</button>
 <button id="stop">Stop</button>
 <div id="log"></div>
@@ -16,35 +16,34 @@ let audioChunks = [];
 let recording = false;
 let recognition;
 let wordId = 0;
-
 const logDiv = document.getElementById('log');
 
-// Start Recording + Speech Recognition
 document.getElementById('start').onclick = async () => {
-    // Mikrofon starten
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(stream);
-    mediaRecorder.start();
-    audioChunks = [];
+    mediaRecorder.start(250); // alle 250ms chunks
 
+    audioChunks = [];
     mediaRecorder.ondataavailable = e => {
         if (recording) audioChunks.push(e.data);
     };
 
     recording = true;
 
-    // SpeechRecognition
     window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     recognition = new SpeechRecognition();
     recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.lang = 'de-DE'; // Deutsche Sprache
+    recognition.interimResults = true;
+    recognition.lang = 'de-DE';
 
     recognition.onresult = event => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-                const word = event.results[i][0].transcript.trim();
-                saveWordAudio(word);
+            const res = event.results[i];
+            if (res.isFinal) {
+                const word = res[0].transcript.trim();
+                if(word.length > 0){
+                    saveWordAudio(word);
+                }
             }
         }
     };
@@ -52,32 +51,29 @@ document.getElementById('start').onclick = async () => {
     recognition.start();
 };
 
-// Stop Recording + Recognition
 document.getElementById('stop').onclick = () => {
     recording = false;
     if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
     if (recognition) recognition.stop();
 };
 
-// Speichert das Audio + Wort
-function saveWordAudio(word) {
-    if (audioChunks.length === 0) return;
+function saveWordAudio(word){
+    if(audioChunks.length === 0) return;
 
     const blob = new Blob(audioChunks, { type: 'audio/webm' });
-    audioChunks = []; // reset für nächste Aufnahme
+    audioChunks = []; // Reset für nächste Aufnahme
 
-    // Download-Link erstellen
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `word_${wordId}.webm`;
-    a.textContent = `Download word ${wordId}: ${word}`;
+    a.textContent = `Download: ${word}`;
     logDiv.appendChild(a);
     logDiv.appendChild(document.createElement('br'));
 
-    console.log("Erkanntes Wort:", word);
+    console.log("Erkannt:", word);
     wordId++;
 }
 </script>
 </body>
-</html>
+    </html>
