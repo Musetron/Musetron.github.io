@@ -5,33 +5,73 @@
 <title>Signup</title>
 
 <style>
-body { margin:0; padding:0; font-family:Arial; background:white; display:flex; justify-content:center; }
-#app { width:380px; height:100vh; border:4px solid #000; display:flex; flex-direction:column; }
-#topBar { height:60px; border-bottom:4px solid #000; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:bold; position:relative; }
-#backBtn { position:absolute; left:10px; width:35px; height:35px; border:3px solid #000; border-radius:6px; cursor:pointer; }
-
-main { padding:20px; display:flex; flex-direction:column; gap:20px; }
-
-#avatarBtn {
-    width:80px; height:80px;
-    border:3px solid #000;
-    border-radius:10px;
-    align-self:center;
-    cursor:pointer;
-    background-size:cover;
-    background-position:center;
+body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial;
+    background: white;
+    display: flex;
+    justify-content: center;
+}
+#app {
+    width: 380px;
+    height: 100vh;
+    border: 4px solid #000;
+    display: flex;
+    flex-direction: column;
+}
+#topBar {
+    height: 60px;
+    border-bottom: 4px solid #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: bold;
+    position: relative;
+}
+#backBtn {
+    position: absolute;
+    left: 10px;
+    width: 35px;
+    height: 35px;
+    border: 3px solid #000;
+    border-radius: 6px;
+    cursor: pointer;
 }
 
-input { height:45px; border:3px solid #000; padding:10px; }
+main {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+#avatarBtn {
+    width: 80px;
+    height: 80px;
+    border: 3px solid #000;
+    border-radius: 10px;
+    align-self: center;
+    cursor: pointer;
+    background-size: cover;
+    background-position: center;
+}
+
+input {
+    height: 45px;
+    border: 3px solid #000;
+    padding: 10px;
+}
 
 #goBtn {
-    height:50px;
-    border:3px solid #000;
-    border-radius:6px;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
+    height: 50px;
+    border: 3px solid #000;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 </style>
 </head>
@@ -62,8 +102,10 @@ input { height:45px; border:3px solid #000; padding:10px; }
 const avatarBtn = document.getElementById("avatarBtn");
 const avatarInput = document.getElementById("avatarInput");
 
+// Avatarbild auswählen
 avatarBtn.addEventListener("click", () => avatarInput.click());
 
+// Avatar-Vorschau
 avatarInput.addEventListener("change", () => {
     const file = avatarInput.files[0];
     if (!file) return;
@@ -75,58 +117,54 @@ avatarInput.addEventListener("change", () => {
     reader.readAsDataURL(file);
 });
 
-// ----------------------
-//  WEBSOCKET SIGNUP
-// ----------------------
-
+// ----------------------------------------
+//        SIGNUP AN SERVER SENDEN
+// ----------------------------------------
 async function sendSignup() {
-    const name = document.getElementById("name").value;
-    const email = document.getElementById("email").value;
-    const pw = document.getElementById("pw").value;
 
+    const name = document.getElementById("name").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const pw = document.getElementById("pw").value.trim();
     const file = avatarInput.files[0];
+
+    // Feldprüfung
+    if (!name || !email || !pw) {
+        alert("Bitte alle Felder ausfüllen.");
+        return;
+    }
     if (!file) {
-        alert("Bitte Profilbild auswählen");
+        alert("Bitte ein Profilbild auswählen.");
         return;
     }
 
-    const imgArrayBuffer = await file.arrayBuffer();
-    const imgBytes = new Uint8Array(imgArrayBuffer);
+    // multipart/form-data erstellen
+    const form = new FormData();
+    form.append("name", name);
+    form.append("email", email);
+    form.append("password", pw);
+    form.append("avatar", file);
 
-    const ws = new WebSocket("ws://144.76.57.59:21982/");
+    try {
+        const res = await fetch("http://144.76.57.59:21982/signup", {
+            method: "POST",
+            body: form
+        });
 
-    ws.binaryType = "arraybuffer";
+        const txt = await res.text();
 
-    ws.onopen = () => {
-        // Erst JSON send
-        const jsonData = {
-            name,
-            email,
-            password: pw,
-            img_size: imgBytes.length
-        };
-
-        ws.send(JSON.stringify(jsonData));
-
-        // Danach Bild senden
-        ws.send(imgBytes);
-    };
-
-    ws.onmessage = (msg) => {
-        if (msg.data === "OK") {
-            alert("Account wurde erstellt!");
+        if (txt === "OK") {
+            alert("Account erfolgreich erstellt!");
             location.href = "/chat";
         } else {
-            alert("Server-Antwort: " + msg.data);
+            alert("Server Fehler: " + txt);
         }
-    };
 
-    ws.onerror = (err) => {
+    } catch (err) {
+        alert("Verbindung zum Server fehlgeschlagen.");
         console.error(err);
-        alert("WebSocket Fehler");
-    };
+    }
 }
 </script>
 
 </body>
-    </html>
+</html>
