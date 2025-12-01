@@ -1,213 +1,205 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>BroChatter</title>
-
-<style>
-    body {
-        margin:0; padding:0;
-        font-family:Arial;
-        background:white;
-        display:flex;
-        justify-content:center;
-    }
-
-    /* APP WRAPPER – reiner Line-Art Look */
-    #app {
-        width:380px;
-        height:100vh;
-        background:white;
-        display:flex;
-        flex-direction:column;
-        border:4px solid #000;
-    }
-
-    /* TOP BAR */
-    #topBar {
-        height:60px;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        border-bottom:4px solid #000;
-        background:white;
-        font-size:24px;
-        font-weight:bold;
-        letter-spacing:1px;
-    }
-
-    /* BACK BUTTON optional – minimalistisch */
-    #backBtn {
-        position:absolute;
-        left:10px;
-        width:35px;
-        height:35px;
-        border:3px solid #000;
-        border-radius:6px;
-        background:white;
-        cursor:pointer;
-    }
-
-    /* MESSAGE LIST */
-    #messages {
-        flex:1;
-        overflow-y:auto;
-        padding:10px;
-        background:white;
-    }
-
-    /* MESSAGE BUBBLES */
-    .msg {
-        background:white;
-        border:3px solid #000;
-        padding:10px;
-        margin:15px 0;
-        display:flex;
-        gap:10px;
-        cursor:pointer;
+<!DOCTYPE html>  
+<html lang="de">  
+<head>  
+<meta charset="UTF-8" />  
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />  
+<title>BroChatter</title>  
+  
+<style>  
+    body {  
+        margin:0; padding:0;  
+        font-family:Arial;  
+        background:white;  
+        display:flex;  
+        justify-content:center;  
+    }  
+  
+    #app {  
+        width:380px;  
+        height:100vh;  
+        background:white;  
+        display:flex;  
+        flex-direction:column;  
+        border:4px solid #000;  
+    }  
+  
+    #topBar {  
+        height:60px;  
+        display:flex;  
+        align-items:center;  
+        justify-content:center;  
+        border-bottom:4px solid #000;  
+        background:white;  
+        font-size:24px;  
+        font-weight:bold;  
+        letter-spacing:1px;  
         position:relative;
-        transform-origin:top left;
-        border-radius:6px;
+    }  
+  
+    #backBtn {  
+        position:absolute;  
+        left:10px;  
+        top:12px;
+        width:35px;  
+        height:35px;  
+        border:3px solid #000;  
+        border-radius:6px;  
+        background:white;  
+        cursor:pointer;  
+    }  
+  
+    #messages {  
+        flex:1;  
+        overflow-y:auto;  
+        padding:10px;  
+        background:white;  
+    }  
+  
+    .msg {  
+        background:white;  
+        border:3px solid #000;  
+        padding:10px;  
+        margin:15px 0;  
+        display:flex;  
+        gap:10px;  
+        cursor:pointer;  
+        position:relative;  
+        transform-origin:top left;  
+        border-radius:6px;  
+    }  
+  
+    .msg.highlight {  
+        background:#dff1ff;  
+    }  
+  
+    .avatar {  
+        width:50px; height:50px;  
+        border:3px solid #000;  
+        background:white;  
+        border-radius:6px;  
+    }  
+  
+    #bottomBar {  
+        height:70px;  
+        display:flex;  
+        align-items:center;  
+        padding:10px;  
+        border-top:4px solid #000;  
+        background:white;  
+    }  
+  
+    #input {  
+        flex:1;  
+        height:45px;  
+        border:3px solid #000;  
+        padding:10px;  
+        background:white;  
+    }  
+  
+    #sendBtn {  
+        width:45px;  
+        height:45px;  
+        border:3px solid #000;  
+        background:white;  
+        margin-left:10px;  
+        cursor:pointer;  
+        border-radius:6px;  
+    }  
+  
+</style>  
+</head>  
+<body>  
+<div id="app">  
+  
+    <div id="topBar">  
+        <div id="backBtn"></div>  
+        BroChatter  
+    </div>  
+  
+    <div id="messages"></div>  
+  
+    <div id="bottomBar">  
+        <input id="input" placeholder="Nachricht...">  
+        <div id="sendBtn"></div>  
+    </div>  
+  
+</div>  
+  
+<script>  
+let selectedMsg = null;  
+let messages = document.getElementById('messages');  
+let input = document.getElementById('input');  
+let sendBtn = document.getElementById('sendBtn');  
+  
+/*  
+    MESSAGE CREATION  
+    Speicher die Tiefe korrekt in data-depth
+*/  
+function createMessage(text, parent = null) {
+    let depth = 0;
+
+    // echte hierarchische Tiefe
+    if (parent) {
+        depth = parseInt(parent.dataset.depth) + 1;
     }
 
-    .msg.highlight {
-        background:#dff1ff;
-    }
+    let scale = Math.pow(0.85, depth);
 
-    .avatar {
-        width:50px; height:50px;
-        border:3px solid #000;
-        background:white;
-        border-radius:6px;
-    }
-
-    /* Removed:
-       .dot-vertical
-       .dot-horizontal
-       (Tree Dot Lines komplett entfernt)
-    */
-
-    /* BOTTOM BAR */
-    #bottomBar {
-        height:70px;
-        display:flex;
-        align-items:center;
-        padding:10px;
-        border-top:4px solid #000;
-        background:white;
-    }
-
-    #input {
-        flex:1;
-        height:45px;
-        border:3px solid #000;
-        padding:10px;
-        background:white;
-    }
-
-    #sendBtn {
-        width:45px;
-        height:45px;
-        border:3px solid #000;
-        background:white;
-        margin-left:10px;
-        cursor:pointer;
-        border-radius:6px;
-    }
-
-</style>
-</head>
-<body>
-<div id="app">
-
-    <div id="topBar">
-        <div id="backBtn"></div>
-        BroChatter
-    </div>
-
-    <div id="messages"></div>
-
-    <div id="bottomBar">
-        <input id="input" placeholder="Nachricht...">
-        <div id="sendBtn"></div>
-    </div>
-
-</div>
-
-<script>
-let selectedMsg=null;
-let messages=document.getElementById('messages');
-let input=document.getElementById('input');
-let sendBtn=document.getElementById('sendBtn');
-
-/* MESSAGE CREATION */
-function createMessage(text, parent=null, depth=0){
-    let scale=Math.pow(0.85, depth);
-
-    let box=document.createElement('div');
-    box.className='msg';
-    box.style.transform=`translateX(${depth*45}px) scale(${scale})`;
-
-    let avatar=document.createElement('div');
-    avatar.className='avatar';
-
-    let content=document.createElement('div');
-    content.innerHTML=`<strong>Bro:</strong><br>${text}`;
-
-    box.appendChild(avatar);
-    box.appendChild(content);
-
-    /* parent insertion (unverändert) */
-    if(parent){
-        parent.insertAdjacentElement('afterend', box);
-    } else {
-        messages.appendChild(box);
-    }
-
-    /* selection */
-    box.addEventListener('click',()=>{
-        if(box.classList.contains('highlight')){
-            box.classList.remove('highlight');
-            selectedMsg=null;
-            return;
-        }
-        document.querySelectorAll('.msg').forEach(m=>m.classList.remove('highlight'));
-        box.classList.add('highlight');
-        selectedMsg=box;
-    });
-
-    messages.scrollTop=messages.scrollHeight;
-    return box;
-}
-
-/* DEPTH CALCULATION (unverändert) */
-function getDepth(msg){
-    let d=0;
-    while(msg.previousElementSibling && msg.previousElementSibling.classList.contains('msg')){
-        d++;
-        msg=msg.previousElementSibling;
-    }
-    return d;
-}
-
-/* SEND (unverändert) */
-sendBtn.addEventListener('click',()=>{
-    let text=input.value.trim();
-    if(!text) return;
-
-    if(selectedMsg){
-        let depth=getDepth(selectedMsg)+1;
-        createMessage(text, selectedMsg, depth);
-        selectedMsg.classList.remove('highlight');
-        selectedMsg=null;
-    } else {
-        createMessage(text);
-    }
-
-    input.value='';
-});
-</script>
-
-</body>
-  </html>
+    let box = document.createElement('div');  
+    box.className = 'msg';  
+    box.dataset.depth = depth;
+    box.style.transform = `translateX(${depth * 45}px) scale(${scale})`;  
+  
+    let avatar = document.createElement('div');  
+    avatar.className = 'avatar';  
+  
+    let content = document.createElement('div');  
+    content.innerHTML = `<strong>Bro:</strong><br>${text}`;  
+  
+    box.appendChild(avatar);  
+    box.appendChild(content);  
+  
+    // Insert position
+    if (parent) {  
+        parent.insertAdjacentElement('afterend', box);  
+    } else {  
+        messages.appendChild(box);  
+    }  
+  
+    // selection system
+    box.addEventListener('click', () => {  
+        if (box.classList.contains('highlight')) {  
+            box.classList.remove('highlight');  
+            selectedMsg = null;  
+            return;  
+        }  
+        document.querySelectorAll('.msg').forEach(m => m.classList.remove('highlight'));  
+        box.classList.add('highlight');  
+        selectedMsg = box;  
+    });  
+  
+    messages.scrollTop = messages.scrollHeight;  
+    return box;  
+}  
+  
+/* SEND BUTTON */  
+sendBtn.addEventListener('click', () => {  
+    let text = input.value.trim();  
+    if (!text) return;  
+  
+    if (selectedMsg) {  
+        // automatisch richtige Tiefe verwenden  
+        createMessage(text, selectedMsg);  
+        selectedMsg.classList.remove('highlight');  
+        selectedMsg = null;  
+    } else {  
+        // normale Nachricht (depth = 0)  
+        createMessage(text);  
+    }  
+  
+    input.value = '';  
+});  
+</script>  
+  
+</body>  
+</html>
