@@ -3,90 +3,54 @@
 <head>
 <meta charset="UTF-8">
 <title>Signup</title>
-
 <style>
-body {
-    margin: 0;
-    padding: 0;
-    font-family: Arial;
-    background: white;
-    display: flex;
-    justify-content: center;
-}
-#app {
-    width: 380px;
-    height: 100vh;
-    border: 4px solid #000;
-    display: flex;
-    flex-direction: column;
-}
-#topBar {
-    height: 60px;
-    border-bottom: 4px solid #000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    font-weight: bold;
-    position: relative;
-}
-#backBtn {
-    position: absolute;
-    left: 10px;
-    width: 35px;
-    height: 35px;
-    border: 3px solid #000;
-    border-radius: 6px;
-    cursor: pointer;
-}
+body { margin:0; padding:0; font-family:Arial; background:white; display:flex; justify-content:center; }
+#app { width:380px; min-height:100vh; border:4px solid #000; display:flex; flex-direction:column; }
+#topBar { height:60px; border-bottom:4px solid #000; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:bold; position:relative; }
+#backBtn { position:absolute; left:10px; width:35px; height:35px; border:3px solid #000; border-radius:6px; cursor:pointer; }
 
-main {
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-}
+main { padding:20px; display:flex; flex-direction:column; gap:20px; flex:1; }
 
 #avatarBtn {
-    width: 80px;
-    height: 80px;
-    border: 3px solid #000;
-    border-radius: 10px;
-    align-self: center;
-    cursor: pointer;
-    background-size: cover;
-    background-position: center;
+    width:80px; height:80px;
+    border:3px solid #000;
+    border-radius:10px;
+    align-self:center;
+    cursor:pointer;
+    background-size:cover;
+    background-position:center;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:12px;
+    color:#555;
 }
 
-input {
-    height: 45px;
-    border: 3px solid #000;
-    padding: 10px;
-}
+input { height:45px; border:3px solid #000; padding:10px; font-size:16px; }
 
 #goBtn {
-    height: 50px;
-    border: 3px solid #000;
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    height:50px;
+    border:3px solid #000;
+    border-radius:6px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:bold;
+    background:#eee;
 }
 </style>
 </head>
 <body>
 
 <div id="app">
-
     <div id="topBar">
-        <div id="backBtn" onclick="location.href='/chat/login'"></div>
+        <div id="backBtn" onclick="location.href='/chat/login'">&larr;</div>
         Signup
     </div>
 
     <main>
-        <div id="avatarBtn"></div>
-
+        <div id="avatarBtn">Profilbild</div>
         <input id="avatarInput" type="file" accept="image/jpeg,image/png" style="display:none">
 
         <input id="name" type="text" placeholder="Name">
@@ -95,76 +59,58 @@ input {
 
         <div id="goBtn" onclick="sendSignup()">Go</div>
     </main>
-
 </div>
 
 <script>
 const avatarBtn = document.getElementById("avatarBtn");
 const avatarInput = document.getElementById("avatarInput");
 
-// Avatarbild auswählen
 avatarBtn.addEventListener("click", () => avatarInput.click());
 
-// Avatar-Vorschau
 avatarInput.addEventListener("change", () => {
     const file = avatarInput.files[0];
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = () => {
-        avatarBtn.style.backgroundImage = `url(${reader.result})`;
-    };
+    reader.onload = () => avatarBtn.style.backgroundImage = `url(${reader.result})`;
     reader.readAsDataURL(file);
 });
 
-// ----------------------------------------
-//        SIGNUP AN SERVER SENDEN
-// ----------------------------------------
 async function sendSignup() {
-
     const name = document.getElementById("name").value.trim();
     const email = document.getElementById("email").value.trim();
-    const pw = document.getElementById("pw").value.trim();
+    const pw = document.getElementById("pw").value;
     const file = avatarInput.files[0];
 
-    // Feldprüfung
-    if (!name || !email || !pw) {
-        alert("Bitte alle Felder ausfüllen.");
-        return;
-    }
-    if (!file) {
-        alert("Bitte ein Profilbild auswählen.");
-        return;
-    }
+    if (!name || !email || !pw) return alert("Bitte alle Felder ausfüllen");
+    if (!file) return alert("Bitte Profilbild auswählen");
 
-    // multipart/form-data erstellen
-    const form = new FormData();
-    form.append("name", name);
-    form.append("email", email);
-    form.append("password", pw);
-    form.append("avatar", file);
+    const formData = new FormData();
+    formData.append("name", name);
+    formData.append("email", email);
+    formData.append("password", pw);
+    formData.append("avatar", file);
 
     try {
-        const res = await fetch("http://144.76.57.59:21982/signup", {
+        const response = await fetch("http://144.76.57.59:21982/signup", {
             method: "POST",
-            body: form
+            body: formData
         });
 
-        const txt = await res.text();
+        if (!response.ok) throw new Error("Server Fehler");
 
-        if (txt === "OK") {
-            alert("Account erfolgreich erstellt!");
+        const result = await response.json();
+        if (result.status === "OK") {
+            alert("Account erstellt! ID: " + result.id);
             location.href = "/chat";
         } else {
-            alert("Server Fehler: " + txt);
+            alert("Fehler: " + JSON.stringify(result));
         }
-
     } catch (err) {
-        alert("Verbindung zum Server fehlgeschlagen.");
         console.error(err);
+        alert("Fehler beim Upload: " + err.message);
     }
 }
 </script>
 
 </body>
-</html>
+    </html>
