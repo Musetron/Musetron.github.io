@@ -36,29 +36,38 @@
         position:relative;
     }  
   
-    #backBtn {  
+    /* NEUE schöne Buttons */
+    #backBtn,  
+    #callBtn {  
         position:absolute;  
-        left:10px;  
-        top:12px;
-        width:35px;  
-        height:35px;  
+        top:11px;
+        width:38px;  
+        height:38px;  
         border:3px solid #000;  
-        border-radius:6px;  
+        border-radius:8px;  
         background:white;  
         cursor:pointer;  
+        display:flex;  
+        align-items:center;  
+        justify-content:center;  
+        font-size:22px;  
+        font-weight:bold;  
+        line-height:1;  
+        transition:0.1s;  
     }  
 
-    /* NEW: CALL BUTTON */
+    #backBtn:hover,
+    #callBtn:hover {
+        background:#eee;
+        transform:scale(1.05);
+    }
+
+    #backBtn {  
+        left:10px;  
+    }  
+
     #callBtn {
-        position:absolute;
         right:10px;
-        top:12px;
-        width:35px;
-        height:35px;
-        border:3px solid #000;
-        border-radius:6px;
-        background:white;
-        cursor:pointer;
     }
   
     #messages {  
@@ -109,15 +118,28 @@
         background:white;  
     }  
   
+    /* schönerer Send-Button */
     #sendBtn {  
-        width:45px;  
-        height:45px;  
+        width:48px;  
+        height:48px;  
         border:3px solid #000;  
         background:white;  
         margin-left:10px;  
         cursor:pointer;  
-        border-radius:6px;  
+        border-radius:8px;  
+        display:flex;  
+        align-items:center;  
+        justify-content:center;  
+        font-size:26px;  
+        font-weight:bold;  
+        line-height:1;  
+        transition:0.1s;
     }  
+
+    #sendBtn:hover {
+        background:#eee;
+        transform:scale(1.05);
+    }
   
 </style>  
 </head>  
@@ -125,16 +147,16 @@
 <div id="app">  
   
     <div id="topBar">  
-        <div id="backBtn" onclick="location.href='/chat'"></div>  
+        <div id="backBtn" onclick="location.href='/chat'">◀</div>  
         BroChatter  
-        <div id="callBtn" onclick="location.href='/chat/call'"></div>
+        <div id="callBtn" onclick="location.href='/chat/call'">✆</div>
     </div>  
   
     <div id="messages"></div>  
   
     <div id="bottomBar">  
         <input id="input" placeholder="Nachricht...">  
-        <div id="sendBtn"></div>  
+        <div id="sendBtn">▲</div>  
     </div>  
   
 </div>  
@@ -152,7 +174,6 @@ let sendBtn = document.getElementById('sendBtn');
 function createMessage(text, parent = null) {
     let depth = 0;
 
-    // echte hierarchische Tiefe
     if (parent) {
         depth = parseInt(parent.dataset.depth) + 1;
     }
@@ -194,7 +215,6 @@ function createMessage(text, parent = null) {
     return box;  
 }  
   
-/* SEND BUTTON */  
 sendBtn.addEventListener('click', () => {  
     let text = input.value.trim();  
     if (!text) return;  
