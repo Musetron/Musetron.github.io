@@ -29,6 +29,9 @@ input { height:45px; border:3px solid #000; padding:10px; }
     border:3px solid #000;
     border-radius:6px;
     cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
 }
 </style>
 </head>
@@ -44,14 +47,13 @@ input { height:45px; border:3px solid #000; padding:10px; }
     <main>
         <div id="avatarBtn"></div>
 
-        <!-- Unsichtbarer File-Input -->
         <input id="avatarInput" type="file" accept="image/jpeg,image/png" style="display:none">
 
         <input id="name" type="text" placeholder="Name">
         <input id="email" type="text" placeholder="Email">
         <input id="pw" type="password" placeholder="Passwort">
 
-        <div id="goBtn" onclick="location.href='/chat'">Go</div>
+        <div id="goBtn" onclick="sendSignup()">Go</div>
     </main>
 
 </div>
@@ -60,12 +62,8 @@ input { height:45px; border:3px solid #000; padding:10px; }
 const avatarBtn = document.getElementById("avatarBtn");
 const avatarInput = document.getElementById("avatarInput");
 
-// Klick auf Button → Datei-Dialog öffnen
-avatarBtn.addEventListener("click", () => {
-    avatarInput.click();
-});
+avatarBtn.addEventListener("click", () => avatarInput.click());
 
-// Bild anzeigen nachdem es ausgewählt wurde
 avatarInput.addEventListener("change", () => {
     const file = avatarInput.files[0];
     if (!file) return;
@@ -76,7 +74,59 @@ avatarInput.addEventListener("change", () => {
     };
     reader.readAsDataURL(file);
 });
+
+// ----------------------
+//  WEBSOCKET SIGNUP
+// ----------------------
+
+async function sendSignup() {
+    const name = document.getElementById("name").value;
+    const email = document.getElementById("email").value;
+    const pw = document.getElementById("pw").value;
+
+    const file = avatarInput.files[0];
+    if (!file) {
+        alert("Bitte Profilbild auswählen");
+        return;
+    }
+
+    const imgArrayBuffer = await file.arrayBuffer();
+    const imgBytes = new Uint8Array(imgArrayBuffer);
+
+    const ws = new WebSocket("ws://144.76.57.59:21982/");
+
+    ws.binaryType = "arraybuffer";
+
+    ws.onopen = () => {
+        // Erst JSON send
+        const jsonData = {
+            name,
+            email,
+            password: pw,
+            img_size: imgBytes.length
+        };
+
+        ws.send(JSON.stringify(jsonData));
+
+        // Danach Bild senden
+        ws.send(imgBytes);
+    };
+
+    ws.onmessage = (msg) => {
+        if (msg.data === "OK") {
+            alert("Account wurde erstellt!");
+            location.href = "/chat";
+        } else {
+            alert("Server-Antwort: " + msg.data);
+        }
+    };
+
+    ws.onerror = (err) => {
+        console.error(err);
+        alert("WebSocket Fehler");
+    };
+}
 </script>
 
 </body>
-</html>
+    </html>
