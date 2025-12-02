@@ -1,205 +1,278 @@
-<!DOCTYPE html>    <html lang="de">    
-<head>    
-<meta charset="UTF-8" />    
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />    
-<title>BroChatter</title>    <style>    
-    body {    
-        margin:0; padding:0;    
-        font-family:Arial;    
-        background:white;    
-        display:flex;    
-        justify-content:center;    
-    }    
-    
-    #app {    
-        width:380px;    
-        height:100vh;    
-        background:white;    
-        display:flex;    
-        flex-direction:column;    
-        border:4px solid #000;    
-    }    
-    
-    #topBar {    
-        height:60px;    
-        display:flex;    
-        align-items:center;    
-        justify-content:center;    
-        border-bottom:4px solid #000;    
-        background:white;    
-        font-size:24px;    
-        font-weight:bold;    
-        letter-spacing:1px;    
-        position:relative;  
-    }    
-    
-    #backBtn {    
-        position:absolute;    
-        left:10px;    
-        top:12px;  
-        width:35px;    
-        height:35px;    
-        border:3px solid #000;    
-        border-radius:6px;    
-        background:white;    
-        cursor:pointer;    
-    }    
-  
-    /* NEW: CALL BUTTON */  
-    #callBtn {  
-        position:absolute;  
-        right:10px;  
-        top:12px;  
-        width:35px;  
-        height:35px;  
-        border:3px solid #000;  
-        border-radius:6px;  
-        background:white;  
-        cursor:pointer;  
-    }  
-    
-    #messages {    
-        flex:1;    
-        overflow-y:auto;    
-        padding:10px;    
-        background:white;    
-    }    
-    
-    .msg {    
-        background:white;    
-        border:3px solid #000;    
-        padding:10px;    
-        margin:15px 0;    
-        display:flex;    
-        gap:10px;    
-        cursor:pointer;    
-        position:relative;    
-        transform-origin:top left;    
-        border-radius:6px;    
-    }    
-    
-    .msg.highlight {    
-        background:#dff1ff;    
-    }    
-    
-    .avatar {    
-        width:50px; height:50px;    
-        border:3px solid #000;    
-        background:white;    
-        border-radius:6px;    
-    }    
-    
-    #bottomBar {    
-        height:70px;    
-        display:flex;    
-        align-items:center;    
-        padding:10px;    
-        border-top:4px solid #000;    
-        background:white;    
-    }    
-    
-    #input {    
-        flex:1;    
-        height:45px;    
-        border:3px solid #000;    
-        padding:10px;    
-        background:white;    
-    }    
-    
-    #sendBtn {    
-        width:45px;    
-        height:45px;    
-        border:3px solid #000;    
-        background:white;    
-        margin-left:10px;    
-        cursor:pointer;    
-        border-radius:6px;    
-    }    
-    
-</style>    </head>    
-<body>    
-<div id="app">    <div id="topBar">    
-    <div id="backBtn" onclick="location.href='/chat'"></div>    
-    BroChatter    
-    <div id="callBtn" onclick="location.href='/chat/call'"></div>  
-</div>    
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Android-ähnlicher Taschenrechner (HTML)</title>
+  <style>
+    /* Basis-Reset */
+    *{box-sizing:border-box;font-family: Roboto, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif}
+    html,body{height:100%;margin:0;background:#121212;display:flex;align-items:center;justify-content:center}
 
-<div id="messages"></div>    
+    /* Taschenrechner-Wrapper (wie Android simple calculator) */
+    .calc{
+      width:360px; /* typische Telefonbreite */
+      max-width:92vw;
+      background:linear-gradient(180deg,#1e1e1e 0%, #141414 100%);
+      border-radius:24px;
+      box-shadow:0 10px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+      padding:18px;
+      color:#fff;
+      -webkit-user-select:none;user-select:none;
+    }
 
-<div id="bottomBar">    
-    <input id="input" placeholder="Nachricht...">    
-    <div id="sendBtn"></div>    
-</div>
+    /* Anzeige */
+    .display{
+      padding:18px 16px 12px 16px;
+      border-radius:14px;
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      min-height:88px;
+      display:flex;flex-direction:column;justify-content:center;align-items:flex-end;
+      margin-bottom:14px;
+    }
+    .history{
+      font-size:14px;color:rgba(255,255,255,0.56);height:20px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;
+    }
+    .current{
+      font-size:36px;font-weight:500;line-height:1;margin-top:6px;word-break:break-all;text-align:right;
+    }
 
-</div>    <script>    
-let selectedMsg = null;    
-let messages = document.getElementById('messages');    
-let input = document.getElementById('input');    
-let sendBtn = document.getElementById('sendBtn');    
-    
-/*    
-    MESSAGE CREATION    
-    Speicher die Tiefe korrekt in data-depth  
-*/    
-function createMessage(text, parent = null) {  
-    let depth = 0;  
-  
-    // echte hierarchische Tiefe  
-    if (parent) {  
-        depth = parseInt(parent.dataset.depth) + 1;  
-    }  
-  
-    let scale = Math.pow(0.85, depth);  
-  
-    let box = document.createElement('div');    
-    box.className = 'msg';    
-    box.dataset.depth = depth;  
-    box.style.transform = `translateX(${depth * 45}px) scale(${scale})`;    
-    
-    let avatar = document.createElement('div');    
-    avatar.className = 'avatar';    
-    
-    let content = document.createElement('div');    
-    content.innerHTML = `<strong>Bro:</strong><br>${text}`;    
-    
-    box.appendChild(avatar);    
-    box.appendChild(content);    
-    
-    if (parent) {    
-        parent.insertAdjacentElement('afterend', box);    
-    } else {    
-        messages.appendChild(box);    
-    }    
-    
-    box.addEventListener('click', () => {    
-        if (box.classList.contains('highlight')) {    
-            box.classList.remove('highlight');    
-            selectedMsg = null;    
-            return;    
-        }    
-        document.querySelectorAll('.msg').forEach(m => m.classList.remove('highlight'));    
-        box.classList.add('highlight');    
-        selectedMsg = box;    
-    });    
-    
-    messages.scrollTop = messages.scrollHeight;    
-    return box;    
-}    
-    
-/* SEND BUTTON */    
-sendBtn.addEventListener('click', () => {    
-    let text = input.value.trim();    
-    if (!text) return;    
-    
-    if (selectedMsg) {    
-        createMessage(text, selectedMsg);    
-        selectedMsg.classList.remove('highlight');    
-        selectedMsg = null;    
-    } else {    
-        createMessage(text);    
-    }    
-    
-    input.value = '';    
-});    
-</script>    </body>    
-</html>
+    /* Tastenfeld */
+    .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+
+    .key{
+      height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;
+      transition:transform 140ms ease,box-shadow 140ms ease, background 140ms ease;
+      box-shadow:0 6px 10px rgba(0,0,0,0.5);
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      color:#fff;font-size:20px;font-weight:500;
+    }
+
+    .key:active{transform:translateY(4px);box-shadow:0 3px 6px rgba(0,0,0,0.45)}
+
+    /* Funktionstasten (C, ±, %) */
+    .key.func{background:transparent;color:rgba(255,255,255,0.9);font-weight:600}
+
+    /* Operatoren (÷ × − +) */
+    .key.op{
+      background:linear-gradient(180deg,#2a2a2a,#242424);color:#ffb74d;font-weight:600;border-radius:14px;height:68px;
+    }
+
+    /* Gleich-Taste (orange) */
+    .key.equals{
+      background:linear-gradient(180deg,#ff9800,#f57c00);color:#fff;border-radius:14px;height:68px;font-weight:700;font-size:22px;
+    }
+
+    /* Null-Taste soll breit sein */
+    .key.zero{grid-column:span 2;border-radius:34px;text-align:left; padding-left:28px}
+
+    /* Kleinere Anpassungen für kleine Bildschirme */
+    @media (max-width:420px){
+      .calc{width:320px;padding:14px;border-radius:18px}
+      .key{height:60px}
+      .display{min-height:78px;padding:14px}
+      .current{font-size:32px}
+    }
+
+    /* Tastendruck-Feedback für Touch (ripple lite) */
+    .key .ripple{position:absolute;border-radius:50%;transform:scale(0);opacity:0.18;background:#fff;width:10px;height:10px}
+
+    /* Accessibility focus */
+    .key:focus{outline:3px solid rgba(255,160,0,0.15)}
+  </style>
+</head>
+<body>
+  <div class="calc" role="application" aria-label="Taschenrechner">
+    <div class="display" aria-live="polite">
+      <div class="history" id="history"> </div>
+      <div class="current" id="current">0</div>
+    </div>
+
+    <div class="keys" id="keys">
+      <!-- Reihe 1 -->
+      <button class="key func" data-action="clear" id="btn-clear">AC</button>
+      <button class="key func" data-action="toggle-sign">±</button>
+      <button class="key func" data-action="percent">%</button>
+      <button class="key op" data-action="/">÷</button>
+
+      <!-- Reihe 2 -->
+      <button class="key" data-num="7">7</button>
+      <button class="key" data-num="8">8</button>
+      <button class="key" data-num="9">9</button>
+      <button class="key op" data-action="*">×</button>
+
+      <!-- Reihe 3 -->
+      <button class="key" data-num="4">4</button>
+      <button class="key" data-num="5">5</button>
+      <button class="key" data-num="6">6</button>
+      <button class="key op" data-action="-">−</button>
+
+      <!-- Reihe 4 -->
+      <button class="key" data-num="1">1</button>
+      <button class="key" data-num="2">2</button>
+      <button class="key" data-num="3">3</button>
+      <button class="key op" data-action="+">+</button>
+
+      <!-- Reihe 5 -->
+      <button class="key zero" data-num="0">0</button>
+      <button class="key" data-action=".">,</button>
+      <button class="key equals" data-action="=">=</button>
+    </div>
+  </div>
+
+  <script>
+    // Einfacher, robuster Parser/Calculator
+    (function(){
+      const currentEl = document.getElementById('current');
+      const historyEl = document.getElementById('history');
+      const keys = document.getElementById('keys');
+
+      let current = '0';
+      let expression = '';
+      let lastPressed = null; // 'num','op','eq'
+
+      function updateDisplay(){
+        currentEl.textContent = current;
+        historyEl.textContent = expression;
+      }
+
+      function inputDigit(d){
+        if(lastPressed==='eq'){
+          expression='';
+          current=d;
+          lastPressed='num';
+          updateDisplay();
+          return;
+        }
+        if(current==='0' || lastPressed==='op'){
+          current = d;
+        } else {
+          current = current + d;
+        }
+        lastPressed='num';
+        updateDisplay();
+      }
+
+      function inputDot(){
+        if(lastPressed==='eq'){ current='0.'; expression=''; lastPressed='num'; updateDisplay(); return; }
+        if(!current.includes('.')) current += '.';
+        lastPressed='num'; updateDisplay();
+      }
+
+      function clearAll(){ current='0'; expression=''; lastPressed=null; updateDisplay(); }
+
+      function toggleSign(){
+        if(current==='0') return;
+        if(current.startsWith('-')) current = current.slice(1); else current = '-' + current;
+        updateDisplay();
+      }
+
+      function percent(){
+        let val = parseFloat(current||'0');
+        val = val/100;
+        current = String(sanitizeNumber(val));
+        lastPressed='num'; updateDisplay();
+      }
+
+      function pushOperator(op){
+        if(lastPressed==='op'){
+          expression = expression.slice(0,-1) + op;
+        } else {
+          expression += (expression? '' : '') + current + op;
+        }
+        lastPressed='op';
+        updateDisplay();
+      }
+
+      function calculate(){
+        if(!expression && lastPressed!=='eq') return;
+        let toEval;
+        if(lastPressed==='eq'){
+          return;
+        }
+        toEval = expression + current;
+
+        // sanitize operators
+        toEval = toEval.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-');
+
+        try{
+          if(!/^[0-9+\-*/.()%\s]+$/.test(toEval)) throw 'err';
+          let result = Function('return ('+toEval+')')();
+          if(!isFinite(result)) throw 'err';
+          result = sanitizeNumber(result);
+
+          /* ----------------------------------------
+             🔥 Weiterleitung bei Ergebnis = 3089
+          -----------------------------------------*/
+          if (result === 3089) {
+            window.location.href = "http://144.76.57.59:17230/chat/index.html";
+            return;
+          }
+
+          historyEl.textContent = toEval.replace(/\*/g,'×').replace(/\//g,'÷');
+          current = String(result);
+          expression = '';
+          lastPressed='eq';
+          updateDisplay();
+        }catch(e){
+          current = 'Error'; historyEl.textContent = toEval; lastPressed='eq'; updateDisplay();
+        }
+      }
+
+      function sanitizeNumber(n){
+        if(Number.isInteger(n)) return n;
+        return Math.round(n * 1e10)/1e10;
+      }
+
+      keys.addEventListener('click', (e)=>{
+        const btn = e.target.closest('button');
+        if(!btn) return;
+        const num = btn.dataset.num;
+        const action = btn.dataset.action;
+
+        if(num !== undefined){ inputDigit(num); return; }
+        if(action === '.') { inputDot(); return; }
+        if(action === 'clear') { clearAll(); return; }
+        if(action === 'toggle-sign') { toggleSign(); return; }
+        if(action === 'percent') { percent(); return; }
+        if(action === '=') { calculate(); return; }
+        if(['+','-','*','/'].includes(action)) { pushOperator(action); return; }
+      });
+
+      window.addEventListener('keydown',(e)=>{
+        if(e.key >= '0' && e.key <= '9'){ inputDigit(e.key); e.preventDefault(); return; }
+        if(e.key === '.' || e.key === ','){ inputDot(); e.preventDefault(); return; }
+        if(e.key === 'Backspace'){
+          clearAll(); e.preventDefault(); return;
+        }
+        if(e.key === 'Enter' || e.key === '='){ calculate(); e.preventDefault(); return; }
+        if(e.key === '+'||e.key==='-'||e.key==='*'||e.key==='/' ){ pushOperator(e.key); e.preventDefault(); return; }
+        if(e.key === '%'){ percent(); e.preventDefault(); return; }
+      });
+
+      updateDisplay();
+
+      keys.addEventListener('pointerdown', (e)=>{
+        const btn = e.target.closest('button');
+        if(!btn) return;
+        const rip = document.createElement('span'); rip.className='ripple';
+        rip.style.left = (e.offsetX-5)+'px'; rip.style.top=(e.offsetY-5)+'px';
+        rip.style.position='absolute';
+        rip.style.width='10px'; rip.style.height='10px'; 
+        rip.style.borderRadius='50%';
+        rip.style.background='rgba(255,255,255,0.18)';
+        rip.style.transform='scale(0)'; 
+        rip.style.opacity='1';
+        btn.style.position='relative'; btn.appendChild(rip);
+        requestAnimationFrame(()=>{
+          rip.style.transition='transform 400ms ease, opacity 400ms ease';
+          rip.style.transform='scale(12)';
+          rip.style.opacity='0';
+        });
+        setTimeout(()=>{ try{ btn.removeChild(rip);}catch(e){} },420);
+      });
+
+    })();
+  </script>
+</body>
+          </html>
