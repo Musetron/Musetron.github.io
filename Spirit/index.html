@@ -2,78 +2,112 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Simple Voice Echo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Mikrofon Spektrum - 100 Regler</title>
 <style>
   body {
     font-family: sans-serif;
+    margin: 10px;
+  }
+  h1 {
+    font-size: 18px;
+  }
+  .sliders {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    height: 250px;
+    align-items: flex-end;
+  }
+  .slider-container {
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin-top: 50px;
+    margin: 0 1px;
   }
-  button {
-    padding: 10px 20px;
-    margin: 10px;
-    font-size: 16px;
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 200px;
+    transform: rotate(-90deg); /* Android-kompatibel */
+    margin-bottom: 20px;
   }
-  p {
-    font-weight: bold;
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    background: #333;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    cursor: pointer;
   }
 </style>
 </head>
 <body>
-<h1>Sprach-Echo</h1>
-<p>Klicke auf Start und sprich ins Mikrofon</p>
-<button id="startBtn">Start</button>
-<button id="stopBtn" disabled>Stop</button>
+
+<h1>Live Mikrofon Spektrum - 100 Regler</h1>
+<div class="sliders" id="sliders"></div>
 
 <script>
-const startBtn = document.getElementById("startBtn");
-const stopBtn = document.getElementById("stopBtn");
+async function init() {
+  // Mikrofonzugriff anfordern
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(stream);
 
-// Sprachsynthese
-const synth = window.speechSynthesis;
+  // Analyser für Frequenzdaten
+  const analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 2048; // höhere fftSize = feinere Frequenzauflösung
+  source.connect(analyser);
 
-// Aufnahme
-let recognition;
-if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.lang = 'de-DE';
+  const bufferLength = analyser.frequencyBinCount; // 1024 bei fftSize 2048
+  const dataArray = new Uint8Array(bufferLength);
 
-    recognition.onresult = (event) => {
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-                const text = event.results[i][0].transcript;
-                console.log("Erkannt:", text);
+  // 100 Regler erstellen
+  const slidersDiv = document.getElementById('sliders');
+  const numSliders = 100;
+  const sliders = [];
+  for (let i = 0; i < numSliders; i++) {
+    const container = document.createElement('div');
+    container.className = 'slider-container';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = 0;
+    slider.max = 255;
+    slider.value = 0;
+    container.appendChild(slider);
+    slidersDiv.appendChild(container);
+    sliders.push(slider);
+  }
 
-                // Sprache ausgeben
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'de-DE';
-                synth.speak(utterance);
-            }
-        }
-    };
+  // Update-Funktion
+  function update() {
+    analyser.getByteFrequencyData(dataArray);
 
-    recognition.onerror = (e) => console.error(e);
-} else {
-    alert("Dein Browser unterstützt keine Spracherkennung.");
+    // Frequenzbänder 20Hz-20kHz auf 100 Regler mappen
+    for (let i = 0; i < numSliders; i++) {
+      const start = Math.floor(i * bufferLength / numSliders);
+      const end = Math.floor((i + 1) * bufferLength / numSliders);
+      let sum = 0;
+      for (let j = start; j < end; j++) {
+        sum += dataArray[j];
+      }
+      sliders[i].value = Math.floor(sum / (end - start));
+    }
+
+    requestAnimationFrame(update);
+  }
+
+  update();
 }
 
-// Buttons
-startBtn.onclick = () => {
-    recognition.start();
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-};
+// Android Chrome erfordert Touch-Interaktion, um AudioContext zu starten
+document.body.addEventListener('click', () => {
+  init();
+}, { once: true });
 
-stopBtn.onclick = () => {
-    recognition.stop();
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-};
 </script>
+
+<p>Tippe auf den Bildschirm, um den Mikrofonzugriff zu starten.</p>
+
 </body>
 </html>
