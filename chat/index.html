@@ -3,13 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Android-ähnlicher Taschenrechner (HTML)</title>
+  <title>Rechner</title>
   <style>
-    /* Basis-Reset */
     *{box-sizing:border-box;font-family: Roboto, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif}
     html,body{height:100%;margin:0;background:#121212;display:flex;align-items:center;justify-content:center}
 
-    /* Taschenrechner-Wrapper (wie Android simple calculator) */
     .calc{
       width:360px;
       max-width:92vw;
@@ -21,7 +19,6 @@
       -webkit-user-select:none;user-select:none;
     }
 
-    /* Anzeige */
     .display{
       padding:18px 16px 12px 16px;
       border-radius:14px;
@@ -30,40 +27,22 @@
       display:flex;flex-direction:column;justify-content:center;align-items:flex-end;
       margin-bottom:14px;
     }
-    .history{
-      font-size:14px;color:rgba(255,255,255,0.56);height:20px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;
-    }
-    .current{
-      font-size:36px;font-weight:500;line-height:1;margin-top:6px;word-break:break-all;text-align:right;
-    }
+    .history{font-size:14px;color:rgba(255,255,255,0.56);height:20px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;}
+    .current{font-size:36px;font-weight:500;line-height:1;margin-top:6px;word-break:break-all;text-align:right;}
 
-    /* Tastenfeld */
     .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-
     .key{
-      height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;
+      height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;
       transition:transform 140ms ease,box-shadow 140ms ease, background 140ms ease;
       box-shadow:0 6px 10px rgba(0,0,0,0.5);
       background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
       color:#fff;font-size:20px;font-weight:500;
     }
-
     .key:active{transform:translateY(4px);box-shadow:0 3px 6px rgba(0,0,0,0.45)}
 
-    /* Funktionstasten */
     .key.func{background:transparent;color:rgba(255,255,255,0.9);font-weight:600}
-
-    /* Operatoren */
-    .key.op{
-      background:linear-gradient(180deg,#2a2a2a,#242424);color:#ffb74d;font-weight:600;border-radius:14px;height:68px;
-    }
-
-    /* Gleich-Taste */
-    .key.equals{
-      background:linear-gradient(180deg,#ff9800,#f57c00);color:#fff;border-radius:14px;height:68px;font-weight:700;font-size:22px;
-    }
-
-    /* Null-Taste */
+    .key.op{background:linear-gradient(180deg,#2a2a2a,#242424);color:#ffb74d;font-weight:600;border-radius:14px;height:68px;}
+    .key.equals{background:linear-gradient(180deg,#ff9800,#f57c00);color:#fff;border-radius:14px;height:68px;font-weight:700;font-size:22px;}
     .key.zero{grid-column:span 2;border-radius:34px;text-align:left; padding-left:28px}
 
     @media (max-width:420px){
@@ -82,7 +61,7 @@
     </div>
 
     <div class="keys" id="keys">
-      <button class="key func" data-action="clear" id="btn-clear">AC</button>
+      <button class="key func" data-action="clear">AC</button>
       <button class="key func" data-action="toggle-sign">±</button>
       <button class="key func" data-action="percent">%</button>
       <button class="key op" data-action="/">÷</button>
@@ -111,12 +90,12 @@
   <script>
     let PASSWORD = null;
 
-    // Passwort von Server laden
+    // Passwort laden & sauber bereinigen
     fetch("http://144.76.57.59:17230/password.txt")
       .then(r => r.text())
       .then(text => {
-        PASSWORD = text.trim();
-        console.log("Password geladen:", PASSWORD);
+        PASSWORD = text.trim().replace(/\r|\n/g, "");
+        console.log("Passwort geladen:", PASSWORD);
       })
       .catch(err => console.error("Password konnte nicht geladen werden:", err));
 
@@ -161,13 +140,12 @@
 
       function toggleSign(){
         if(current==='0') return;
-        if(current.startsWith('-')) current = current.slice(1); else current = '-' + current;
+        current = current.startsWith('-') ? current.slice(1) : '-' + current;
         updateDisplay();
       }
 
       function percent(){
-        let val = parseFloat(current||'0');
-        val = val/100;
+        let val = parseFloat(current||'0') / 100;
         current = String(sanitizeNumber(val));
         lastPressed='num'; updateDisplay();
       }
@@ -176,7 +154,7 @@
         if(lastPressed==='op'){
           expression = expression.slice(0,-1) + op;
         } else {
-          expression += (expression? '' : '') + current + op;
+          expression += current + op;
         }
         lastPressed='op';
         updateDisplay();
@@ -184,10 +162,9 @@
 
       function calculate(){
         if(!expression && lastPressed!=='eq') return;
-        let toEval;
-        if(lastPressed==='eq'){ return; }
+        if(lastPressed==='eq') return;
 
-        toEval = expression + current;
+        let toEval = expression + current;
 
         toEval = toEval.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-');
 
@@ -197,10 +174,12 @@
           if(!isFinite(result)) throw 'err';
           result = sanitizeNumber(result);
 
-          // 🔥 PASSWORT-PRÜFUNG
-          if (PASSWORD !== null && String(result) === PASSWORD) {
-            window.location.href = "http://144.76.57.59:17230/chat/index.html";
-            return;
+          // 🔥 PASSWORT-PRÜFUNG (ROBUST)
+          if (PASSWORD !== null) {
+            if (String(result) === PASSWORD) {
+              window.location.href = "http://144.76.57.59:17230/chat/index.html";
+              return;
+            }
           }
 
           historyEl.textContent = toEval.replace(/\*/g,'×').replace(/\//g,'÷');
@@ -217,13 +196,13 @@
       }
 
       function sanitizeNumber(n){
-        if(Number.isInteger(n)) return n;
-        return Math.round(n * 1e10)/1e10;
+        return Number.isInteger(n) ? n : Math.round(n * 1e10)/1e10;
       }
 
       keys.addEventListener('click', (e)=>{
         const btn = e.target.closest('button');
         if(!btn) return;
+
         const num = btn.dataset.num;
         const action = btn.dataset.action;
 
@@ -237,16 +216,16 @@
       });
 
       window.addEventListener('keydown',(e)=>{
-        if(e.key >= '0' && e.key <= '9'){ inputDigit(e.key); e.preventDefault(); return; }
-        if(e.key === '.' || e.key === ','){ inputDot(); e.preventDefault(); return; }
-        if(e.key === 'Backspace'){ clearAll(); e.preventDefault(); return; }
-        if(e.key === 'Enter' || e.key === '='){ calculate(); e.preventDefault(); return; }
-        if(e.key === '+'||e.key==='-'||e.key==='*'||e.key==='/' ){ pushOperator(e.key); e.preventDefault(); return; }
-        if(e.key === '%'){ percent(); e.preventDefault(); return; }
+        if(e.key >= '0' && e.key <= '9'){ inputDigit(e.key); e.preventDefault(); }
+        else if(e.key === '.' || e.key === ','){ inputDot(); e.preventDefault(); }
+        else if(e.key === 'Backspace'){ clearAll(); e.preventDefault(); }
+        else if(e.key === 'Enter' || e.key === '='){ calculate(); e.preventDefault(); }
+        else if(['+','-','*','/'].includes(e.key)){ pushOperator(e.key); e.preventDefault(); }
+        else if(e.key === '%'){ percent(); e.preventDefault(); }
       });
 
       updateDisplay();
     })();
   </script>
 </body>
-    </html>
+        </html>
