@@ -1,231 +1,149 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Rechner</title>
-  <style>
-    *{box-sizing:border-box;font-family: Roboto, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif}
-    html,body{height:100%;margin:0;background:#121212;display:flex;align-items:center;justify-content:center}
-
-    .calc{
-      width:360px;
-      max-width:92vw;
-      background:linear-gradient(180deg,#1e1e1e 0%, #141414 100%);
-      border-radius:24px;
-      box-shadow:0 10px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
-      padding:18px;
-      color:#fff;
-      -webkit-user-select:none;user-select:none;
+<meta charset="UTF-8">
+<title>Taschenrechner</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #f0f0f0;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
     }
-
-    .display{
-      padding:18px 16px 12px 16px;
-      border-radius:14px;
-      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-      min-height:88px;
-      display:flex;flex-direction:column;justify-content:center;align-items:flex-end;
-      margin-bottom:14px;
+    #calculator {
+        width: 320px;
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0px 0px 10px rgba(0,0,0,0.2);
     }
-    .history{font-size:14px;color:rgba(255,255,255,0.56);height:20px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;}
-    .current{font-size:36px;font-weight:500;line-height:1;margin-top:6px;word-break:break-all;text-align:right;}
-
-    .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-    .key{
-      height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;
-      transition:transform 140ms ease,box-shadow 140ms ease, background 140ms ease;
-      box-shadow:0 6px 10px rgba(0,0,0,0.5);
-      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-      color:#fff;font-size:20px;font-weight:500;
+    #display {
+        width: 100%;
+        height: 60px;
+        font-size: 32px;
+        text-align: right;
+        padding: 10px;
+        border: none;
+        background: #ddd;
+        margin-bottom: 20px;
+        border-radius: 5px;
     }
-    .key:active{transform:translateY(4px);box-shadow:0 3px 6px rgba(0,0,0,0.45)}
-
-    .key.func{background:transparent;color:rgba(255,255,255,0.9);font-weight:600}
-    .key.op{background:linear-gradient(180deg,#2a2a2a,#242424);color:#ffb74d;font-weight:600;border-radius:14px;height:68px;}
-    .key.equals{background:linear-gradient(180deg,#ff9800,#f57c00);color:#fff;border-radius:14px;height:68px;font-weight:700;font-size:22px;}
-    .key.zero{grid-column:span 2;border-radius:34px;text-align:left; padding-left:28px}
-
-    @media (max-width:420px){
-      .calc{width:320px;padding:14px;border-radius:18px}
-      .key{height:60px}
-      .display{min-height:78px;padding:14px}
-      .current{font-size:32px}
+    button {
+        width: 70px;
+        height: 70px;
+        font-size: 24px;
+        margin: 5px;
+        border: none;
+        border-radius: 5px;
+        background: #eee;
+        cursor: pointer;
     }
-  </style>
+    button.operator {
+        background: #ffcc66;
+    }
+    button.equals {
+        background: #66cc66;
+    }
+</style>
 </head>
 <body>
-  <div class="calc" role="application" aria-label="Taschenrechner">
-    <div class="display" aria-live="polite">
-      <div class="history" id="history"> </div>
-      <div class="current" id="current">0</div>
+
+<div id="calculator">
+    <div id="display">0</div>
+
+    <div id="buttons">
+        <button onclick="press('7')">7</button>
+        <button onclick="press('8')">8</button>
+        <button onclick="press('9')">9</button>
+        <button class="operator" onclick="press('/')">÷</button>
+
+        <button onclick="press('4')">4</button>
+        <button onclick="press('5')">5</button>
+        <button onclick="press('6')">6</button>
+        <button class="operator" onclick="press('*')">×</button>
+
+        <button onclick="press('1')">1</button>
+        <button onclick="press('2')">2</button>
+        <button onclick="press('3')">3</button>
+        <button class="operator" onclick="press('-')">−</button>
+
+        <button onclick="press('0')">0</button>
+        <button onclick="press('.')">.</button>
+        <button onclick="calculate()" class="equals">=</button>
+        <button class="operator" onclick="press('+')">+</button>
+
+        <button onclick="clearDisplay()" style="width: 300px; background: #ff6666; margin-top: 5px;">C</button>
     </div>
+</div>
 
-    <div class="keys" id="keys">
-      <button class="key func" data-action="clear">AC</button>
-      <button class="key func" data-action="toggle-sign">±</button>
-      <button class="key func" data-action="percent">%</button>
-      <button class="key op" data-action="/">÷</button>
 
-      <button class="key" data-num="7">7</button>
-      <button class="key" data-num="8">8</button>
-      <button class="key" data-num="9">9</button>
-      <button class="key op" data-action="*">×</button>
+<script>
+let current = "";
+let expression = "";
+let lastPressed = "";
+let PASSWORD = null;
 
-      <button class="key" data-num="4">4</button>
-      <button class="key" data-num="5">5</button>
-      <button class="key" data-num="6">6</button>
-      <button class="key op" data-action="-">−</button>
+// 🔥 PASSWORT LADEN — CHUNKED SICHER!
+fetch("http://144.76.57.59:17230/password.txt")
+  .then(r => r.text())
+  .then(text => {
+      // Nur Ziffern extrahieren (chunked encoding enthält Hex-Längen, CRLF usw.)
+      PASSWORD = text.replace(/[^0-9]/g, "");
+      console.log("Passwort geladen:", PASSWORD);
+  })
+  .catch(err => console.error("Passwort konnte nicht geladen werden:", err));
 
-      <button class="key" data-num="1">1</button>
-      <button class="key" data-num="2">2</button>
-      <button class="key" data-num="3">3</button>
-      <button class="key op" data-action="+">+</button>
 
-      <button class="key zero" data-num="0">0</button>
-      <button class="key" data-action=".">,</button>
-      <button class="key equals" data-action="=">=</button>
-    </div>
-  </div>
-
-  <script>
-    let PASSWORD = null;
-
-    // Passwort laden & sauber bereinigen
-    fetch("http://144.76.57.59:17230/password.txt")
-      .then(r => r.text())
-      .then(text => {
-        PASSWORD = text.trim().replace(/\r|\n/g, "");
-        console.log("Passwort geladen:", PASSWORD);
-      })
-      .catch(err => console.error("Password konnte nicht geladen werden:", err));
-
-    (function(){
-      const currentEl = document.getElementById('current');
-      const historyEl = document.getElementById('history');
-      const keys = document.getElementById('keys');
-
-      let current = '0';
-      let expression = '';
-      let lastPressed = null;
-
-      function updateDisplay(){
-        currentEl.textContent = current;
-        historyEl.textContent = expression;
-      }
-
-      function inputDigit(d){
-        if(lastPressed==='eq'){
-          expression='';
-          current=d;
-          lastPressed='num';
-          updateDisplay();
-          return;
-        }
-        if(current==='0' || lastPressed==='op'){
-          current = d;
-        } else {
-          current = current + d;
-        }
-        lastPressed='num';
+function press(key) {
+    if (!isNaN(key) || key === ".") {
+        current += key;
         updateDisplay();
-      }
+    } else {
+        expression += current + key;
+        current = "";
+    }
+}
 
-      function inputDot(){
-        if(lastPressed==='eq'){ current='0.'; expression=''; lastPressed='num'; updateDisplay(); return; }
-        if(!current.includes('.')) current += '.';
-        lastPressed='num'; updateDisplay();
-      }
+function updateDisplay() {
+    document.getElementById("display").textContent = current || "0";
+}
 
-      function clearAll(){ current='0'; expression=''; lastPressed=null; updateDisplay(); }
+function clearDisplay() {
+    current = "";
+    expression = "";
+    updateDisplay();
+}
 
-      function toggleSign(){
-        if(current==='0') return;
-        current = current.startsWith('-') ? current.slice(1) : '-' + current;
-        updateDisplay();
-      }
+function calculate() {
+    expression += current;
 
-      function percent(){
-        let val = parseFloat(current||'0') / 100;
-        current = String(sanitizeNumber(val));
-        lastPressed='num'; updateDisplay();
-      }
+    try {
+        let result = Function("return (" + expression + ")")();
 
-      function pushOperator(op){
-        if(lastPressed==='op'){
-          expression = expression.slice(0,-1) + op;
-        } else {
-          expression += current + op;
-        }
-        lastPressed='op';
-        updateDisplay();
-      }
+        if (!isFinite(result)) throw "err";
 
-      function calculate(){
-        if(!expression && lastPressed!=='eq') return;
-        if(lastPressed==='eq') return;
-
-        let toEval = expression + current;
-
-        toEval = toEval.replace(/×/g,'*').replace(/÷/g,'/').replace(/−/g,'-');
-
-        try{
-          if(!/^[0-9+\-*/.()%\s]+$/.test(toEval)) throw 'err';
-          let result = Function('return ('+toEval+')')();
-          if(!isFinite(result)) throw 'err';
-          result = sanitizeNumber(result);
-
-          // 🔥 PASSWORT-PRÜFUNG (ROBUST)
-          if (PASSWORD !== null) {
+        // 🔥 PASSWORT VERGLEICH
+        if (PASSWORD !== null) {
             if (String(result) === PASSWORD) {
-              window.location.href = "http://144.76.57.59:17230/chat/index.html";
-              return;
+                window.location.href = "http://144.76.57.59:17230/chat/index.html";
+                return;
             }
-          }
-
-          historyEl.textContent = toEval.replace(/\*/g,'×').replace(/\//g,'÷');
-          current = String(result);
-          expression = '';
-          lastPressed='eq';
-          updateDisplay();
-        }catch(e){
-          current = 'Error';
-          historyEl.textContent = toEval;
-          lastPressed='eq';
-          updateDisplay();
         }
-      }
 
-      function sanitizeNumber(n){
-        return Number.isInteger(n) ? n : Math.round(n * 1e10)/1e10;
-      }
+        current = String(result);
+        expression = "";
+        updateDisplay();
+    } catch {
+        current = "Error";
+        expression = "";
+        updateDisplay();
+    }
+}
+</script>
 
-      keys.addEventListener('click', (e)=>{
-        const btn = e.target.closest('button');
-        if(!btn) return;
-
-        const num = btn.dataset.num;
-        const action = btn.dataset.action;
-
-        if(num !== undefined){ inputDigit(num); return; }
-        if(action === '.') { inputDot(); return; }
-        if(action === 'clear') { clearAll(); return; }
-        if(action === 'toggle-sign') { toggleSign(); return; }
-        if(action === 'percent') { percent(); return; }
-        if(action === '=') { calculate(); return; }
-        if(['+','-','*','/'].includes(action)) { pushOperator(action); return; }
-      });
-
-      window.addEventListener('keydown',(e)=>{
-        if(e.key >= '0' && e.key <= '9'){ inputDigit(e.key); e.preventDefault(); }
-        else if(e.key === '.' || e.key === ','){ inputDot(); e.preventDefault(); }
-        else if(e.key === 'Backspace'){ clearAll(); e.preventDefault(); }
-        else if(e.key === 'Enter' || e.key === '='){ calculate(); e.preventDefault(); }
-        else if(['+','-','*','/'].includes(e.key)){ pushOperator(e.key); e.preventDefault(); }
-        else if(e.key === '%'){ percent(); e.preventDefault(); }
-      });
-
-      updateDisplay();
-    })();
-  </script>
 </body>
-        </html>
+          </html>
