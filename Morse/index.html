@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Morse</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root{
+    --bg:#0d1117;
+    --card:#161b22;
+    --text:#e6edf3;
+    --accent:#00ffc8;
+  }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:system-ui,Segoe UI,Arial,sans-serif;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:2rem;
+    gap:2rem;
+  }
+  .box{
+    background:var(--card);
+    padding:1.6rem;
+    border-radius:12px;
+    max-width:600px;
+    width:100%;
+    box-shadow:0 0 20px #00000060;
+  }
+  h1,h2{color:var(--accent);margin-top:0}
+  label{display:block;margin:.5rem 0}
+  input[type=range]{width:100%;height:6px;border-radius:4px}
+  .freq{font-weight:700;font-size:1.3rem;color:var(--accent)}
+  button{
+    padding:.7rem 1.2rem;
+    border:none;
+    cursor:pointer;
+    border-radius:8px;
+    background:var(--accent);
+    font-weight:700;
+  }
+</style>
+</head>
+<body>
+
+<div class="box">
+  <h1>Morse</h1>
+  <label>Frequency: <span id="freq" class="freq">600 Hz</span></label>
+  <input id="freqRange" type="range" min="100" max="2000" value="600" step="1" />
+
+  <label>Gain: <span id="gainVal">100%</span></label>
+  <input id="gainRange" type="range" min="0" max="2" value="1" step="0.01" />
+
+  <p>Send with Spacebar</p>
+</div>
+
+<div class="box">
+  <h2>Receive</h2>
+  <label>Frequency: <span id="micFreq">600 Hz</span></label>
+  <input id="micRange" type="range" min="100" max="2000" value="600" step="1"/>
+
+  <label>Gain: <span id="micGainText">100%</span></label>
+  <input id="micGain" type="range" min="0" max="2" value="1" step="0.01" />
+
+  <button id="micBtn">Start</button>
+</div>
+
+<script>
+  // Square Wave
+  const freqRange = document.getElementById('freqRange');
+  const freqLabel = document.getElementById('freq');
+
+  const gainRange = document.getElementById('gainRange');
+  const gainLabel = document.getElementById('gainVal');
+
+  function formatHz(v){ return Math.round(v)+' Hz'; }
+  freqLabel.textContent = formatHz(freqRange.value);
+
+  let audioCtx = null, osc = null, gain = null, isPlaying = false;
+
+  function ensureAudio(){
+    if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  }
+
+  freqRange.addEventListener('input', ()=>{
+    freqLabel.textContent = formatHz(freqRange.value);
+    if(osc && isPlaying){ osc.frequency.setValueAtTime(Number(freqRange.value), audioCtx.currentTime); }
+  });
+
+  gainRange.addEventListener('input', ()=>{
+    gainLabel.textContent = Math.round(gainRange.value*100) + "%";
+    if(gain){ gain.gain.setValueAtTime(Number(gainRange.value), audioCtx.currentTime); }
+  });
+
+  window.addEventListener('keydown',async(e)=>{
+    if(e.code!=="Space")return;
+    e.preventDefault();
+    if(isPlaying)return;
+    ensureAudio();
+    if(audioCtx.state==="suspended") await audioCtx.resume();
+
+    osc = audioCtx.createOscillator();
+    gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(Number(freqRange.value), audioCtx.currentTime);
+    gain.gain.setValueAtTime(Number(gainRange.value), audioCtx.currentTime);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start();
+    isPlaying=true;
+  });
+
+  window.addEventListener('keyup',(e)=>{
+    if(e.code!=="Space")return;
+    e.preventDefault();
+    if(!isPlaying)return;
+    osc.stop();
+    osc.disconnect();
+    gain.disconnect();
+    osc=null; gain=null; isPlaying=false;
+  });
+
+  // MICROPHONE
+  const micRange=document.getElementById('micRange');
+  const micFreq=document.getElementById('micFreq');
+  const micGainSlider=document.getElementById('micGain');
+  const micGainText=document.getElementById('micGainText');
+  const micBtn=document.getElementById('micBtn');
+
+  let micStream=null,micSource=null,bandpass=null,micGainNode=null,micOn=false;
+  micFreq.textContent=formatHz(micRange.value);
+
+  micRange.addEventListener('input',()=>{
+    micFreq.textContent=formatHz(micRange.value);
+    if(bandpass) bandpass.frequency.setValueAtTime(Number(micRange.value),audioCtx.currentTime);
+  });
+
+  micGainSlider.addEventListener('input',()=>{
+    micGainText.textContent=Math.round(micGainSlider.value*100)+"%";
+    if(micGainNode) micGainNode.gain.setValueAtTime(Number(micGainSlider.value),audioCtx.currentTime);
+  });
+
+  micBtn.addEventListener('click',async()=>{
+    if(!micOn){
+      ensureAudio();
+      try{
+        micStream = await navigator.mediaDevices.getUserMedia({audio:true});
+        micSource = audioCtx.createMediaStreamSource(micStream);
+        bandpass = audioCtx.createBiquadFilter();
+        bandpass.type='bandpass';
+        bandpass.Q.value=15;
+        bandpass.frequency.value=Number(micRange.value);
+
+        micGainNode = audioCtx.createGain();
+        micGainNode.gain.value = Number(micGainSlider.value);
+
+        micSource.connect(bandpass).connect(micGainNode).connect(audioCtx.destination);
+
+        micOn=true;
+        micBtn.textContent="Stop";
+      }catch(e){ alert('Mikrofon verweigert'); }
+    } else {
+      micSource.disconnect();
+      micStream.getTracks().forEach(t=>t.stop());
+      micOn=false;
+      micBtn.textContent="Mikrofon Monitor Start";
+    }
+  });
+</script>
+
+</body>
+</html>
