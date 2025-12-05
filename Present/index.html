@@ -4,17 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Icon Übersicht</title>
+
   <style>
     body {
       font-family: Arial, sans-serif;
       padding: 20px;
       background: #f2f2f2;
     }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
       gap: 20px;
     }
+
     .item {
       background: #fff;
       border-radius: 8px;
@@ -24,17 +27,21 @@
       cursor: pointer;
       transition: transform .15s;
     }
+
     .item:hover {
       transform: scale(1.05);
     }
+
     img {
       max-width: 80px;
       height: auto;
     }
+
     #viewer {
       margin-top: 30px;
       text-align: center;
     }
+
     #viewer img {
       max-width: 400px;
       border-radius: 10px;
@@ -42,7 +49,9 @@
     }
   </style>
 </head>
+
 <body>
+
   <h1>Icon Übersicht</h1>
 
   <div class="grid" id="iconGrid"></div>
@@ -50,28 +59,17 @@
   <div id="viewer"></div>
 
   <script>
-    // Statische Iconliste
+    // Statische Iconliste  
     const icons = [
-      "Alex",
-      "Angelina",
-      "Emmi",
-      "Nico",
-      "Marco",
-      "Sandra",
-      "Olaf",
-      "Viktor",
-      "Phillip",
-      "Luca",
-      "Melanie",
-      "Ute",
+      "Alex", "Angelina", "Emmi", "Nico", "Marco", "Sandra",
+      "Olaf", "Viktor", "Phillip", "Luca", "Melanie", "Ute",
       "Stefan"
     ];
 
-    const grid 
- = document.getElementById("iconGrid");
+    const grid = document.getElementById("iconGrid");
     const viewer = document.getElementById("viewer");
 
-    // Build icon grid
+    // Icon grid aufbauen  
     icons.forEach(name => {
       const div = document.createElement("div");
       div.className = "item";
@@ -85,21 +83,33 @@
       grid.appendChild(div);
     });
 
+    // Einzelbild anzeigen
     function showImage(name) {
-      const jpgPath = `https://musetron.github.io/Presents/images/${name}.jpg`;
       const pngPath = `https://musetron.github.io/Presents/images/${name}.png`;
+      const jpgPath = `https://musetron.github.io/Presents/images/${name}.jpg`;
 
-      // Try PNG first, then JPG fallback
       const testImg = new Image();
+
+      // PNG erfolgreich → anzeigen
       testImg.onload = () => {
         viewer.innerHTML = `<img src="${testImg.src}" alt="${name}"><h2>${name}</h2>`;
       };
+
+      // PNG fehlgeschlagen → JPG testen
       testImg.onerror = () => {
-        testImg.src = jpgPath;
-        testImg.onerror = () => viewer.innerHTML = `<p>Bild nicht gefunden: ${name}</p>`;
+        const jpgTest = new Image();
+        jpgTest.onload = () =>
+          viewer.innerHTML = `<img src="${jpgTest.src}" alt="${name}"><h2>${name}</h2>`;
+        jpgTest.onerror = () =>
+          viewer.innerHTML = `<p>Bild nicht gefunden: ${name}</p>`;
+        jpgTest.src = jpgPath;
       };
+
+      // PNG zuerst prüfen
       testImg.src = pngPath;
     }
+
   </script>
+
 </body>
 </html>
