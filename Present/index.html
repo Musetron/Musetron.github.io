@@ -1,48 +1,94 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>Image Gallery</title>
-<style>
-  body { background:#0b0b0d; margin:0; color:white; font-family:Arial; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; padding:20px; }
-  img { width:100%; height:200px; object-fit:cover; border-radius:8px; background:#111; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>X-Mas</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f2f2f2;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 20px;
+    }
+    .item {
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      cursor: pointer;
+      transition: transform .15s;
+    }
+    .item:hover {
+      transform: scale(1.05);
+    }
+    img {
+      max-width: 80px;
+      height: auto;
+    }
+    #viewer {
+      margin-top: 30px;
+      text-align: center;
+    }
+    #viewer img {
+      max-width: 400px;
+      border-radius: 10px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    }
+  </style>
 </head>
 <body>
+  <h1>Icon Übersicht</h1>
 
-<div class="grid" id="grid"></div>
+  <div class="grid" id="iconGrid"></div>
 
-<script>
-const API_URL = "https://api.github.com/repos/musetron/Present/contents/images";
+  <div id="viewer"></div>
 
-async function loadImages(){
-    try {
-        const res = await fetch(API_URL);
-        const files = await res.json();
+  <script>
+    // List of icon names — replace with your actual PNG filenames (without .png)
+    const icons = [
+      "Alex",
+      "Beispiel1",
+      "Beispiel2"
+    ];
 
-        const images = files.filter(file =>
-            file.name.toLowerCase().endsWith(".jpg") ||
-            file.name.toLowerCase().endsWith(".png")
-        );
+    const grid = document.getElementById("iconGrid");
+    const viewer = document.getElementById("viewer");
 
-        images.forEach(file => {
-            const img = document.createElement("img");
-            img.src = file.download_url;
-            document.getElementById("grid").appendChild(img);
-        });
+    // Build icon grid
+    icons.forEach(name => {
+      const div = document.createElement("div");
+      div.className = "item";
 
-        if(images.length === 0){
-            document.body.innerHTML = "<h3 style='padding:20px'>Keine JPG/PNG in /images gefunden.</h3>";
-        }
+      div.innerHTML = `
+        <img src="https://musetron.github.io/Present/icons/${name}.png" alt="${name}">
+        <div>${name}</div>
+      `;
 
-    } catch(e) {
-        document.body.innerHTML = "<h3 style='padding:20px'>Fehler beim Laden – Repository/Ordner existiert?</h3>";
+      div.addEventListener("click", () => showImage(name));
+      grid.appendChild(div);
+    });
+
+    function showImage(name) {
+      const jpgPath = `https://musetron.github.io/Present/images/${name}.jpg`;
+      const pngPath = `https://musetron.github.io/Present/images/${name}.png`;
+
+      // Try PNG first, then JPG fallback
+      const testImg = new Image();
+      testImg.onload = () => {
+        viewer.innerHTML = `<img src="${testImg.src}" alt="${name}"><h2>${name}</h2>`;
+      };
+      testImg.onerror = () => {
+        testImg.src = jpgPath;
+        testImg.onerror = () => viewer.innerHTML = `<p>Bild nicht gefunden: ${name}</p>`;
+      };
+      testImg.src = pngPath;
     }
-}
-
-loadImages();
-</script>
-
+  </script>
 </body>
 </html>
