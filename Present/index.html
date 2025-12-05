@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>X-Mas</title>
+  <title>Icon Übersicht</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -50,11 +50,21 @@
   <div id="viewer"></div>
 
   <script>
-    // List of icon names — replace with your actual PNG filenames (without .png)
+    // Statische Iconliste
     const icons = [
       "Alex",
-      "Beispiel1",
-      "Beispiel2"
+      "Angelina",
+      "Emmi",
+      "Nico",
+      "Marco",
+      "Sandra",
+      "Olaf",
+      "Viktor",
+      "Phillip",
+      "Luca",
+      "Melanie",
+      "Ute",
+      "Stefan"
     ];
 
     const grid = document.getElementById("iconGrid");
@@ -66,7 +76,23 @@
       div.className = "item";
 
       div.innerHTML = `
-        <img src="https://musetron.github.io/Present/icons/${name}.png" alt="${name}">
+        <img src="https://musetron.github.io/Presents/icons/${name}.png" alt="${name}">
+        <div>${name}</div>
+      `;
+
+      div.addEventListener("click", () => showImage(name));
+      grid.appendChild(div);
+    });
+ = document.getElementById("iconGrid");
+    const viewer = document.getElementById("viewer");
+
+    // Build icon grid
+    icons.forEach(name => {
+      const div = document.createElement("div");
+      div.className = "item";
+
+      div.innerHTML = `
+        <img src="https://musetron.github.io/Presents/icons/${name}.png" alt="${name}">
         <div>${name}</div>
       `;
 
@@ -75,8 +101,8 @@
     });
 
     function showImage(name) {
-      const jpgPath = `https://musetron.github.io/Present/images/${name}.jpg`;
-      const pngPath = `https://musetron.github.io/Present/images/${name}.png`;
+      const jpgPath = `https://musetron.github.io/Presents/images/${name}.jpg`;
+      const pngPath = `https://musetron.github.io/Presents/images/${name}.png`;
 
       // Try PNG first, then JPG fallback
       const testImg = new Image();
