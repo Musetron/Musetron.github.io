@@ -67,22 +67,7 @@
       "Stefan"
     ];
 
-    const grid = document.getElementById("iconGrid");
-    const viewer = document.getElementById("viewer");
-
-    // Build icon grid
-    icons.forEach(name => {
-      const div = document.createElement("div");
-      div.className = "item";
-
-      div.innerHTML = `
-        <img src="https://musetron.github.io/Presents/icons/${name}.png" alt="${name}">
-        <div>${name}</div>
-      `;
-
-      div.addEventListener("click", () => showImage(name));
-      grid.appendChild(div);
-    });
+    const grid 
  = document.getElementById("iconGrid");
     const viewer = document.getElementById("viewer");
 
