@@ -1,115 +1,222 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Icon Übersicht</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>X-Mas Bilder</title>
 
   <style>
+    :root {
+      --bg: #0f0f12;
+      --card: #1a1b20;
+      --text: #e8e8ea;
+      --radius: 16px;
+    }
+
     body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-      background: #f2f2f2;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", system-ui, sans-serif;
+      margin: 24px;
+      display: flex;
+      justify-content: center;
     }
 
     .grid {
+      max-width: 1050px;
+      width: 100%;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 18px;
     }
 
-    .item {
-      background: #fff;
-      border-radius: 8px;
-      padding: 10px;
-      text-align: center;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 18px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      transition: transform 0.2s ease, box-shadow 0.25s ease;
       cursor: pointer;
-      transition: transform .15s;
     }
 
-    .item:hover {
-      transform: scale(1.05);
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.45);
     }
 
-    img {
-      max-width: 80px;
-      height: auto;
+    .img-wrap {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #2a2b30;
     }
 
-    #viewer {
-      margin-top: 30px;
+    .img-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .placeholder {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #323338;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      color: #bbb;
+      font-weight: 600;
+    }
+
+    .name {
+      font-size: 1rem;
       text-align: center;
+      font-weight: 500;
     }
 
-    #viewer img {
-      max-width: 400px;
+    /* MODAL */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .modal.open {
+      display: flex;
+    }
+
+    .modal-content {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 0 25px rgba(0,0,0,0.6);
+      animation: fadein 0.2s ease;
+    }
+
+    @keyframes fadein {
+      from { opacity: 0; transform: scale(0.95); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    .modal-content img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+
+    .close-btn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #ffffff20;
+      border: 1px solid #ffffff30;
+      color: #fff;
+      padding: 10px 18px;
       border-radius: 10px;
-      box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+      font-size: 16px;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
     }
   </style>
 </head>
 
 <body>
+  <div class="grid" id="grid"></div>
 
-  <h1>Icon Übersicht</h1>
-
-  <div class="grid" id="iconGrid"></div>
-
-  <div id="viewer"></div>
+  <!-- Modal -->
+  <div class="modal" id="modal">
+    <button class="close-btn" id="closeBtn">✕</button>
+    <div class="modal-content">
+      <img id="modalImg" src="" alt="">
+    </div>
+  </div>
 
   <script>
-    // Statische Iconliste  
-    const icons = [
-      "Alex", "Angelina", "Emmi", "Nico", "Marco", "Sandra",
-      "Olaf", "Viktor", "Phillip", "Luca", "Melanie", "Ute",
-      "Stefan"
+    let names = [
+      "Alex",
+      "Angelina",
+      "Emmi",
+      "Sandra",
+      "Olaf",
+      "Nico",
+      "Melanie",
+      "Stefan",
+      "Ute",
+      "Viktor",
+      "Phillip",
+      "Luca",
+      "Marco"
     ];
 
-    const grid = document.getElementById("iconGrid");
-    const viewer = document.getElementById("viewer");
+    names.sort((a, b) => a.localeCompare(b, "de"));
 
-    // Icon grid aufbauen  
-    icons.forEach(name => {
-      const div = document.createElement("div");
-      div.className = "item";
+    const iconUrl = "https://musetron.github.io/Present/icons/";
+    const bigUrl  = "https://musetron.github.io/Present/images/";
 
-      div.innerHTML = `
-        <img src="https://musetron.github.io/Presents/icons/${name}.png" alt="${name}">
-        <div>${name}</div>
-      `;
+    const pngExceptions = ["Olaf", "Phillip", "Ute"];
 
-      div.addEventListener("click", () => showImage(name));
-      grid.appendChild(div);
+    const grid = document.getElementById("grid");
+    const modal = document.getElementById("modal");
+    const modalImg = document.getElementById("modalImg");
+    const closeBtn = document.getElementById("closeBtn");
+
+    names.forEach(name => {
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const imgWrap = document.createElement("div");
+      imgWrap.className = "img-wrap";
+
+      const img = document.createElement("img");
+      img.src = iconUrl + encodeURIComponent(name) + ".png";
+      img.alt = name;
+
+      img.onerror = () => {
+        img.remove();
+        const ph = document.createElement("div");
+        ph.className = "placeholder";
+        ph.textContent = name[0];
+        imgWrap.appendChild(ph);
+      };
+
+      imgWrap.appendChild(img);
+      card.appendChild(imgWrap);
+
+      const nm = document.createElement("div");
+      nm.className = "name";
+      nm.textContent = name;
+      card.appendChild(nm);
+
+      // Klick öffnet großes Bild
+      card.addEventListener("click", () => {
+        const ext = pngExceptions.includes(name) ? ".png" : ".jpg";
+        modalImg.src = bigUrl + encodeURIComponent(name) + ext;
+        modal.classList.add("open");
+      });
+
+      grid.appendChild(card);
     });
 
-    // Einzelbild anzeigen
-    function showImage(name) {
-      const pngPath = `https://musetron.github.io/Presents/images/${name}.png`;
-      const jpgPath = `https://musetron.github.io/Presents/images/${name}.jpg`;
-
-      const testImg = new Image();
-
-      // PNG erfolgreich → anzeigen
-      testImg.onload = () => {
-        viewer.innerHTML = `<img src="${testImg.src}" alt="${name}"><h2>${name}</h2>`;
-      };
-
-      // PNG fehlgeschlagen → JPG testen
-      testImg.onerror = () => {
-        const jpgTest = new Image();
-        jpgTest.onload = () =>
-          viewer.innerHTML = `<img src="${jpgTest.src}" alt="${name}"><h2>${name}</h2>`;
-        jpgTest.onerror = () =>
-          viewer.innerHTML = `<p>Bild nicht gefunden: ${name}</p>`;
-        jpgTest.src = jpgPath;
-      };
-
-      // PNG zuerst prüfen
-      testImg.src = pngPath;
-    }
-
+    closeBtn.addEventListener("click", () => modal.classList.remove("open"));
+    modal.addEventListener("click", e => {
+      if (e.target === modal) modal.classList.remove("open");
+    });
   </script>
-
 </body>
 </html>
