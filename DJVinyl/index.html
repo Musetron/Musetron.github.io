@@ -208,7 +208,7 @@ function pollGamepad(){
         if(gp){
             zAxis = gp.axes[2]; // Z-Achse
             paused = gp.buttons[0].pressed; // Button A
-            fadeActive = gp.buttons[2].pressed; // Button Y
+            fadeActive = gp.buttons[4].pressed; // Button Y
         }
     }
     requestAnimationFrame(pollGamepad);
