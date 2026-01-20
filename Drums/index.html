@@ -1,118 +1,74 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-body {
-  background:#111;
-  color:#eee;
-  font-family:Arial, sans-serif;
-  text-align:center;
-  padding-top:20px;
-}
-h2 {
-  margin-bottom:20px;
-  color:#0ff;
-  text-shadow:0 0 10px #0ff;
-}
-.drumgrid {
-  display:grid;
-  grid-template-columns:repeat(3,100px);
-  gap:12px;
-  margin:auto;
-  width:330px;
-}
-button {
-  background:#222;
-  border:2px solid #333;
-  border-radius:12px;
-  padding:18px 0;
-  font-size:18px;
-  color:#0ff;
-  text-shadow:0 0 5px #0ff;
-  box-shadow:0 0 8px #000 inset;
-  transition:0.08s ease;
-  user-select:none;
-}
-button:active {
-  transform:scale(0.95);
-  background:#0ff;
-  color:#000;
-  text-shadow:none;
-  box-shadow:0 0 12px #0ff;
-}
-button:hover {
-  border-color:#0ff;
-  box-shadow:0 0 8px #0ff;
-}
-</style>
+  <meta charset="UTF-8">
+  <title>Rot / Blau Farbtracking</title>
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas {
+      border: 2px solid white;
+    }
+  </style>
 </head>
 <body>
 
-<h2>Drum Machine</h2>
-
-<!-- GRID angepasst an das neue Layout (1 unten, 9 oben) -->
-<div class="drumgrid">
-  <button data-sound="t3">T3</button>
-  <button data-sound="t2">T2</button>
-  <button data-sound="t1">T1</button>
-
-  <button data-sound="ohh">OHH</button>
-  <button data-sound="bd">BD</button>
-  <button data-sound="c">C</button>
-
-  <button data-sound="hh">HH</button>
-  <button data-sound="s">S</button>
-  <button data-sound="k">K</button>
-</div>
+<video id="video" autoplay playsinline hidden></video>
+<canvas id="canvas"></canvas>
 
 <script>
-// ------------------------------------
-// Audio als HTMLAudioElement (funktioniert immer)
-// ------------------------------------
-const sounds = {
-  k:  new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/k.wav"),
-  s:  new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/s.wav"),
-  hh: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/hh.wav"),
-  c:  new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/c.wav"),
-  bd: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/bd.wav"),
-  ohh:new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/ohh.wav"),
-  t1: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t1.wav"),
-  t2: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t2.wav"),
-  t3: new Audio("https://github.com/Musetron/musetron.github.io/raw/refs/heads/main/Drums/t3.wav")
-};
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
-// polyphon: wir klonen den Sound und spielen ihn ab
-function play(key) {
-  const audio = sounds[key].cloneNode();
-  audio.play().catch(err => console.log(err));
-}
-
-// Buttons
-document.querySelectorAll("button").forEach(btn =>
-  btn.addEventListener("click", () => play(btn.dataset.sound))
-);
-
-// ------------------------------------
-// NUMPAD-Mapping (1 unten → 9 oben)
-// ------------------------------------
-const keymap = {
-  "Numpad1": "t3", 
-  "Numpad2": "t2", 
-  "Numpad3": "t1",
-
-  "Numpad4": "ohh",
-  "Numpad5": "bd",
-  "Numpad6": "c",
-
-  "Numpad7": "hh",
-  "Numpad8": "s",
-  "Numpad9": "k"
-};
-
-document.addEventListener("keydown", e => {
-  if (keymap[e.code]) play(keymap[e.code]);
+navigator.mediaDevices.getUserMedia({
+  video: { facingMode: "user" }, // Frontkamera
+  audio: false
+}).then(stream => {
+  video.srcObject = stream;
 });
+
+video.addEventListener("loadedmetadata", () => {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  requestAnimationFrame(trackColors);
+});
+
+function trackColors() {
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = frame.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+
+    // ROT erkennen
+    if (r > 150 && g < 80 && b < 80) {
+      data[i] = 255;
+      data[i + 1] = 0;
+      data[i + 2] = 0;
+    }
+
+    // BLAU erkennen
+    else if (b > 150 && r < 80 && g < 80) {
+      data[i] = 0;
+      data[i + 1] = 0;
+      data[i + 2] = 255;
+    }
+  }
+
+  ctx.putImageData(frame, 0, 0);
+  requestAnimationFrame(trackColors);
+}
 </script>
+
 </body>
 </html>
