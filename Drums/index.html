@@ -81,8 +81,14 @@ function loop(){
   let maxBlue = {x:0,y:0,value:-1};
   let maxRed  = {x:0,y:0,value:-1};
 
+  const brightnessFactor = 0.6; // Dämpfung gegen Überbelichtung
+
   for(let i=0;i<data.length;i+=4){
-    const r=data[i], g=data[i+1], b=data[i+2];
+    // Pixel dämpfen
+    const r = data[i] * brightnessFactor;
+    const g = data[i+1] * brightnessFactor;
+    const b = data[i+2] * brightnessFactor;
+
     const px = (i/4)%canvas.width;
     const py = Math.floor((i/4)/canvas.width);
 
