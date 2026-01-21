@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Luft Schlagzeug mit PSMove</title>
+<title>PSMove Luft Schlagzeug</title>
 <style>
 body { margin:0; background:#111; overflow:hidden; }
 canvas { display:block; touch-action:none; }
@@ -22,14 +22,12 @@ video.playsInline = true;
 
 // Tracker für 2 Controller
 const maxTrackers = 2;
-let trackerIndex = 0;
 let trackers = [
-  {color:null, drawColor:"red", punch:false},
-  {color:null, drawColor:"cyan", punch:false}
+  {color:{r:111,g:159,b:230}, drawColor:"cyan", punch:false, history:[]}, // Blau
+  {color:{r:232,g:180,b:190}, drawColor:"red", punch:false, history:[]}   // Rot
 ];
-let history = [[],[]];
 const historyLength = 5;
-const speedThreshold = 40; // PSMove schneller Bewegungen
+const speedThreshold = 40;
 const cooldownFrames = 12;
 let cooldowns = [0,0];
 
@@ -50,23 +48,10 @@ fields.forEach(f=>{
   a.load();
 });
 
-// Frontkamera starten
+// Kamera starten
 navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}})
   .then(stream=>video.srcObject=stream);
 
-// Wähle Tracker per Klick
-canvas.addEventListener("pointerdown", e=>{
-  const rect = canvas.getBoundingClientRect();
-  const x = Math.floor((e.clientX - rect.left) * canvas.width / rect.width);
-  const y = Math.floor((e.clientY - rect.top) * canvas.height / rect.height);
-  const pixel = ctx.getImageData(x,y,1,1).data;
-  trackers[trackerIndex].color = {r:pixel[0],g:pixel[1],b:pixel[2]};
-  history[trackerIndex] = [];
-  cooldowns[trackerIndex] = 0;
-  trackerIndex = (trackerIndex+1)%maxTrackers;
-});
-
-// PSMove Tracking Loop
 function loop(){
   if(video.videoWidth===0){
     requestAnimationFrame(loop);
@@ -94,17 +79,14 @@ function loop(){
   const data = img.data;
 
   trackers.forEach((tracker,index)=>{
-    if(!tracker.color) return;
-
+    const tol = 50; // Toleranz für LED-Farben
     let sumX=0,sumY=0,count=0;
 
-    // PSMove LEDs sind sehr hell → wir können einfache Thresholds nehmen
     for(let i=0;i<data.length;i+=4){
       const r=data[i],g=data[i+1],b=data[i+2];
-
-      // Helligkeit statt Farbvergleich, LEDs sind leuchtend
-      const brightness = 0.299*r + 0.587*g + 0.114*b;
-      if(brightness>150){ // nur helle Punkte
+      if(Math.abs(r-tracker.color.r)<tol &&
+         Math.abs(g-tracker.color.g)<tol &&
+         Math.abs(b-tracker.color.b)<tol){
         const px = (i/4)%canvas.width;
         const py = Math.floor((i/4)/canvas.width);
         sumX += px;
@@ -113,27 +95,26 @@ function loop(){
       }
     }
 
-    if(count>20){ // kleiner Bereich reicht bei LEDs
+    if(count>20){
       let cx = sumX/count;
       let cy = sumY/count;
 
-      // Glätten
-      history[index].push({x:cx,y:cy});
-      if(history[index].length>historyLength) history[index].shift();
-      let smoothX = history[index].reduce((a,b)=>a+b.x,0)/history[index].length;
-      let smoothY = history[index].reduce((a,b)=>a+b.y,0)/history[index].length;
+      // History für Glättung
+      tracker.history.push({x:cx,y:cy});
+      if(tracker.history.length>historyLength) tracker.history.shift();
+      let smoothX = tracker.history.reduce((a,b)=>a+b.x,0)/tracker.history.length;
+      let smoothY = tracker.history.reduce((a,b)=>a+b.y,0)/tracker.history.length;
 
       // Punch Detection
       tracker.punch=false;
-      if(history[index].length>=2 && cooldowns[index]===0){
-        let dx = history[index][history[index].length-1].x - history[index][history[index].length-2].x;
-        let dy = history[index][history[index].length-1].y - history[index][history[index].length-2].y;
+      if(tracker.history.length>=2 && cooldowns[index]===0){
+        let dx = tracker.history[tracker.history.length-1].x - tracker.history[tracker.history.length-2].x;
+        let dy = tracker.history[tracker.history.length-1].y - tracker.history[tracker.history.length-2].y;
         const speed = Math.sqrt(dx*dx + dy*dy);
         if(speed>speedThreshold){
           tracker.punch=true;
           cooldowns[index]=cooldownFrames;
 
-          // Feld Treffer
           fields.forEach(f=>{
             const fx = f.x*canvas.width, fy = f.y*canvas.height;
             const fw = f.w*canvas.width, fh = f.h*canvas.height;
@@ -161,6 +142,5 @@ function loop(){
 
 video.onplay = loop;
 </script>
-
 </body>
 </html>
