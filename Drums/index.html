@@ -79,7 +79,12 @@ function loop(){
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
 
+  // Spiegelung der Kamera
+  ctx.save();
+  ctx.translate(canvas.width,0);
+  ctx.scale(-1,1);
   ctx.drawImage(video,0,0);
+  ctx.restore();
 
   // Felder zeichnen
   fields.forEach(f=>{
@@ -111,12 +116,14 @@ function loop(){
     }
 
     if(count>200){
-      const cx=sumX/count;
-      const cy=sumY/count;
+      let cx=sumX/count;
+      let cy=sumY/count;
 
-      // History
+      // Glättung durch History
       history[index].push({x:cx,y:cy});
       if(history[index].length>historyLength) history[index].shift();
+      let smoothX = history[index].reduce((a,b)=>a+b.x,0)/history[index].length;
+      let smoothY = history[index].reduce((a,b)=>a+b.y,0)/history[index].length;
 
       // Punch Detection
       tracker.punch=false;
@@ -130,9 +137,9 @@ function loop(){
 
           // Prüfe Feld-Kollision
           fields.forEach(f=>{
-            const fx = f.x*canvas.width, fy=f.y*canvas.height;
+            const fx = f.x*canvas.width, fy = f.y*canvas.height;
             const fw = f.w*canvas.width, fh = f.h*canvas.height;
-            if(cx>=fx && cx<=fx+fw && cy>=fy && cy<=fy+fh){
+            if(smoothX>=fx && smoothX<=fx+fw && smoothY>=fy && smoothY<=fy+fh){
               audioElements[f.sound].currentTime=0;
               audioElements[f.sound].play();
             }
@@ -146,7 +153,7 @@ function loop(){
       ctx.strokeStyle=tracker.punch?"yellow":tracker.drawColor;
       ctx.lineWidth=4;
       ctx.beginPath();
-      ctx.arc(cx,cy,30,0,Math.PI*2);
+      ctx.arc(smoothX,smoothY,30,0,Math.PI*2);
       ctx.stroke();
     }
   });
