@@ -82,30 +82,30 @@ function loop(){
   let maxRed  = {x:0,y:0,value:-1};
 
   const brightnessFactor = 0.6; // Dämpfung gegen Überbelichtung
+  const step = 2; // Downsampling: jeden 2. Pixel prüfen
 
-  for(let i=0;i<data.length;i+=4){
-    // Pixel dämpfen
-    const r = data[i] * brightnessFactor;
-    const g = data[i+1] * brightnessFactor;
-    const b = data[i+2] * brightnessFactor;
+  for(let y=0; y<canvas.height; y+=step){
+    for(let x=0; x<canvas.width; x+=step){
+      const i = (y*canvas.width + x)*4;
+      const r = data[i]*brightnessFactor;
+      const g = data[i+1]*brightnessFactor;
+      const b = data[i+2]*brightnessFactor;
 
-    const px = (i/4)%canvas.width;
-    const py = Math.floor((i/4)/canvas.width);
+      // Rot-Score: R minus max(G,B)
+      const redScore = r - Math.max(g,b);
+      if(redScore>maxRed.value){
+        maxRed.value = redScore;
+        maxRed.x = x;
+        maxRed.y = y;
+      }
 
-    // Rot-Score: R minus max(G,B)
-    const redScore = r - Math.max(g,b);
-    if(redScore>maxRed.value){
-      maxRed.value = redScore;
-      maxRed.x = px;
-      maxRed.y = py;
-    }
-
-    // Blau-Score: B minus max(R,G)
-    const blueScore = b - Math.max(r,g);
-    if(blueScore>maxBlue.value){
-      maxBlue.value = blueScore;
-      maxBlue.x = px;
-      maxBlue.y = py;
+      // Blau-Score: B minus max(R,G)
+      const blueScore = b - Math.max(r,g);
+      if(blueScore>maxBlue.value){
+        maxBlue.value = blueScore;
+        maxBlue.x = x;
+        maxBlue.y = y;
+      }
     }
   }
 
@@ -114,21 +114,31 @@ function loop(){
     {tracker:trackers[1], pos:maxRed}
   ];
 
+  const alpha = 0.7; // Gewichtete Glättung für schnelle Reaktion
+
   positions.forEach((t,index)=>{
     let cx = t.pos.x;
     let cy = t.pos.y;
 
-    // Glättung mit History
-    t.tracker.history.push({x:cx,y:cy});
-    if(t.tracker.history.length>historyLength) t.tracker.history.shift();
-    let smoothX = t.tracker.history.reduce((a,b)=>a+b.x,0)/t.tracker.history.length;
-    let smoothY = t.tracker.history.reduce((a,b)=>a+b.y,0)/t.tracker.history.length;
+    // Gewichtete History-Glättung
+    if(t.tracker.history.length===0){
+      t.tracker.history.push({x:cx, y:cy});
+    } else {
+      const prev = t.tracker.history[t.tracker.history.length-1];
+      const smoothX = prev.x*(1-alpha) + cx*alpha;
+      const smoothY = prev.y*(1-alpha) + cy*alpha;
+      t.tracker.history.push({x:smoothX, y:smoothY});
+      if(t.tracker.history.length>historyLength) t.tracker.history.shift();
+    }
+
+    const smooth = t.tracker.history[t.tracker.history.length-1];
 
     // Punch Detection
     t.tracker.punch=false;
     if(t.tracker.history.length>=2 && cooldowns[index]===0){
-      let dx = t.tracker.history[t.tracker.history.length-1].x - t.tracker.history[t.tracker.history.length-2].x;
-      let dy = t.tracker.history[t.tracker.history.length-1].y - t.tracker.history[t.tracker.history.length-2].y;
+      const prev = t.tracker.history[t.tracker.history.length-2];
+      const dx = smooth.x - prev.x;
+      const dy = smooth.y - prev.y;
       const speed = Math.sqrt(dx*dx + dy*dy);
       if(speed>speedThreshold){
         t.tracker.punch=true;
@@ -138,7 +148,7 @@ function loop(){
         fields.forEach(f=>{
           const fx = f.x*canvas.width, fy = f.y*canvas.height;
           const fw = f.w*canvas.width, fh = f.h*canvas.height;
-          if(smoothX>=fx && smoothX<=fx+fw && smoothY>=fy && smoothY<=fy+fh){
+          if(smooth.x>=fx && smooth.x<=fx+fw && smooth.y>=fy && smooth.y<=fy+fh){
             audioElements[f.sound].currentTime=0;
             audioElements[f.sound].play();
           }
@@ -152,7 +162,7 @@ function loop(){
     ctx.strokeStyle=t.tracker.punch?"yellow":t.tracker.drawColor;
     ctx.lineWidth=4;
     ctx.beginPath();
-    ctx.arc(smoothX,smoothY,30,0,Math.PI*2);
+    ctx.arc(smooth.x,smooth.y,30,0,Math.PI*2);
     ctx.stroke();
   });
 
@@ -161,5 +171,6 @@ function loop(){
 
 video.onplay = loop;
 </script>
+
 </body>
 </html>
