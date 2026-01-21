@@ -20,11 +20,10 @@ const video = document.createElement("video");
 video.autoplay = true;
 video.playsInline = true;
 
-// Tracker für 2 Controller
-const maxTrackers = 2;
+// Tracker für Rot und Blau
 let trackers = [
-  {color:{r:111,g:159,b:230}, drawColor:"cyan", punch:false, history:[]}, // Blau
-  {color:{r:232,g:180,b:190}, drawColor:"red", punch:false, history:[]}   // Rot
+  {name:"blau", drawColor:"cyan", punch:false, history:[]},
+  {name:"rot", drawColor:"red", punch:false, history:[]}
 ];
 const historyLength = 5;
 const speedThreshold = 40;
@@ -78,63 +77,77 @@ function loop(){
   const img = ctx.getImageData(0,0,canvas.width,canvas.height);
   const data = img.data;
 
-  trackers.forEach((tracker,index)=>{
-    const tol = 50; // Toleranz für LED-Farben
-    let sumX=0,sumY=0,count=0;
+  // Suche die blaueste und roteste Stelle
+  let maxBlue = {x:0,y:0,value:-1};
+  let maxRed  = {x:0,y:0,value:-1};
 
-    for(let i=0;i<data.length;i+=4){
-      const r=data[i],g=data[i+1],b=data[i+2];
-      if(Math.abs(r-tracker.color.r)<tol &&
-         Math.abs(g-tracker.color.g)<tol &&
-         Math.abs(b-tracker.color.b)<tol){
-        const px = (i/4)%canvas.width;
-        const py = Math.floor((i/4)/canvas.width);
-        sumX += px;
-        sumY += py;
-        count++;
-      }
+  for(let i=0;i<data.length;i+=4){
+    const r=data[i], g=data[i+1], b=data[i+2];
+    const px = (i/4)%canvas.width;
+    const py = Math.floor((i/4)/canvas.width);
+
+    // Rot-Score: R minus max(G,B)
+    const redScore = r - Math.max(g,b);
+    if(redScore>maxRed.value){
+      maxRed.value = redScore;
+      maxRed.x = px;
+      maxRed.y = py;
     }
 
-    if(count>20){
-      let cx = sumX/count;
-      let cy = sumY/count;
-
-      // History für Glättung
-      tracker.history.push({x:cx,y:cy});
-      if(tracker.history.length>historyLength) tracker.history.shift();
-      let smoothX = tracker.history.reduce((a,b)=>a+b.x,0)/tracker.history.length;
-      let smoothY = tracker.history.reduce((a,b)=>a+b.y,0)/tracker.history.length;
-
-      // Punch Detection
-      tracker.punch=false;
-      if(tracker.history.length>=2 && cooldowns[index]===0){
-        let dx = tracker.history[tracker.history.length-1].x - tracker.history[tracker.history.length-2].x;
-        let dy = tracker.history[tracker.history.length-1].y - tracker.history[tracker.history.length-2].y;
-        const speed = Math.sqrt(dx*dx + dy*dy);
-        if(speed>speedThreshold){
-          tracker.punch=true;
-          cooldowns[index]=cooldownFrames;
-
-          fields.forEach(f=>{
-            const fx = f.x*canvas.width, fy = f.y*canvas.height;
-            const fw = f.w*canvas.width, fh = f.h*canvas.height;
-            if(smoothX>=fx && smoothX<=fx+fw && smoothY>=fy && smoothY<=fy+fh){
-              audioElements[f.sound].currentTime=0;
-              audioElements[f.sound].play();
-            }
-          });
-        }
-      } else if(cooldowns[index]>0){
-        cooldowns[index]--;
-      }
-
-      // Tracker zeichnen
-      ctx.strokeStyle=tracker.punch?"yellow":tracker.drawColor;
-      ctx.lineWidth=4;
-      ctx.beginPath();
-      ctx.arc(smoothX,smoothY,30,0,Math.PI*2);
-      ctx.stroke();
+    // Blau-Score: B minus max(R,G)
+    const blueScore = b - Math.max(r,g);
+    if(blueScore>maxBlue.value){
+      maxBlue.value = blueScore;
+      maxBlue.x = px;
+      maxBlue.y = py;
     }
+  }
+
+  const positions = [
+    {tracker:trackers[0], pos:maxBlue},
+    {tracker:trackers[1], pos:maxRed}
+  ];
+
+  positions.forEach((t,index)=>{
+    let cx = t.pos.x;
+    let cy = t.pos.y;
+
+    // Glättung mit History
+    t.tracker.history.push({x:cx,y:cy});
+    if(t.tracker.history.length>historyLength) t.tracker.history.shift();
+    let smoothX = t.tracker.history.reduce((a,b)=>a+b.x,0)/t.tracker.history.length;
+    let smoothY = t.tracker.history.reduce((a,b)=>a+b.y,0)/t.tracker.history.length;
+
+    // Punch Detection
+    t.tracker.punch=false;
+    if(t.tracker.history.length>=2 && cooldowns[index]===0){
+      let dx = t.tracker.history[t.tracker.history.length-1].x - t.tracker.history[t.tracker.history.length-2].x;
+      let dy = t.tracker.history[t.tracker.history.length-1].y - t.tracker.history[t.tracker.history.length-2].y;
+      const speed = Math.sqrt(dx*dx + dy*dy);
+      if(speed>speedThreshold){
+        t.tracker.punch=true;
+        cooldowns[index]=cooldownFrames;
+
+        // Feld Treffer prüfen
+        fields.forEach(f=>{
+          const fx = f.x*canvas.width, fy = f.y*canvas.height;
+          const fw = f.w*canvas.width, fh = f.h*canvas.height;
+          if(smoothX>=fx && smoothX<=fx+fw && smoothY>=fy && smoothY<=fy+fh){
+            audioElements[f.sound].currentTime=0;
+            audioElements[f.sound].play();
+          }
+        });
+      }
+    } else if(cooldowns[index]>0){
+      cooldowns[index]--;
+    }
+
+    // Tracker zeichnen
+    ctx.strokeStyle=t.tracker.punch?"yellow":t.tracker.drawColor;
+    ctx.lineWidth=4;
+    ctx.beginPath();
+    ctx.arc(smoothX,smoothY,30,0,Math.PI*2);
+    ctx.stroke();
   });
 
   requestAnimationFrame(loop);
