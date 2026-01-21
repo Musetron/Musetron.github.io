@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Luft Schlagzeug</title>
+<title>Luft Schlagzeug mit PSMove</title>
 <style>
 body { margin:0; background:#111; overflow:hidden; }
 canvas { display:block; touch-action:none; }
@@ -20,27 +20,29 @@ const video = document.createElement("video");
 video.autoplay = true;
 video.playsInline = true;
 
-// Tracker
-const tolerance = 40;
+// Tracker für 2 Controller
 const maxTrackers = 2;
 let trackerIndex = 0;
-let trackers = [null,null];
+let trackers = [
+  {color:null, drawColor:"red", punch:false},
+  {color:null, drawColor:"cyan", punch:false}
+];
 let history = [[],[]];
 const historyLength = 5;
-const speedThreshold = 50;
-const cooldownFrames = 15;
+const speedThreshold = 40; // PSMove schneller Bewegungen
+const cooldownFrames = 12;
 let cooldowns = [0,0];
 
-// Felder: 5 Felder
+// Felder
 let fields = [
-  {x:0.1, y:0.2, w:0.35, h:0.25, sound:'crash.wav'}, // oben links
-  {x:0.55,y:0.2,w:0.35,h:0.25,sound:'hat.wav'},      // oben rechts
-  {x:0.1, y:0.6, w:0.25, h:0.35,sound:'kick.wav'},  // unten links
-  {x:0.375,y:0.6,w:0.25,h:0.35,sound:'snare.wav'},  // unten mitte
-  {x:0.65,y:0.6,w:0.25,h:0.35,sound:'tom.wav'}      // unten rechts
+  {x:0.1, y:0.2, w:0.35, h:0.25, sound:'crash.wav'}, 
+  {x:0.55,y:0.2,w:0.35,h:0.25,sound:'hat.wav'},      
+  {x:0.1, y:0.6, w:0.25, h:0.35,sound:'kick.wav'},  
+  {x:0.375,y:0.6,w:0.25,h:0.35,sound:'snare.wav'},  
+  {x:0.65,y:0.6,w:0.25,h:0.35,sound:'tom.wav'}      
 ];
 
-// Lade Sounds
+// Sounds laden
 let audioElements = {};
 fields.forEach(f=>{
   const a = new Audio(f.sound);
@@ -52,24 +54,19 @@ fields.forEach(f=>{
 navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}})
   .then(stream=>video.srcObject=stream);
 
-// Tracker auswählen per Tap
-canvas.addEventListener("pointerdown",e=>{
+// Wähle Tracker per Klick
+canvas.addEventListener("pointerdown", e=>{
   const rect = canvas.getBoundingClientRect();
   const x = Math.floor((e.clientX - rect.left) * canvas.width / rect.width);
   const y = Math.floor((e.clientY - rect.top) * canvas.height / rect.height);
   const pixel = ctx.getImageData(x,y,1,1).data;
-
-  trackers[trackerIndex] = {
-    color:{r:pixel[0],g:pixel[1],b:pixel[2]},
-    drawColor: trackerIndex===0?"red":"cyan",
-    punch:false
-  };
+  trackers[trackerIndex].color = {r:pixel[0],g:pixel[1],b:pixel[2]};
   history[trackerIndex] = [];
-  cooldowns[trackerIndex]=0;
+  cooldowns[trackerIndex] = 0;
   trackerIndex = (trackerIndex+1)%maxTrackers;
 });
 
-// Loop
+// PSMove Tracking Loop
 function loop(){
   if(video.videoWidth===0){
     requestAnimationFrame(loop);
@@ -79,7 +76,7 @@ function loop(){
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
 
-  // Spiegelung der Kamera
+  // Spiegelung
   ctx.save();
   ctx.translate(canvas.width,0);
   ctx.scale(-1,1);
@@ -97,16 +94,17 @@ function loop(){
   const data = img.data;
 
   trackers.forEach((tracker,index)=>{
-    if(!tracker) return;
+    if(!tracker.color) return;
 
     let sumX=0,sumY=0,count=0;
+
+    // PSMove LEDs sind sehr hell → wir können einfache Thresholds nehmen
     for(let i=0;i<data.length;i+=4){
       const r=data[i],g=data[i+1],b=data[i+2];
-      if(
-        Math.abs(r-tracker.color.r)<tolerance &&
-        Math.abs(g-tracker.color.g)<tolerance &&
-        Math.abs(b-tracker.color.b)<tolerance
-      ){
+
+      // Helligkeit statt Farbvergleich, LEDs sind leuchtend
+      const brightness = 0.299*r + 0.587*g + 0.114*b;
+      if(brightness>150){ // nur helle Punkte
         const px = (i/4)%canvas.width;
         const py = Math.floor((i/4)/canvas.width);
         sumX += px;
@@ -115,11 +113,11 @@ function loop(){
       }
     }
 
-    if(count>200){
-      let cx=sumX/count;
-      let cy=sumY/count;
+    if(count>20){ // kleiner Bereich reicht bei LEDs
+      let cx = sumX/count;
+      let cy = sumY/count;
 
-      // Glättung durch History
+      // Glätten
       history[index].push({x:cx,y:cy});
       if(history[index].length>historyLength) history[index].shift();
       let smoothX = history[index].reduce((a,b)=>a+b.x,0)/history[index].length;
@@ -135,7 +133,7 @@ function loop(){
           tracker.punch=true;
           cooldowns[index]=cooldownFrames;
 
-          // Prüfe Feld-Kollision
+          // Feld Treffer
           fields.forEach(f=>{
             const fx = f.x*canvas.width, fy = f.y*canvas.height;
             const fw = f.w*canvas.width, fh = f.h*canvas.height;
