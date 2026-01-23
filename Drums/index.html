@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>PSMove Luft Schlagzeug</title>
+<title>Air Drums</title>
 <style>
 body { margin:0; background:#111; overflow:hidden; }
 canvas { display:block; touch-action:none; }
@@ -15,154 +15,189 @@ canvas { display:block; touch-action:none; }
 <script>
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-const video = document.createElement("video");
 
+const video = document.createElement("video");
 video.autoplay = true;
 video.playsInline = true;
 
-// Tracker für Rot und Blau
+/* ===============================
+   ULTRA LOW RES ANALYSE CANVAS
+================================ */
+const lowCanvas = document.createElement("canvas");
+const lowCtx = lowCanvas.getContext("2d");
+
+lowCanvas.width = 160;   // EXTREM niedrig
+lowCanvas.height = 120;
+
+/* ===============================
+   TRACKER
+================================ */
 let trackers = [
-  {name:"blau", drawColor:"cyan", punch:false, history:[]},
-  {name:"rot", drawColor:"red", punch:false, history:[]}
+  { name:"blau", drawColor:"cyan", punch:false, history:[] },
+  { name:"rot",  drawColor:"red",  punch:false, history:[] }
 ];
-const historyLength = 5;
-const speedThreshold = 40;
-const cooldownFrames = 12;
+
+const historyLength = 4;
+const speedThreshold = 35;
+const cooldownFrames = 10;
 let cooldowns = [0,0];
 
-// Felder
+/* ===============================
+   DRUM FELDER
+================================ */
 let fields = [
-  {x:0.1, y:0.2, w:0.35, h:0.25, sound:'crash.wav'}, 
-  {x:0.55,y:0.2,w:0.35,h:0.25,sound:'hat.wav'},      
-  {x:0.1, y:0.6, w:0.25, h:0.35,sound:'kick.wav'},  
-  {x:0.375,y:0.6,w:0.25,h:0.35,sound:'snare.wav'},  
-  {x:0.65,y:0.6,w:0.25,h:0.35,sound:'tom.wav'}      
+  {x:0.1,  y:0.2, w:0.35, h:0.25, sound:'crash.wav'},
+  {x:0.55, y:0.2, w:0.35, h:0.25, sound:'hat.wav'},
+  {x:0.1,  y:0.6, w:0.25, h:0.35, sound:'kick.wav'},
+  {x:0.375,y:0.6, w:0.25, h:0.35, sound:'snare.wav'},
+  {x:0.65, y:0.6, w:0.25, h:0.35, sound:'tom.wav'}
 ];
 
-// Sounds laden
+/* ===============================
+   SOUNDS
+================================ */
 let audioElements = {};
 fields.forEach(f=>{
   const a = new Audio(f.sound);
-  audioElements[f.sound]=a;
   a.load();
+  audioElements[f.sound] = a;
 });
 
-// Kamera starten
+/* ===============================
+   KAMERA
+================================ */
 navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}})
-  .then(stream=>video.srcObject=stream);
+  .then(stream => video.srcObject = stream);
 
+/* ===============================
+   MAIN LOOP
+================================ */
 function loop(){
-  if(video.videoWidth===0){
+  if(video.videoWidth === 0){
     requestAnimationFrame(loop);
     return;
   }
 
-  canvas.width = video.videoWidth;
+  canvas.width  = video.videoWidth;
   canvas.height = video.videoHeight;
 
-  // Spiegelung
+  /* Spiegeln */
   ctx.save();
   ctx.translate(canvas.width,0);
   ctx.scale(-1,1);
   ctx.drawImage(video,0,0);
   ctx.restore();
 
-  // Felder zeichnen
+  /* Drum Felder */
   fields.forEach(f=>{
-    ctx.strokeStyle='white';
-    ctx.lineWidth=3;
-    ctx.strokeRect(f.x*canvas.width,f.y*canvas.height,f.w*canvas.width,f.h*canvas.height);
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(
+      f.x * canvas.width,
+      f.y * canvas.height,
+      f.w * canvas.width,
+      f.h * canvas.height
+    );
   });
 
-  const img = ctx.getImageData(0,0,canvas.width,canvas.height);
+  /* ===============================
+     LOW RES FARBERKENNUNG
+  ================================ */
+  lowCtx.drawImage(video,0,0,lowCanvas.width,lowCanvas.height);
+  const img = lowCtx.getImageData(0,0,lowCanvas.width,lowCanvas.height);
   const data = img.data;
 
-  // Suche die blaueste und roteste Stelle
-  let maxBlue = {x:0,y:0,value:-1};
-  let maxRed  = {x:0,y:0,value:-1};
+  let maxBlue = {x:0,y:0,value:-9999};
+  let maxRed  = {x:0,y:0,value:-9999};
 
-  const brightnessFactor = 0.6; // Dämpfung gegen Überbelichtung
-  const step = 2; // Downsampling: jeden 2. Pixel prüfen
+  const step = 3;          // brutales Downsampling
+  const minBrightness = 40;
 
-  for(let y=0; y<canvas.height; y+=step){
-    for(let x=0; x<canvas.width; x+=step){
-      const i = (y*canvas.width + x)*4;
-      const r = data[i]*brightnessFactor;
-      const g = data[i+1]*brightnessFactor;
-      const b = data[i+2]*brightnessFactor;
+  for(let y=0; y<lowCanvas.height; y+=step){
+    for(let x=0; x<lowCanvas.width; x+=step){
+      const i = (y*lowCanvas.width + x)*4;
+      const r = data[i];
+      const g = data[i+1];
+      const b = data[i+2];
 
-      // Rot-Score: R minus max(G,B)
-      const redScore = r - Math.max(g,b);
-      if(redScore>maxRed.value){
-        maxRed.value = redScore;
-        maxRed.x = x;
-        maxRed.y = y;
+      if(r+g+b < minBrightness) continue;
+
+      const redScore  = r*2 - g - b;
+      const blueScore = b*2 - r - g;
+
+      if(redScore > maxRed.value){
+        maxRed = {x,y,value:redScore};
       }
-
-      // Blau-Score: B minus max(R,G)
-      const blueScore = b - Math.max(r,g);
-      if(blueScore>maxBlue.value){
-        maxBlue.value = blueScore;
-        maxBlue.x = x;
-        maxBlue.y = y;
+      if(blueScore > maxBlue.value){
+        maxBlue = {x,y,value:blueScore};
       }
     }
   }
+
+  /* Zurück auf Full-Res skalieren */
+  maxRed.x  *= canvas.width  / lowCanvas.width;
+  maxRed.y  *= canvas.height / lowCanvas.height;
+  maxBlue.x *= canvas.width  / lowCanvas.width;
+  maxBlue.y *= canvas.height / lowCanvas.height;
 
   const positions = [
     {tracker:trackers[0], pos:maxBlue},
     {tracker:trackers[1], pos:maxRed}
   ];
 
-  const alpha = 0.7; // Gewichtete Glättung für schnelle Reaktion
+  const alpha = 0.75; // schnelle Glättung
 
   positions.forEach((t,index)=>{
-    let cx = t.pos.x;
-    let cy = t.pos.y;
+    const cx = t.pos.x;
+    const cy = t.pos.y;
 
-    // Gewichtete History-Glättung
-    if(t.tracker.history.length===0){
-      t.tracker.history.push({x:cx, y:cy});
+    if(t.tracker.history.length === 0){
+      t.tracker.history.push({x:cx,y:cy});
     } else {
-      const prev = t.tracker.history[t.tracker.history.length-1];
-      const smoothX = prev.x*(1-alpha) + cx*alpha;
-      const smoothY = prev.y*(1-alpha) + cy*alpha;
-      t.tracker.history.push({x:smoothX, y:smoothY});
-      if(t.tracker.history.length>historyLength) t.tracker.history.shift();
+      const prev = t.tracker.history.at(-1);
+      t.tracker.history.push({
+        x: prev.x*(1-alpha) + cx*alpha,
+        y: prev.y*(1-alpha) + cy*alpha
+      });
+      if(t.tracker.history.length > historyLength)
+        t.tracker.history.shift();
     }
 
-    const smooth = t.tracker.history[t.tracker.history.length-1];
+    const cur = t.tracker.history.at(-1);
+    t.tracker.punch = false;
 
-    // Punch Detection
-    t.tracker.punch=false;
-    if(t.tracker.history.length>=2 && cooldowns[index]===0){
-      const prev = t.tracker.history[t.tracker.history.length-2];
-      const dx = smooth.x - prev.x;
-      const dy = smooth.y - prev.y;
+    if(t.tracker.history.length >= 2 && cooldowns[index] === 0){
+      const prev = t.tracker.history.at(-2);
+      const dx = cur.x - prev.x;
+      const dy = cur.y - prev.y;
       const speed = Math.sqrt(dx*dx + dy*dy);
-      if(speed>speedThreshold){
-        t.tracker.punch=true;
-        cooldowns[index]=cooldownFrames;
 
-        // Feld Treffer prüfen
+      if(speed > speedThreshold){
+        t.tracker.punch = true;
+        cooldowns[index] = cooldownFrames;
+
         fields.forEach(f=>{
-          const fx = f.x*canvas.width, fy = f.y*canvas.height;
-          const fw = f.w*canvas.width, fh = f.h*canvas.height;
-          if(smooth.x>=fx && smooth.x<=fx+fw && smooth.y>=fy && smooth.y<=fy+fh){
-            audioElements[f.sound].currentTime=0;
-            audioElements[f.sound].play();
+          const fx = f.x * canvas.width;
+          const fy = f.y * canvas.height;
+          const fw = f.w * canvas.width;
+          const fh = f.h * canvas.height;
+
+          if(cur.x>=fx && cur.x<=fx+fw && cur.y>=fy && cur.y<=fy+fh){
+            const a = audioElements[f.sound];
+            a.currentTime = 0;
+            a.play();
           }
         });
       }
-    } else if(cooldowns[index]>0){
+    } else if(cooldowns[index] > 0){
       cooldowns[index]--;
     }
 
-    // Tracker zeichnen
-    ctx.strokeStyle=t.tracker.punch?"yellow":t.tracker.drawColor;
-    ctx.lineWidth=4;
+    /* Tracker Kreis */
+    ctx.strokeStyle = t.tracker.punch ? "yellow" : t.tracker.drawColor;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.arc(smooth.x,smooth.y,30,0,Math.PI*2);
+    ctx.arc(cur.x,cur.y,28,0,Math.PI*2);
     ctx.stroke();
   });
 
