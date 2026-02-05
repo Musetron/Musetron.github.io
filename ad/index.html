@@ -2,55 +2,30 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>ExoClick Video Ad</title>
-
-  <!-- Google IMA SDK (notwendig für VAST) -->
-  <script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
-
+  <title>ExoClick Random Video Ads</title>
   <style>
     body {
       margin: 0;
-      background: #000;
       display: flex;
       justify-content: center;
       align-items: center;
       height: 100vh;
+      background: #000;
     }
-    video {
+    #exoclick-video {
       width: 100%;
       max-width: 720px;
+      aspect-ratio: 16/9;
     }
   </style>
-
-  <!-- Delegate CH (optional, für Browser Hints) -->
-  <meta http-equiv="Delegate-CH" content="Sec-CH-UA https://s.magsrv.com; Sec-CH-UA-Mobile https://s.magsrv.com; Sec-CH-UA-Arch https://s.magsrv.com; Sec-CH-UA-Model https://s.magsrv.com; Sec-CH-UA-Platform https://s.magsrv.com; Sec-CH-UA-Platform-Version https://s.magsrv.com; Sec-CH-UA-Bitness https://s.magsrv.com; Sec-CH-UA-Full-Version-List https://s.magsrv.com; Sec-CH-UA-Full-Version https://s.magsrv.com;">
 </head>
 <body>
 
-<video id="video" controls playsinline></video>
+<!-- ExoClick Player Container -->
+<div id="exoclick-video"></div>
 
-<script>
-  const video = document.getElementById("video");
-
-  // IMA Ad Display Container
-  const adDisplayContainer = new google.ima.AdDisplayContainer(document.body, video);
-  const adsLoader = new google.ima.AdsLoader(adDisplayContainer);
-
-  const adsRequest = new google.ima.AdsRequest();
-
-  // ✅ DEIN ExoClick VAST TAG
-  adsRequest.adTagUrl = "https://s.magsrv.com/v1/vast.php?idzone=5846334";
-
-  adsRequest.linearAdSlotWidth = 640;
-  adsRequest.linearAdSlotHeight = 360;
-
-  adsLoader.requestAds(adsRequest);
-
-  // Initialisiere AdContainer beim ersten Play
-  video.addEventListener("play", () => {
-    adDisplayContainer.initialize();
-  });
-</script>
+<!-- ExoClick VAST Script -->
+<script src="https://s.magsrv.com/v1/vast.php?idzone=5846334"></script>
 
 </body>
 </html>
