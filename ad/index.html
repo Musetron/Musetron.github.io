@@ -2,11 +2,51 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Weiterleitung...</title>
-  <!-- Weiterleitung nach 0 Sekunden -->
-  <meta http-equiv="refresh" content="0; URL='https://www.amazon.de/Ozeino-OW810-Schnittstelle-Ger%C3%A4uschunterdr%C3%BCckung-Akkulaufzeit-Wei%C3%9F/dp/B0C4F9JGTJ?crid=2JWAMAASHYW8V&dib=eyJ2IjoiMSJ9.ouim_0x-MPNa4wmv1OFLUjHI1z4GR6xFQwD57pz-bIp7EAokU5zxG3XpfWbqwfW9jmxDF069k-iiLviJmBuhbPEiC5-5hTd9jm9XvR86J7UOEpOW4-2yCQ3dSCkEgWeaHjosREMxbWFUyTv19cHGfqtEPQYhStorcZn9YY1YfmFOURcom6P3OO5wZImcu5JfJBzzrclutRzOSSmy1tVIeAtIF7eWGq4OlBbVjh3jsdY.rhn78D7BsP_g0ie_TZM9B6kovZ6p71wz5U4oiEFukCI&dib_tag=se&keywords=gaming%2Bheadset&qid=1770293885&sprefix=gaming%2Bheadset%2Caps%2C465&sr=8-2-spons&aref=3BfW63lDxk&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1&linkCode=ll2&tag=obbybox-21&linkId=24c4e2f2e27bd95510ac6e980bb3c2d2&ref_=as_li_ss_tl'">
+  <title>Video Ad</title>
+
+  <!-- Google IMA SDK (notwendig für VAST) -->
+  <script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    video {
+      width: 100%;
+      max-width: 720px;
+    }
+  </style>
 </head>
 <body>
-  <p>Du wirst weitergeleitet… falls nicht, <a href="https://www.amazon.de/Ozeino-OW810-Schnittstelle-Ger%C3%A4uschunterdr%C3%BCckung-Akkulaufzeit-Wei%C3%9F/dp/B0C4F9JGTJ?crid=2JWAMAASHYW8V&dib=eyJ2IjoiMSJ9.ouim_0x-MPNa4wmv1OFLUjHI1z4GR6xFQwD57pz-bIp7EAokU5zxG3XpfWbqwfW9jmxDF069k-iiLviJmBuhbPEiC5-5hTd9jm9XvR86J7UOEpOW4-2yCQ3dSCkEgWeaHjosREMxbWFUyTv19cHGfqtEPQYhStorcZn9YY1YfmFOURcom6P3OO5wZImcu5JfJBzzrclutRzOSSmy1tVIeAtIF7eWGq4OlBbVjh3jsdY.rhn78D7BsP_g0ie_TZM9B6kovZ6p71wz5U4oiEFukCI&dib_tag=se&keywords=gaming%2Bheadset&qid=1770293885&sprefix=gaming%2Bheadset%2Caps%2C465&sr=8-2-spons&aref=3BfW63lDxk&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1&linkCode=ll2&tag=obbybox-21&linkId=24c4e2f2e27bd95510ac6e980bb3c2d2&ref_=as_li_ss_tl">klicke hier</a>.</p>
+
+<video id="video" controls playsinline></video>
+
+<script>
+  const video = document.getElementById("video");
+
+  const adDisplayContainer =
+    new google.ima.AdDisplayContainer(document.body, video);
+  const adsLoader = new google.ima.AdsLoader(adDisplayContainer);
+
+  const adsRequest = new google.ima.AdsRequest();
+
+  // 🔁 HIER DEIN EXOCLICK VAST TAG
+  adsRequest.adTagUrl = "https://s.magsrv.com/v1/vast.php?idzone=5846334";
+
+  adsRequest.linearAdSlotWidth = 640;
+  adsRequest.linearAdSlotHeight = 360;
+
+  adsLoader.requestAds(adsRequest);
+
+  video.addEventListener("play", () => {
+    adDisplayContainer.initialize();
+  });
+</script>
+
 </body>
 </html>
