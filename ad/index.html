@@ -2,30 +2,38 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>ExoClick Random Video Ads</title>
+  <title>ExoClick Video Ads mit FluidPlayer</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.fluidplayer.com/v3/current/fluidplayer.min.css"
+  />
   <style>
-    body {
-      margin: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      background: #000;
-    }
-    #exoclick-video {
-      width: 100%;
-      max-width: 720px;
-      aspect-ratio: 16/9;
-    }
+    body { margin: 0; padding: 20px; background: #000; }
+    #my-video { width: 100%; max-width: 720px; }
   </style>
 </head>
 <body>
 
-<!-- ExoClick Player Container -->
-<div id="exoclick-video"></div>
+<video id="my-video" controls preload="auto">
+  <!-- FALLBACK VIDEO, z. B. ein kurzes neutrales Video -->
+  <source src="https://cdn.glitch.global/placeholder.mp4" type="video/mp4" />
+</video>
 
-<!-- ExoClick VAST Script -->
-<script src="https://s.magsrv.com/v1/vast.php?idzone=5846334"></script>
+<script src="https://cdn.fluidplayer.com/v3/current/fluidplayer.min.js"></script>
+<script>
+  fluidPlayer("my-video", {
+    vastOptions: {
+      adList: [
+        {
+          roll: "preRoll",
+          vastTag: "https://s.magsrv.com/v1/vast.php?idzone=5846334"
+        }
+      ],
+      adText: "Werbung läuft...",
+      skipOffset: 5
+    }
+  });
+</script>
 
 </body>
 </html>
