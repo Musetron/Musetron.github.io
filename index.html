@@ -1,64 +1,68 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<title>Realtime Audio Raster</title>
-<style>
-  body { margin:0; background:black; overflow:hidden; }
-  canvas { display:block; image-rendering:pixelated; }
-</style>
+  <meta charset="UTF-8">
+  <title>ExoClick VAST Fullscreen</title>
+
+  <!-- Video.js -->
+  <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet">
+  <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+
+  <!-- VAST Plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/videojs-vast-vpaid@2/dist/videojs-vast-vpaid.min.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: black;
+      width: 100%;
+      height: 100%;
+    }
+    #player {
+      width: 100vw;
+      height: 100vh;
+    }
+    .click-overlay {
+      position: fixed;
+      inset: 0;
+      cursor: pointer;
+      z-index: 9999;
+    }
+  </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
+
+<div class="click-overlay" id="overlay"></div>
+
+<video
+    id="player"
+    class="video-js vjs-default-skin"
+    muted
+    playsinline
+></video>
+
 <script>
-(async function() {
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
+  const player = videojs('player', {
+    autoplay: true,
+    muted: true,
+    controls: false,
+    preload: 'auto'
+  });
 
-  // sehr niedrige Auflösung für maximal FPS
-  const width = 64;
-  const height = 64;
-  canvas.width = width;
-  canvas.height = height;
+  player.vastClient({
+    adTagUrl: 'https://s.magsrv.com/v1/vast.php?idzone=5846334',
+    playAdAlways: true,
+    verbosity: 4
+  });
 
-  const imageData = ctx.createImageData(width, height);
-  const data = imageData.data;
-
-  // Audio
-  const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const source = audioCtx.createMediaStreamSource(stream);
-
-  const analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 2048; // kleiner FFT für schnelle Samples
-  source.connect(analyser);
-
-  const buffer = new Float32Array(analyser.fftSize);
-
-  function render() {
-    analyser.getFloatTimeDomainData(buffer);
-
-    // jede Pixel-Helligkeit = Durchschnitt von mehreren Samples
-    const samplesPerPixel = Math.floor(buffer.length / (width*height));
-    for(let i=0;i<width*height;i++){
-      let sum=0;
-      for(let j=0;j<samplesPerPixel;j++){
-        sum += Math.abs(buffer[i*samplesPerPixel + j] || 0);
-      }
-      const brightness = Math.min(255, Math.floor(sum/samplesPerPixel * 255));
-      const idx = i*4;
-      data[idx]=brightness;
-      data[idx+1]=brightness;
-      data[idx+2]=brightness;
-      data[idx+3]=255;
-    }
-
-    ctx.putImageData(imageData,0,0);
-    requestAnimationFrame(render); // ~60 FPS
-  }
-
-  render();
-})();
+  document.getElementById('overlay').addEventListener('click', () => {
+    player.requestFullscreen();
+    player.muted(false);
+    player.play();
+    document.getElementById('overlay').remove();
+  });
 </script>
+
 </body>
 </html>
