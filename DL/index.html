@@ -1,0 +1,60 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Delay Lama Stabil</title>
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #111;
+  color: white;
+  font-family: sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+}
+#playArea {
+  width: 80%;
+  height: 300px;
+  background: #222;
+  border: 2px solid #fff;
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  margin-bottom: 20px;
+}
+.lama {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  image-rendering: pixelated;
+  background-image: url('DelayLama.png');
+  background-repeat: no-repeat;
+  width: auto;
+  height: auto;
+  max-width: 300px;
+  max-height: 300px;
+  filter: drop-shadow(0 5px 5px rgba(0,0,0,0.3)) brightness(1.05) contrast(1.1);
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<div id="playArea"></div>
+<div class="lama" id="lama"></div>
+
+<script>
+// Hier kommt dein kompletter JS-Code rein (wie oben)
+</script>
+
+</body>
+</html>
