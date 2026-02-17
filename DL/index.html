@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -19,6 +18,7 @@ html, body {
   justify-content: flex-end;
   align-items: center;
 }
+
 #playArea {
   width: 80%;
   height: 300px;
@@ -30,6 +30,7 @@ html, body {
   position: relative;
   margin-bottom: 20px;
 }
+
 .lama {
   position: absolute;
   top: 20px;
@@ -53,7 +54,253 @@ html, body {
 <div class="lama" id="lama"></div>
 
 <script>
-// Hier kommt dein kompletter JS-Code rein (wie oben)
+// ------------------- Audio Setup -------------------
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+let oscillator1 = null;
+let oscillator2 = null;
+let filters = [];
+let gainNode = null;
+let lfo = null;
+let lfoGain = null;
+
+const playArea = document.getElementById('playArea');
+
+const C2 = 65.41;
+const C3 = 130.81;
+
+const vowelFormants = {
+  'A': [800, 1150, 2900],
+  'E': [500, 1700, 2500],
+  'I': [350, 2000, 2800],
+  'O': [450, 800, 2830],
+  'U': [325, 700, 2530]
+};
+const vowels = ['I','E','A','U','O'];
+
+function startTone(x, y) {
+    if(oscillator1) return; // bereits aktiv → nichts tun
+
+    oscillator1 = audioCtx.createOscillator();
+    oscillator2 = audioCtx.createOscillator();
+
+    oscillator1.type = 'sawtooth';
+    oscillator2.type = 'sawtooth';
+    oscillator2.detune.setValueAtTime(3, audioCtx.currentTime);
+
+    const freq = mapXtoFreq(x);
+    oscillator1.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    oscillator2.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+    gainNode = audioCtx.createGain();
+    gainNode.gain.setValueAtTime(7500, audioCtx.currentTime);
+
+    lfo = audioCtx.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.setValueAtTime(5, audioCtx.currentTime);
+
+    lfoGain = audioCtx.createGain();
+    lfoGain.gain.setValueAtTime(2500, audioCtx.currentTime);
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(gainNode.gain);
+    lfo.start();
+
+    const waveShaper = audioCtx.createWaveShaper();
+    waveShaper.curve = makeDistortionCurve(200);
+    waveShaper.oversample = '4x';
+
+    filters = [];
+    for (let i = 0; i < 3; i++) {
+        const f = audioCtx.createBiquadFilter();
+        f.type = 'bandpass';
+        f.Q.setValueAtTime(30, audioCtx.currentTime);
+        filters.push(f);
+    }
+
+    const merger = audioCtx.createGain();
+    oscillator1.connect(merger);
+    oscillator2.connect(merger);
+
+    let lastNode = merger;
+    lastNode.connect(waveShaper);
+    lastNode = waveShaper;
+
+    filters.forEach(f => {
+        lastNode.connect(f);
+        lastNode = f;
+    });
+
+    lastNode.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    updateFormants(y, true);
+
+    oscillator1.start();
+    oscillator2.start();
+}
+
+function stopTone() {
+    if(!oscillator1) return;
+
+    [oscillator1, oscillator2].forEach(o => { if(o){ o.stop(); o.disconnect(); }});
+    if(lfo){ lfo.stop(); lfo.disconnect(); }
+    if(lfoGain) lfoGain.disconnect();
+    filters.forEach(f => f.disconnect());
+    if(gainNode) gainNode.disconnect();
+
+    oscillator1 = oscillator2 = null;
+    lfo = lfoGain = null;
+    filters = [];
+    gainNode = null;
+}
+
+function mapXtoFreq(x){
+    const rect = playArea.getBoundingClientRect();
+    const relativeX = Math.min(Math.max(x-rect.left,0), rect.width);
+    const ratio = relativeX / rect.width;
+    return C2 + (C3-C2) * ratio;
+}
+
+function mapYtoVowelRatio(y){
+    const rect = playArea.getBoundingClientRect();
+    const relativeY = Math.min(Math.max(y-rect.top,0), rect.height);
+    return relativeY / rect.height;
+}
+
+function updateFormants(y, immediate=false){
+    const ratio = mapYtoVowelRatio(y);
+    const total = vowels.length-1;
+    const idx = ratio*total;
+    const lowerIdx = Math.floor(idx);
+    const upperIdx = Math.min(lowerIdx+1,total);
+    const t = idx-lowerIdx;
+
+    const lowerVowel = vowels[lowerIdx];
+    const upperVowel = vowels[upperIdx];
+
+    for(let i=0;i<3;i++){
+        const freq = vowelFormants[lowerVowel][i]*(1-t) + vowelFormants[upperVowel][i]*t;
+        if(filters[i]){
+            if(immediate){
+                filters[i].frequency.setValueAtTime(freq, audioCtx.currentTime);
+            } else {
+                filters[i].frequency.setTargetAtTime(freq, audioCtx.currentTime,0.01);
+            }
+        }
+    }
+}
+
+function makeDistortionCurve(amount){
+    const n_samples = 44100;
+    const curve = new Float32Array(n_samples);
+    const deg = Math.PI/180;
+    for(let i=0;i<n_samples;i++){
+        const x = i*2/n_samples-1;
+        curve[i] = ((3+amount)*x*20*deg)/(Math.PI+amount*Math.abs(x));
+    }
+    return curve;
+}
+
+// ------------------- Lama Animation -------------------
+const lama = document.getElementById('lama');
+const img = new Image();
+img.src = 'DelayLama.png';
+
+img.onload = () => {
+  const cols = 5;
+  const rows = 6;
+  const frameWidth = img.width / cols;
+  const frameHeight = img.height / rows;
+
+  lama.style.width = frameWidth + 'px';
+  lama.style.height = frameHeight + 'px';
+
+  let idleFrame = 0;
+  let timer;
+
+  function setFrameByIndex(frameIndex) {
+    const zeroIndex = frameIndex - 1;
+    const row = zeroIndex % rows;
+    const col = Math.floor(zeroIndex / rows);
+    const x = col * frameWidth;
+    const y = (rows - 1 - row) * frameHeight;
+    lama.style.backgroundPosition = `-${x}px -${y}px`;
+  }
+
+  function startIdle() {
+    clearInterval(timer);
+    timer = setInterval(() => {
+      if(!mouseDown) { // Idle nur, wenn Maus nicht gedrückt
+        setFrameByIndex(idleFrame + 1);
+        idleFrame = (idleFrame + 1) % 6;
+      }
+    }, 1000 / 4);
+  }
+
+  startIdle();
+
+  let mouseDown = false;
+  let lastY = 0;
+
+  playArea.addEventListener('mousedown', (e) => {
+    if(e.button !== 0) return; // nur Linksklick
+    mouseDown = true;
+    lastY = e.clientY;
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    startTone(e.clientX, e.clientY);
+  });
+
+  document.addEventListener('mouseup', () => { 
+      if(mouseDown){
+        mouseDown = false;
+        stopTone();
+      }
+  });
+
+  playArea.addEventListener('mousemove', (e) => {
+    if(mouseDown){
+      lastY = e.clientY;
+      const freq = mapXtoFreq(e.clientX);
+      if(oscillator1){
+        oscillator1.frequency.setValueAtTime(freq,audioCtx.currentTime);
+        oscillator2.frequency.setValueAtTime(freq,audioCtx.currentTime);
+        updateFormants(e.clientY,true);
+      }
+
+      // Lama Animation
+      updateLamaFrame(lastY);
+    }
+  });
+
+  function updateLamaFrame(y){
+    const rect = playArea.getBoundingClientRect();
+    let relY = y - rect.top;
+    if(relY < 0) relY = 0;
+    if(relY > rect.height) relY = rect.height;
+    let yRatio = 1 - (relY / rect.height);
+
+    let frame;
+    const framesPerSegment = 6;
+
+    if (yRatio <= 0.25) frame = 12 - Math.floor(yRatio / 0.25 * framesPerSegment);
+    else if (yRatio <= 0.5) frame = 18 - Math.floor((yRatio - 0.25) / 0.25 * framesPerSegment);
+    else if (yRatio <= 0.75) frame = 24 - Math.floor((yRatio - 0.5) / 0.25 * framesPerSegment);
+    else frame = 30 - Math.floor((yRatio - 0.75) / 0.25 * framesPerSegment);
+
+    if(frame > 30) frame = 30;
+    if(frame < 7) frame = 7;
+
+    setFrameByIndex(frame);
+  }
+
+  // Lama-Animation läuft kontinuierlich während Maus gedrückt, auch ohne Bewegung
+  setInterval(() => {
+    if(mouseDown){
+      updateLamaFrame(lastY);
+    }
+  }, 1000/12); // 12 FPS
+};
 </script>
 
 </body>
