@@ -5,56 +5,33 @@
 <title>Delay Lama</title>
 <style>
 html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  background-color: #111;
-  color: white;
-  font-family: sans-serif;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
+  margin:0; padding:0; width:100%; height:100%;
+  background:#111;
+  display:flex; flex-direction:column;
+  justify-content:flex-end; align-items:center;
+  overflow:hidden;
 }
 
 #playArea {
-  width: 80%;
-  height: 300px;
-  background: #222;
-  border: 2px solid #fff;
-  border-radius: 12px;
-  cursor: pointer;
-  user-select: none;
-  position: relative;
-  margin-bottom: 20px;
-  overflow: hidden;
+  width:80%; height:300px;
+  background:#222; border:2px solid #fff;
+  border-radius:12px; position:relative;
+  margin-bottom:20px; overflow:hidden;
+  cursor:pointer;
 }
 
-#playArea canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
+#playArea canvas{
+  position:absolute; top:0; left:0;
+  pointer-events:none;
 }
 
-.lama {
-  position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  image-rendering: pixelated;
-  background-image: url('DelayLama.png');
-  background-repeat: no-repeat;
-  width: auto;
-  height: auto;
-  max-width: 300px;
-  max-height: 300px;
-  filter: drop-shadow(0 5px 5px rgba(0,0,0,0.3)) brightness(1.05) contrast(1.1);
-  pointer-events: none;
+.lama{
+  position:absolute; top:20px;
+  left:50%; transform:translateX(-50%);
+  background-image:url('./DelayLama.png');
+  background-repeat:no-repeat;
+  image-rendering:pixelated;
+  pointer-events:none;
 }
 </style>
 </head>
@@ -64,287 +41,167 @@ html, body {
 <div class="lama" id="lama"></div>
 
 <script>
-// ------------------- Audio Setup -------------------
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-let oscillator1 = null;
-let oscillator2 = null;
-let filters = [];
-let gainNode = null;
-let lfo = null;
-let lfoGain = null;
-
-const playArea = document.getElementById('playArea');
-
-const C2 = 65.41;
-const C3 = 130.81;
-
-const vowelFormants = {
-  'A': [800, 1150, 2900],
-  'E': [500, 1700, 2500],
-  'I': [350, 2000, 2800],
-  'O': [450, 800, 2830],
-  'U': [325, 700, 2530]
-};
-const vowels = ['I','E','A','U','O'];
-
-function startTone(x, y) {
-    if(oscillator1) return;
-
-    oscillator1 = audioCtx.createOscillator();
-    oscillator2 = audioCtx.createOscillator();
-
-    oscillator1.type = 'sawtooth';
-    oscillator2.type = 'sawtooth';
-    oscillator2.detune.setValueAtTime(3, audioCtx.currentTime);
-
-    const freq = mapXtoFreq(x);
-    oscillator1.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    oscillator2.frequency.setValueAtTime(freq, audioCtx.currentTime);
-
-    gainNode = audioCtx.createGain();
-    gainNode.gain.setValueAtTime(7500, audioCtx.currentTime);
-
-    lfo = audioCtx.createOscillator();
-    lfo.type = "sine";
-    lfo.frequency.setValueAtTime(5, audioCtx.currentTime);
-
-    lfoGain = audioCtx.createGain();
-    lfoGain.gain.setValueAtTime(2500, audioCtx.currentTime);
-
-    lfo.connect(lfoGain);
-    lfoGain.connect(gainNode.gain);
-    lfo.start();
-
-    const waveShaper = audioCtx.createWaveShaper();
-    waveShaper.curve = makeDistortionCurve(200);
-    waveShaper.oversample = '4x';
-
-    filters = [];
-    for (let i = 0; i < 3; i++) {
-        const f = audioCtx.createBiquadFilter();
-        f.type = 'bandpass';
-        f.Q.setValueAtTime(30, audioCtx.currentTime);
-        filters.push(f);
-    }
-
-    const merger = audioCtx.createGain();
-    oscillator1.connect(merger);
-    oscillator2.connect(merger);
-
-    let lastNode = merger;
-    lastNode.connect(waveShaper);
-    lastNode = waveShaper;
-
-    filters.forEach(f => {
-        lastNode.connect(f);
-        lastNode = f;
-    });
-
-    lastNode.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-
-    updateFormants(y, true);
-
-    oscillator1.start();
-    oscillator2.start();
-}
-
-function stopTone() {
-    if(!oscillator1) return;
-
-    [oscillator1, oscillator2].forEach(o => { if(o){ o.stop(); o.disconnect(); }});
-    if(lfo){ lfo.stop(); lfo.disconnect(); }
-    if(lfoGain) lfoGain.disconnect();
-    filters.forEach(f => f.disconnect());
-    if(gainNode) gainNode.disconnect();
-
-    oscillator1 = oscillator2 = null;
-    lfo = lfoGain = null;
-    filters = [];
-    gainNode = null;
-}
-
-function mapXtoFreq(x){
-    const rect = playArea.getBoundingClientRect();
-    const relativeX = Math.min(Math.max(x-rect.left,0), rect.width);
-    const ratio = relativeX / rect.width;
-    return C2 + (C3-C2) * ratio;
-}
-
-function mapYtoVowelRatio(y){
-    const rect = playArea.getBoundingClientRect();
-    const relativeY = Math.min(Math.max(y-rect.top,0), rect.height);
-    return relativeY / rect.height;
-}
-
-function updateFormants(y, immediate=false){
-    const ratio = mapYtoVowelRatio(y);
-    const total = vowels.length-1;
-    const idx = ratio*total;
-    const lowerIdx = Math.floor(idx);
-    const upperIdx = Math.min(lowerIdx+1,total);
-    const t = idx-lowerIdx;
-
-    const lowerVowel = vowels[lowerIdx];
-    const upperVowel = vowels[upperIdx];
-
-    for(let i=0;i<3;i++){
-        const freq = vowelFormants[lowerVowel][i]*(1-t) + vowelFormants[upperVowel][i]*t;
-        if(filters[i]){
-            if(immediate){
-                filters[i].frequency.setValueAtTime(freq, audioCtx.currentTime);
-            } else {
-                filters[i].frequency.setTargetAtTime(freq, audioCtx.currentTime,0.01);
-            }
-        }
-    }
-}
-
-function makeDistortionCurve(amount){
-    const n_samples = 44100;
-    const curve = new Float32Array(n_samples);
-    const deg = Math.PI/180;
-    for(let i=0;i<n_samples;i++){
-        const x = i*2/n_samples-1;
-        curve[i] = ((3+amount)*x*20*deg)/(Math.PI+amount*Math.abs(x));
-    }
-    return curve;
-}
-
-// ------------------- Lama Animation -------------------
-const lama = document.getElementById('lama');
-const img = new Image();
-img.src = 'DelayLama.png';
-
-img.onload = () => {
-  const cols = 5;
-  const rows = 6;
-  const frameWidth = img.width / cols;
-  const frameHeight = img.height / rows;
-
-  lama.style.width = frameWidth + 'px';
-  lama.style.height = frameHeight + 'px';
-
-  let idleFrame = 0;
-  let timer;
-
-  function setFrameByIndex(frameIndex) {
-    const zeroIndex = frameIndex - 1;
-    const row = zeroIndex % rows;
-    const col = Math.floor(zeroIndex / rows);
-    const x = col * frameWidth;
-    const y = (rows - 1 - row) * frameHeight;
-    lama.style.backgroundPosition = `-${x}px -${y}px`;
-  }
-
-  function startIdle() {
-    clearInterval(timer);
-    timer = setInterval(() => {
-      if(!mouseDown) {
-        setFrameByIndex(idleFrame + 1);
-        idleFrame = (idleFrame + 1) % 6;
-      }
-    }, 1000 / 4);
-  }
-
-  startIdle();
-
-  let mouseDown = false;
-  let lastY = 0;
-
-  playArea.addEventListener('mousedown', (e) => {
-    if(e.button !== 0) return;
-    mouseDown = true;
-    lastY = e.clientY;
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-    startTone(e.clientX, e.clientY);
-  });
-
-  document.addEventListener('mouseup', () => { 
-      if(mouseDown){
-        mouseDown = false;
-        stopTone();
-      }
-  });
-
-  playArea.addEventListener('mousemove', (e) => {
-    if(mouseDown){
-      lastY = e.clientY;
-      const freq = mapXtoFreq(e.clientX);
-      if(oscillator1){
-        oscillator1.frequency.setValueAtTime(freq,audioCtx.currentTime);
-        oscillator2.frequency.setValueAtTime(freq,audioCtx.currentTime);
-        updateFormants(e.clientY,true);
-      }
-
-      updateLamaFrame(lastY);
-    }
-  });
-
-  function updateLamaFrame(y){
-    const rect = playArea.getBoundingClientRect();
-    let relY = y - rect.top;
-    if(relY < 0) relY = 0;
-    if(relY > rect.height) relY = rect.height;
-    let yRatio = 1 - (relY / rect.height);
-
-    let frame;
-    const framesPerSegment = 6;
-
-    if (yRatio <= 0.25) frame = 12 - Math.floor(yRatio / 0.25 * framesPerSegment);
-    else if (yRatio <= 0.5) frame = 18 - Math.floor((yRatio - 0.25) / 0.25 * framesPerSegment);
-    else if (yRatio <= 0.75) frame = 24 - Math.floor((yRatio - 0.5) / 0.25 * framesPerSegment);
-    else frame = 30 - Math.floor((yRatio - 0.75) / 0.25 * framesPerSegment);
-
-    if(frame > 30) frame = 30;
-    if(frame < 7) frame = 7;
-
-    setFrameByIndex(frame);
-  }
-
-  setInterval(() => {
-    if(mouseDown){
-      updateLamaFrame(lastY);
-    }
-  }, 1000/12);
+// ================= GLOBAL =================
+let audioCtx=null, osc1=null, osc2=null, gainNode=null, filters=[];
+const C2=65.41, C3=130.81;
+const vowels=['I','E','A','U','O'];
+const vowelFormants={
+  A:[800,1150,2900],
+  E:[500,1700,2500],
+  I:[350,2000,2800],
+  O:[450,800,2830],
+  U:[325,700,2530]
 };
 
-// ------------------- Visuelle Noten-Streifen -------------------
-const canvas = document.createElement('canvas');
-canvas.width = playArea.clientWidth;
-canvas.height = playArea.clientHeight;
+const playArea=document.getElementById('playArea');
+const lama=document.getElementById('lama');
+
+// 🚫 Rechtsklick deaktivieren
+playArea.addEventListener('contextmenu',e=>e.preventDefault());
+
+// ================= AUDIO =================
+function startAudio(x,y){
+  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  if(osc1) return;
+  audioCtx.resume();
+
+  osc1=audioCtx.createOscillator();
+  osc2=audioCtx.createOscillator();
+  osc1.type=osc2.type='sawtooth'; osc2.detune.value=3;
+
+  gainNode=audioCtx.createGain(); gainNode.gain.value=0;
+
+  filters=[];
+  for(let i=0;i<3;i++){
+    const f=audioCtx.createBiquadFilter(); f.type='bandpass'; f.Q.value=20;
+    filters.push(f);
+  }
+
+  const merger=audioCtx.createGain();
+  osc1.connect(merger); osc2.connect(merger);
+
+  filters.forEach(f=>{
+    merger.connect(f);
+    f.connect(gainNode);
+  });
+  gainNode.connect(audioCtx.destination);
+
+  osc1.start(); osc2.start();
+
+  updatePitch(x); updateFormants(y);
+  gainNode.gain.linearRampToValueAtTime(0.6,audioCtx.currentTime+0.05);
+}
+
+function stopAudio(){
+  if(!osc1) return;
+  gainNode.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.05);
+  setTimeout(()=>{
+    osc1.stop(); osc2.stop();
+    osc1.disconnect(); osc2.disconnect();
+    filters.forEach(f=>f.disconnect());
+    gainNode.disconnect();
+    osc1=osc2=null; filters=[];
+  },100);
+}
+
+function updatePitch(x){
+  const rect=playArea.getBoundingClientRect();
+  const ratio=Math.min(Math.max((x-rect.left)/rect.width,0),1);
+  const freq=C2+(C3-C2)*ratio;
+  if(osc1){ osc1.frequency.value=freq; osc2.frequency.value=freq; }
+}
+
+function updateFormants(y){
+  const rect=playArea.getBoundingClientRect();
+  const ratio=Math.min(Math.max((y-rect.top)/rect.height,0),1);
+  const idx=ratio*(vowels.length-1);
+  const l=Math.floor(idx), u=Math.min(l+1,vowels.length-1);
+  const t=idx-l;
+  for(let i=0;i<3;i++){
+    const freq=vowelFormants[vowels[l]][i]*(1-t)+vowelFormants[vowels[u]][i]*t;
+    filters[i].frequency.setTargetAtTime(freq,audioCtx.currentTime,0.01);
+  }
+}
+
+// ================= LAMA =================
+const img=new Image();
+img.src='./DelayLama.png';
+
+img.onload=()=>{
+  const cols=5, rows=6, fw=img.width/cols, fh=img.height/rows;
+  lama.style.width=fw+'px'; lama.style.height=fh+'px';
+
+  let mouseDown=false, lastY=0, idleFrame=0, lastIdleUpdate=0;
+
+  function setFrame(f){
+    const z=f-1, row=z%rows, col=Math.floor(z/rows);
+    lama.style.backgroundPosition=`-${col*fw}px -${(rows-1-row)*fh}px`;
+  }
+
+  function getFrameFromY(y, now){
+    const rect=playArea.getBoundingClientRect();
+    let r=1-((y-rect.top)/rect.height); r=Math.max(0,Math.min(1,r));
+
+    if(mouseDown){
+      if(r<=0.25) return 12-Math.floor(r/0.25*6);
+      else if(r<=0.5) return 18-Math.floor((r-0.25)/0.25*6);
+      else if(r<=0.75) return 24-Math.floor((r-0.5)/0.25*6);
+      else return 30-Math.floor((r-0.75)/0.25*6);
+    } else {
+      if(now - lastIdleUpdate > 250){ idleFrame++; lastIdleUpdate=now; }
+      return (idleFrame%6)+1;
+    }
+  }
+
+  function animate(now){
+    const frame=getFrameFromY(lastY, now);
+    setFrame(frame);
+    requestAnimationFrame(animate);
+  }
+
+  requestAnimationFrame(animate);
+
+  // Event Listeners
+  playArea.addEventListener('mousedown',e=>{
+    mouseDown=true; lastY=e.clientY;
+    startAudio(e.clientX,e.clientY);
+  });
+
+  document.addEventListener('mouseup',()=>{
+    if(mouseDown){ mouseDown=false; stopAudio(); }
+  });
+
+  playArea.addEventListener('mousemove',e=>{
+    if(mouseDown){
+      lastY=e.clientY;
+      updatePitch(e.clientX);
+      updateFormants(e.clientY);
+    }
+  });
+};
+
+// ================= CANVAS =================
+const canvas=document.createElement('canvas');
 playArea.appendChild(canvas);
+const ctx=canvas.getContext('2d');
 
-const ctx = canvas.getContext('2d');
-
-function drawKeyboardStripes() {
-    const numKeys = 13;
-    const whiteKeys = [0,2,4,5,7,9,11,12];
-
-    const totalOctaves = 1;
-    const keyWidth = canvas.width / (numKeys * totalOctaves);
-
-    for(let o=0; o<totalOctaves; o++){
-        for(let i=0; i<numKeys; i++){
-            const x = (o*numKeys + i) * keyWidth;
-            if(whiteKeys.includes(i)){
-                ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            } else {
-                ctx.fillStyle = 'rgba(0,0,0,0.4)';
-            }
-            ctx.fillRect(x, 0, keyWidth, canvas.height);
-        }
-    }
+function resizeCanvas(){
+  const rect=playArea.getBoundingClientRect();
+  canvas.width=rect.width; canvas.height=rect.height;
+  drawKeyboardStripes();
 }
 
-drawKeyboardStripes();
+function drawKeyboardStripes(){
+  const numKeys=13, whiteKeys=[0,2,4,5,7,9,11,12];
+  const keyWidth=canvas.width/numKeys;
+  for(let i=0;i<numKeys;i++){
+    ctx.fillStyle=whiteKeys.includes(i)?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.4)';
+    ctx.fillRect(i*keyWidth,0,keyWidth,canvas.height);
+  }
+}
 
-window.addEventListener('resize', () => {
-    canvas.width = playArea.clientWidth;
-    canvas.height = playArea.clientHeight;
-    drawKeyboardStripes();
-});
+resizeCanvas();
+window.addEventListener('resize',resizeCanvas);
 </script>
 
 </body>
