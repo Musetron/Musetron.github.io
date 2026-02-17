@@ -56,14 +56,21 @@ const vowelFormants={
 const playArea=document.getElementById('playArea');
 const lama=document.getElementById('lama');
 
+// Vibrato Parameter
+const vibratoDepth = 5;   // maximale Abweichung in Hz
+const vibratoSpeed = 6;   // Hz
+let vibratoStartTime = 0;
+let vibratoAmplitude = vibratoDepth; // Dynamisch je nach X-Position
+
 // 🚫 Rechtsklick deaktivieren
 playArea.addEventListener('contextmenu',e=>e.preventDefault());
 
 // ================= AUDIO =================
 function startAudio(x,y){
   if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  if(osc1) return;
   audioCtx.resume();
+
+  if(osc1) stopAudio();
 
   osc1=audioCtx.createOscillator();
   osc2=audioCtx.createOscillator();
@@ -90,18 +97,23 @@ function startAudio(x,y){
 
   updatePitch(x); updateFormants(y);
   gainNode.gain.linearRampToValueAtTime(0.6,audioCtx.currentTime+0.05);
+
+  // Vibrato starten
+  vibratoStartTime = audioCtx.currentTime;
+  updateVibratoAmplitude(x);
+  applyVibrato();
 }
 
 function stopAudio(){
   if(!osc1) return;
-  gainNode.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.05);
+  gainNode.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.02);
   setTimeout(()=>{
-    osc1.stop(); osc2.stop();
-    osc1.disconnect(); osc2.disconnect();
+    if(osc1){ osc1.stop(); osc2.stop(); }
+    if(osc1){ osc1.disconnect(); osc2.disconnect(); }
     filters.forEach(f=>f.disconnect());
     gainNode.disconnect();
     osc1=osc2=null; filters=[];
-  },100);
+  },30);
 }
 
 function updatePitch(x){
@@ -121,6 +133,22 @@ function updateFormants(y){
     const freq=vowelFormants[vowels[l]][i]*(1-t)+vowelFormants[vowels[u]][i]*t;
     filters[i].frequency.setTargetAtTime(freq,audioCtx.currentTime,0.01);
   }
+}
+
+// ================= VIBRATO =================
+function updateVibratoAmplitude(x){
+  const rect = playArea.getBoundingClientRect();
+  const ratio = Math.min(Math.max((x - rect.left)/rect.width,0),1);
+  vibratoAmplitude = vibratoDepth * ratio; // links 0, rechts volle Tiefe
+}
+
+function applyVibrato(){
+  if(!osc1) return;
+  const now = audioCtx.currentTime - vibratoStartTime;
+  const vibratoValue = Math.sin(now * 2 * Math.PI * vibratoSpeed) * vibratoAmplitude;
+  osc1.frequency.value += vibratoValue;
+  osc2.frequency.value += vibratoValue;
+  requestAnimationFrame(applyVibrato);
 }
 
 // ================= LAMA =================
@@ -176,6 +204,7 @@ img.onload=()=>{
       lastY=e.clientY;
       updatePitch(e.clientX);
       updateFormants(e.clientY);
+      updateVibratoAmplitude(e.clientX); // Dynamische Vibrato-Lautstärke
     }
   });
 };
@@ -192,11 +221,24 @@ function resizeCanvas(){
 }
 
 function drawKeyboardStripes(){
-  const numKeys=13, whiteKeys=[0,2,4,5,7,9,11,12];
-  const keyWidth=canvas.width/numKeys;
+  const numKeys = 13;
+  const whiteKeys = [0,2,4,5,7,9,11,12];
+  const keyWidth = canvas.width / numKeys;
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
   for(let i=0;i<numKeys;i++){
-    ctx.fillStyle=whiteKeys.includes(i)?'rgba(255,255,255,0.15)':'rgba(0,0,0,0.4)';
-    ctx.fillRect(i*keyWidth,0,keyWidth,canvas.height);
+    ctx.fillStyle = whiteKeys.includes(i) ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.4)';
+    ctx.fillRect(i*keyWidth, 0, keyWidth, canvas.height);
+
+    if(i<numKeys-1){
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo((i+1)*keyWidth, 0);
+      ctx.lineTo((i+1)*keyWidth, canvas.height);
+      ctx.stroke();
+    }
   }
 }
 
