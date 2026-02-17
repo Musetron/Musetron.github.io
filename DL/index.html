@@ -29,6 +29,16 @@ html, body {
   user-select: none;
   position: relative;
   margin-bottom: 20px;
+  overflow: hidden;
+}
+
+#playArea canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .lama {
@@ -79,7 +89,7 @@ const vowelFormants = {
 const vowels = ['I','E','A','U','O'];
 
 function startTone(x, y) {
-    if(oscillator1) return; // bereits aktiv → nichts tun
+    if(oscillator1) return;
 
     oscillator1 = audioCtx.createOscillator();
     oscillator2 = audioCtx.createOscillator();
@@ -231,7 +241,7 @@ img.onload = () => {
   function startIdle() {
     clearInterval(timer);
     timer = setInterval(() => {
-      if(!mouseDown) { // Idle nur, wenn Maus nicht gedrückt
+      if(!mouseDown) {
         setFrameByIndex(idleFrame + 1);
         idleFrame = (idleFrame + 1) % 6;
       }
@@ -244,7 +254,7 @@ img.onload = () => {
   let lastY = 0;
 
   playArea.addEventListener('mousedown', (e) => {
-    if(e.button !== 0) return; // nur Linksklick
+    if(e.button !== 0) return;
     mouseDown = true;
     lastY = e.clientY;
     if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -268,7 +278,6 @@ img.onload = () => {
         updateFormants(e.clientY,true);
       }
 
-      // Lama Animation
       updateLamaFrame(lastY);
     }
   });
@@ -294,13 +303,48 @@ img.onload = () => {
     setFrameByIndex(frame);
   }
 
-  // Lama-Animation läuft kontinuierlich während Maus gedrückt, auch ohne Bewegung
   setInterval(() => {
     if(mouseDown){
       updateLamaFrame(lastY);
     }
-  }, 1000/12); // 12 FPS
+  }, 1000/12);
 };
+
+// ------------------- Visuelle Noten-Streifen -------------------
+const canvas = document.createElement('canvas');
+canvas.width = playArea.clientWidth;
+canvas.height = playArea.clientHeight;
+playArea.appendChild(canvas);
+
+const ctx = canvas.getContext('2d');
+
+function drawKeyboardStripes() {
+    const numKeys = 13;
+    const whiteKeys = [0,2,4,5,7,9,11,12];
+
+    const totalOctaves = 1;
+    const keyWidth = canvas.width / (numKeys * totalOctaves);
+
+    for(let o=0; o<totalOctaves; o++){
+        for(let i=0; i<numKeys; i++){
+            const x = (o*numKeys + i) * keyWidth;
+            if(whiteKeys.includes(i)){
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            } else {
+                ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            }
+            ctx.fillRect(x, 0, keyWidth, canvas.height);
+        }
+    }
+}
+
+drawKeyboardStripes();
+
+window.addEventListener('resize', () => {
+    canvas.width = playArea.clientWidth;
+    canvas.height = playArea.clientHeight;
+    drawKeyboardStripes();
+});
 </script>
 
 </body>
