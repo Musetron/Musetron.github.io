@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -232,20 +233,26 @@ img.onload=()=>{
     lama.style.backgroundPosition=`-${col*fw}px -${(rows-1-row)*fh}px`;
   }
 
-  function getFrameFromY(y, now){
-    const rect=playArea.getBoundingClientRect();
-    let r=1-((y-rect.top)/rect.height); r=Math.max(0,Math.min(1,r));
+  function getFrameFromY(y, now) {
+  const rect = playArea.getBoundingClientRect();
+  let r = 1 - ((y - rect.top) / rect.height);
+  r = Math.max(0, Math.min(1, r));  // Ensure r is between 0 and 1
 
-    if(mouseDown){
-      if(r<=0.25) return 12-Math.floor(r/0.25*6);
-      else if(r<=0.5) return 18-Math.floor((r-0.25)/0.25*6);
-      else if(r<=0.75) return 24-Math.floor((r-0.5)/0.25*6);
-      else return 30-Math.floor((r-0.75)/0.25*6);
-    } else {
-      if(now - lastIdleUpdate > 250){ idleFrame++; lastIdleUpdate=now; }
-      return (idleFrame%6)+1;
+  if (mouseDown) {
+    // Unterteilung der Frames je nach Position der Maus auf der Y-Achse
+    if (r <= 0.25) return 12 - Math.floor(r / 0.25 * 6);
+    else if (r <= 0.5) return 18 - Math.floor((r - 0.25) / 0.25 * 6);
+    else if (r <= 0.75) return 24 - Math.floor((r - 0.5) / 0.25 * 6);
+    else return 30 - Math.floor((r - 0.75) / 0.25 * 6);
+  } else {
+    // Idle frame (Bewegung wird langsamer)
+    if (now - lastIdleUpdate > 250) {
+      idleFrame++;
+      lastIdleUpdate = now;
     }
+    return (idleFrame % 6) + 1;  // wiederholt die ersten 6 Frames
   }
+}
 
   function animate(now){
     const frame=getFrameFromY(lastY, now);
