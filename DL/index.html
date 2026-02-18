@@ -54,7 +54,7 @@ html, body {
 
 <script>
 // ================= GLOBAL =================
-let audioCtx=null, filters=[];
+let audioCtx=null, osc1=null, osc2=null, gainNode=null, filters=[];
 const C2=65.41, C3=130.81;
 const vowels=['I','E','A','U','O'];
 const vowelFormants={
@@ -69,11 +69,14 @@ const playArea=document.getElementById('playArea');
 const lama=document.getElementById('lama');
 const hallSlider=document.getElementById('hallSlider');
 
-// ================= VIBRATO =================
-const vibratoDepth = 5;
-const vibratoSpeed = 6;
+// Vibrato Parameter
+const vibratoDepth = 5;   // maximale Abweichung in Hz
+const vibratoSpeed = 6;   // Hz
 let vibratoStartTime = 0;
-let vibratoAmplitude = vibratoDepth;
+let vibratoAmplitude = vibratoDepth; // Dynamisch je nach X-Position
+
+// 🚫 Rechtsklick deaktivieren
+playArea.addEventListener('contextmenu',e=>e.preventDefault());
 
 // ================= MASTER HALL / DELAY =================
 let convolver=null, wetGain=null, delayNode=null, feedbackGain=null;
@@ -91,9 +94,8 @@ function createReverbBuffer(ctx,duration=2){
   return buffer;
 }
 
-function setupMasterEffect(gainNode){
+function setupMasterEffect(){
   if(!audioCtx) return;
-
   convolver=audioCtx.createConvolver();
   convolver.buffer=createReverbBuffer(audioCtx,2);
 
@@ -106,28 +108,37 @@ function setupMasterEffect(gainNode){
   wetGain=audioCtx.createGain();
   wetGain.gain.value=parseFloat(hallSlider.value);
 
+  // Feedback Loop
   delayNode.connect(feedbackGain);
   feedbackGain.connect(delayNode);
 
+  // Convolver + Delay -> wetGain -> Destination
   delayNode.connect(wetGain);
   convolver.connect(wetGain);
   wetGain.connect(audioCtx.destination);
 
+  // Slider live steuern
   hallSlider.addEventListener('input',()=>{ if(wetGain) wetGain.gain.value=parseFloat(hallSlider.value); });
 
+  // GainNode -> Effekt
   if(gainNode){
     gainNode.connect(convolver);
     gainNode.connect(delayNode);
   }
 }
 
-// ================= AUDIO + PATTERN =================
-// Pattern: Zeitoffsets in Sekunden
-const pattern = [0,0.25,0.5,0.75,1,1.25,1.5,1.75,2];
-
-function playPattern(x,y){
+// ================= AUDIO =================
+function startAudio(x,y){
   if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   audioCtx.resume();
+
+  if(osc1) stopAudio();
+
+  osc1=audioCtx.createOscillator();
+  osc2=audioCtx.createOscillator();
+  osc1.type=osc2.type='sawtooth'; osc2.detune.value=3;
+
+  gainNode=audioCtx.createGain(); gainNode.gain.value=0;
 
   filters=[];
   for(let i=0;i<3;i++){
@@ -135,52 +146,81 @@ function playPattern(x,y){
     filters.push(f);
   }
 
-  const now = audioCtx.currentTime;
+  const merger=audioCtx.createGain();
+  osc1.connect(merger); osc2.connect(merger);
 
-  pattern.forEach((offset)=>{
-    const osc1 = audioCtx.createOscillator();
-    const osc2 = audioCtx.createOscillator();
-    osc1.type=osc2.type='sawtooth'; osc2.detune.value=3;
-
-    const gainNode = audioCtx.createGain();
-    gainNode.gain.value=0.5;
-
-    const merger=audioCtx.createGain();
-    osc1.connect(merger); osc2.connect(merger);
-    filters.forEach(f=>{ merger.connect(f); f.connect(gainNode); });
-
-    gainNode.connect(audioCtx.destination);
-
-    // Hall/Delay
-    setupMasterEffect(gainNode);
-
-    // Pitch + Formants für Lama
-    const rect=playArea.getBoundingClientRect();
-    const ratioX=Math.min(Math.max((x-rect.left)/rect.width,0),1);
-    const freq=C2+(C3-C2)*ratioX;
-    osc1.frequency.setValueAtTime(freq, now+offset);
-    osc2.frequency.setValueAtTime(freq, now+offset);
-
-    const ratioY=Math.min(Math.max((y-rect.top)/rect.height,0),1);
-    const idx=ratioY*(vowels.length-1);
-    const l=Math.floor(idx), u=Math.min(l+1,vowels.length-1);
-    const t=idx-l;
-    for(let i=0;i<3;i++){
-      const fval=vowelFormants[vowels[l]][i]*(1-t)+vowelFormants[vowels[u]][i]*t;
-      filters[i].frequency.setTargetAtTime(fval, now+offset, 0.01);
-    }
-
-    // Start/Stop
-    osc1.start(now+offset);
-    osc2.start(now+offset);
-    osc1.stop(now+offset+0.15);
-    osc2.stop(now+offset+0.15);
+  filters.forEach(f=>{
+    merger.connect(f);
+    f.connect(gainNode);
   });
+
+  gainNode.connect(audioCtx.destination);
+
+  // Master Hall/Delay einrichten
+  setupMasterEffect();
+
+  osc1.start(); osc2.start();
+
+  updatePitch(x); updateFormants(y);
+  gainNode.gain.linearRampToValueAtTime(0.6,audioCtx.currentTime+0.05);
+
+  // Vibrato starten
+  vibratoStartTime = audioCtx.currentTime;
+  updateVibratoAmplitude(x);
+  applyVibrato();
+}
+
+function stopAudio(){
+  if(!osc1) return;
+  gainNode.gain.linearRampToValueAtTime(0,audioCtx.currentTime+0.02);
+  setTimeout(()=>{
+    if(osc1){ osc1.stop(); osc2.stop(); }
+    if(osc1){ osc1.disconnect(); osc2.disconnect(); }
+    filters.forEach(f=>f.disconnect());
+    gainNode.disconnect();
+    osc1=osc2=null; filters=[];
+  },30);
+}
+
+function updatePitch(x){
+  const rect=playArea.getBoundingClientRect();
+  const ratio=Math.min(Math.max((x-rect.left)/rect.width,0),1);
+  const freq=C2+(C3-C2)*ratio;
+  if(osc1){ osc1.frequency.value=freq; osc2.frequency.value=freq; }
+}
+
+function updateFormants(y){
+  const rect=playArea.getBoundingClientRect();
+  const ratio=Math.min(Math.max((y-rect.top)/rect.height,0),1);
+  const idx=ratio*(vowels.length-1);
+  const l=Math.floor(idx), u=Math.min(l+1,vowels.length-1);
+  const t=idx-l;
+  for(let i=0;i<3;i++){
+    const freq=vowelFormants[vowels[l]][i]*(1-t)+vowelFormants[vowels[u]][i]*t;
+    filters[i].frequency.setTargetAtTime(freq,audioCtx.currentTime,0.01);
+  }
+}
+
+// ================= VIBRATO =================
+function updateVibratoAmplitude(x){
+  const rect = playArea.getBoundingClientRect();
+  const ratio = Math.min(Math.max((x - rect.left)/rect.width,0),1);
+  vibratoAmplitude = vibratoDepth * ratio;
+}
+
+function applyVibrato(){
+  if(!osc1) return;
+  const now = audioCtx.currentTime - vibratoStartTime;
+  const vibratoValue = Math.sin(now * 2 * Math.PI * vibratoSpeed) * vibratoAmplitude;
+  osc1.frequency.value += vibratoValue;
+  osc2.frequency.value += vibratoValue;
+  requestAnimationFrame(applyVibrato);
 }
 
 // ================= LAMA =================
 const img=new Image();
 img.src='./DelayLama.png';
+
 img.onload=()=>{
   const cols=5, rows=6, fw=img.width/cols, fh=img.height/rows;
   lama.style.width=fw+'px'; lama.style.height=fh+'px';
@@ -217,11 +257,21 @@ img.onload=()=>{
 
   playArea.addEventListener('mousedown',e=>{
     mouseDown=true; lastY=e.clientY;
-    playPattern(e.clientX,e.clientY);
+    startAudio(e.clientX,e.clientY);
   });
 
-  document.addEventListener('mouseup',()=>{ mouseDown=false; });
-  playArea.addEventListener('mousemove',e=>{ if(mouseDown) lastY=e.clientY; });
+  document.addEventListener('mouseup',()=>{
+    if(mouseDown){ mouseDown=false; stopAudio(); }
+  });
+
+  playArea.addEventListener('mousemove',e=>{
+    if(mouseDown){
+      lastY=e.clientY;
+      updatePitch(e.clientX);
+      updateFormants(e.clientY);
+      updateVibratoAmplitude(e.clientX);
+    }
+  });
 };
 
 // ================= CANVAS =================
