@@ -2,221 +2,252 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>DJ Vinyl</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <style>
-body { margin:0; background:#111; font-family:sans-serif; user-select:none; overflow:hidden;}
-canvas { display:block; margin:0 auto; background:#222; }
-#ui { position:absolute; bottom:10px; width:100%; display:flex; justify-content:center; gap:20px;}
-button { padding:10px 20px; font-size:16px; background:#333; color:#fff; border:2px solid #ccc; cursor:pointer;}
-button.active { background:#0f0; color:#000;}
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  margin: 0;
+  background: #1e1e1e;
+  color: white;
+  overflow: hidden;
+  touch-action: none;
+}
+
+canvas {
+  border: 1px solid #444;
+  display: block;
+  margin: 20px auto;
+  background: #000;
+  touch-action: none;
+}
+
+button {
+  padding: 10px 20px;
+  font-size: 16px;
+  background-color: #00aa00;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-top: 20px;
+}
+
+button:hover {
+  background-color: #00cc00;
+}
 </style>
 </head>
 <body>
 
-<input type="file" id="fileInput" accept=".wav" style="display:none">
-<canvas id="canvas" width="800" height="600"></canvas>
-<div id="ui">
-  <button id="loadBtn">Load</button>
-  <button id="fadeBtn">Fade</button>
-  <button id="invertBtn">Normal</button>
-</div>
+<button id="loadAudioBtn">Audio laden</button>
+<input type="file" id="audioFile" accept="audio/*" style="display:none">
+
+<canvas id="waveform" width="800" height="300"></canvas>
 
 <script>
-const canvas = document.getElementById('canvas');
+const audioInput = document.getElementById('audioFile');
+const loadAudioBtn = document.getElementById('loadAudioBtn');
+const canvas = document.getElementById('waveform');
 const ctx = canvas.getContext('2d');
-const loadBtn = document.getElementById('loadBtn');
-const fadeBtn = document.getElementById('fadeBtn');
-const invertBtn = document.getElementById('invertBtn');
-const fileInput = document.getElementById('fileInput');
 
-let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-let gainNode = audioCtx.createGain();
-gainNode.connect(audioCtx.destination);
+let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let analyser = audioContext.createAnalyser();
+analyser.fftSize = 2048;
+let dataArray = new Uint8Array(analyser.fftSize);
 
 let audioBuffer = null;
-let currentSamplePos = 0;
-let rotation = 0;
-let rotationSpeed = 0;
-let friction = 0.98;
-let autoplay = true;
-let loop = true;
-let fadeSpeed = 0.7;
-let volume = 1.0;
-let reverseFadeLogic = false;
-let fadeActive = false;
-let paused = false;
+let source = null;
 
-let diskImg = new Image();
-diskImg.src = 'https://i.ibb.co/yBh6HHV1/1763840607874.png';
+// Marker
+let markerY = canvas.height / 2;
+const centerY = canvas.height / 2;
 
-let mouseDown = false;
-let lastMouseX = 0;
-let needleX = 0;
-let manualControl = false; // NEU: Kontrolle durch Scratchen
+// Flags
+let upPressed = false;
+let downPressed = false;
+let numEnterDown = false;
 
-// --- WAV Laden ---
-loadBtn.addEventListener('click', ()=> {
-    fileInput.click();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-});
-fileInput.addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const arrayBuffer = await file.arrayBuffer();
-    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-    currentSamplePos = 0;
-    rotation = 0;
+// Button
+loadAudioBtn.addEventListener('click', () => audioInput.click());
+
+// Audio laden
+audioInput.addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+
+  const arrayBuffer = await file.arrayBuffer();
+  audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 });
 
-// --- Buttons ---
-fadeBtn.addEventListener('click', ()=> fadeActive = !fadeActive);
-invertBtn.addEventListener('click', ()=> reverseFadeLogic = !reverseFadeLogic);
-
-// --- Maus Scratching ---
-canvas.addEventListener('mousedown', e => { 
-    mouseDown = true; 
-    manualControl = true; // <<< Scratch aktiv
-    lastMouseX = e.offsetX; 
-});
-canvas.addEventListener('mouseup', e => { 
-    mouseDown = false; 
-    // sanfter Übergang zurück zu Auto
-    setTimeout(()=>manualControl=false, 300); 
-});
-canvas.addEventListener('mouseleave', e => { 
-    mouseDown = false; 
-    setTimeout(()=>manualControl=false, 300); 
-});
-canvas.addEventListener('mousemove', e => {
-    if(mouseDown && audioBuffer){
-        const dx = e.offsetX - lastMouseX;
-        rotationSpeed = dx * 5;
-        lastMouseX = e.offsetX;
-        currentSamplePos = ((rotation % 360)/360) * audioBuffer.length;
-    }
+// KEYBOARD SUPPORT
+window.addEventListener('keydown', e => {
+  if (e.code === 'NumpadEnter' && audioBuffer && !numEnterDown) {
+    e.preventDefault();
+    numEnterDown = true;
+    playFromStart();
+  }
+  if (e.code === 'ArrowUp') upPressed = true;
+  if (e.code === 'ArrowDown') downPressed = true;
 });
 
-// --- Gamepad ---
-let gamepadIndex = null;
-let zAxis = 0.0;
-window.addEventListener("gamepadconnected", e=>gamepadIndex=e.gamepad.index);
-window.addEventListener("gamepaddisconnected", e=>gamepadIndex=null);
+window.addEventListener('keyup', e => {
+  if (e.code === 'NumpadEnter' && source) {
+    stopAudio();
+    numEnterDown = false;
+  }
+  if (e.code === 'ArrowUp') upPressed = false;
+  if (e.code === 'ArrowDown') downPressed = false;
 
-// --- Audio ScriptProcessorNode ---
-let scriptNode = audioCtx.createScriptProcessor(1024, 1, 1);
-scriptNode.onaudioprocess = function(e){
-    if(!audioBuffer || paused) return;
-    const outData = e.outputBuffer.getChannelData(0);
-    const channelData = audioBuffer.getChannelData(0);
+  if (e.code === 'ArrowUp' || e.code === 'ArrowDown') markerY = centerY;
+});
 
-    let normalSpeed = audioBuffer.length / audioBuffer.duration / audioCtx.sampleRate;
-    let rotationSpeedNormal = 360 / (audioBuffer.duration*60);
-    let speed = normalSpeed * (rotationSpeed / rotationSpeedNormal);
+// =====================
+// MOBILE MULTITOUCH SMOOTH
+// =====================
 
-    for(let i=0;i<outData.length;i++){
-        let idx = Math.floor(currentSamplePos);
-        if(loop) idx = ((idx % channelData.length)+channelData.length)%channelData.length;
-        else idx = Math.min(idx, channelData.length-1);
-        outData[i] = channelData[idx]*volume;
-        currentSamplePos += speed;
-    }
+function updateTouches(touches) {
+  const rect = canvas.getBoundingClientRect();
 
-    // Fade Logic
-    let targetVolume = (paused || fadeActive) ? (reverseFadeLogic?1:0) : (reverseFadeLogic?0:1);
-    volume += (targetVolume - volume) * fadeSpeed;
-};
-scriptNode.connect(gainNode);
+  // Reset flags
+  upPressed = false;
+  downPressed = false;
+  let rightTouched = false;
 
-// --- Draw ---
-function draw(){
-    const sw = canvas.width;
-    const sh = canvas.height;
-    ctx.fillStyle="#111";
-    ctx.fillRect(0,0,sw,sh);
+  for (let i = 0; i < touches.length; i++) {
+    const touch = touches[i];
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
 
-    const waveformH = sh*0.2;
-    const midY = waveformH/2;
-    if(audioBuffer){
-        const data = audioBuffer.getChannelData(0);
-        const factor = Math.max(1, data.length/sw);
-        ctx.strokeStyle="#ccc";
-        for(let x=0;x<sw;x++){
-            const idx = Math.floor(x*factor);
-            const sample = data[idx]*volume;
-            const h = sample*(waveformH/2);
-            ctx.beginPath();
-            ctx.moveTo(x, midY-h);
-            ctx.lineTo(x, midY+h);
-            ctx.stroke();
-        }
-    }
+    if (x > canvas.width / 2) {
+      rightTouched = true;
+    } else {
+      // Marker folgt Finger
+      markerY = y;
+      if (markerY < 0) markerY = 0;
+      if (markerY > canvas.height) markerY = canvas.height;
+    }
+  }
 
-    // Nadel folgt Audio-Position
-    if(audioBuffer){
-        let pos = currentSamplePos;
-        if(loop) pos = ((pos % audioBuffer.length) + audioBuffer.length) % audioBuffer.length;
-        needleX = pos / audioBuffer.length * sw;
-    } else {
-        needleX = 0;
-    }
-    ctx.strokeStyle="red";
-    ctx.lineWidth=2;
-    ctx.beginPath();
-    ctx.moveTo(needleX,0);
-    ctx.lineTo(needleX,waveformH);
-    ctx.stroke();
+  // Rechts → Play starten
+  if (rightTouched && !numEnterDown) {
+    numEnterDown = true;
+    if (!source) playFromStart();
+  }
 
-    // Disk
-    const centerX = sw/2;
-    const centerY = sh*0.55;
-    const size = Math.min(sw,sh)*0.6;
-    ctx.save();
-    ctx.translate(centerX,centerY);
-    ctx.rotate(rotation*Math.PI/180);
-    ctx.drawImage(diskImg,-size/2,-size/2,size,size);
-    ctx.restore();
-
-    // Rotation
-    if(!paused){
-        if(manualControl){
-            // Scratch steuert Rotation
-            rotation += rotationSpeed;
-            rotationSpeed *= 0.9; // etwas mehr Dämpfung für Kontrolle
-        } else {
-            // Auto-Loop / Gamepad
-            if(gamepadIndex!==null && Math.abs(zAxis)>0.01){
-                rotationSpeed = zAxis * 150;
-            } else if(autoplay && audioBuffer){
-                rotationSpeed = 360 / (audioBuffer.duration * 60);
-            }
-            rotation += rotationSpeed;
-            rotationSpeed *= friction;
-        }
-    }
-
-    // Buttons Feedback
-    fadeBtn.classList.toggle('active', fadeActive);
-    invertBtn.classList.toggle('active', reverseFadeLogic);
-
-    requestAnimationFrame(draw);
+  // Keine Finger rechts mehr → stop?
+  if (!rightTouched && numEnterDown && source) {
+    stopAudio();
+    numEnterDown = false;
+  }
 }
 
-// --- Gamepad Polling ---
-function pollGamepad(){
-    if(gamepadIndex!==null){
-        const gp = navigator.getGamepads()[gamepadIndex];
-        if(gp){
-            zAxis = gp.axes[2]; // Z-Achse
-            paused = gp.buttons[0].pressed; // Button A
-            fadeActive = gp.buttons[4].pressed; // Button Y
-        }
-    }
-    requestAnimationFrame(pollGamepad);
+canvas.addEventListener("touchstart", e => {
+  e.preventDefault();
+  if (audioContext.state === 'suspended') audioContext.resume();
+  updateTouches(e.touches);
+}, { passive: false });
+
+canvas.addEventListener("touchmove", e => {
+  e.preventDefault();
+  updateTouches(e.touches);
+}, { passive: false });
+
+canvas.addEventListener("touchend", e => {
+  e.preventDefault();
+  if (e.touches.length === 0) {
+    markerY = centerY;
+    upPressed = false;
+    downPressed = false;
+    if (source) stopAudio();
+    numEnterDown = false;
+  } else {
+    updateTouches(e.touches);
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchcancel", e => {
+  e.preventDefault();
+  if (source) stopAudio();
+  numEnterDown = false;
+  markerY = centerY;
+});
+
+// Audio abspielen
+function playFromStart() {
+  if (!audioBuffer) return;
+  stopAudio();
+  source = audioContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.loop = false;
+  source.connect(analyser);
+  analyser.connect(audioContext.destination);
+  source.playbackRate.value = 1.0;
+  source.start(0);
+}
+
+// Stop
+function stopAudio() {
+  if (source) {
+    try { source.stop(); } catch(e) {}
+    source.disconnect();
+    source = null;
+  }
+}
+
+// DRAW LOOP
+function draw() {
+  requestAnimationFrame(draw);
+
+  if (analyser && source) analyser.getByteTimeDomainData(dataArray);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Waveform rechts
+  ctx.fillStyle = '#000';
+  ctx.fillRect(50, 0, canvas.width - 50, canvas.height);
+
+  if (analyser && source) {
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#00ff00';
+    ctx.beginPath();
+    const sliceWidth = (canvas.width - 50) / dataArray.length;
+    let x = 50;
+    for (let i = 0; i < dataArray.length; i++) {
+      const v = dataArray[i] / 128.0;
+      const y = v * canvas.height / 2;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      x += sliceWidth;
+    }
+    ctx.stroke();
+  }
+
+  // Marker links → Pitch steuern
+  if (source) {
+    const normalized = (centerY - markerY) / (canvas.height / 2);
+    const semitones = normalized * 30;
+    source.playbackRate.value = Math.pow(2, semitones / 30);
+  }
+
+  // Skala links
+  ctx.fillStyle = '#222';
+  ctx.fillRect(0, 0, 50, canvas.height);
+
+  // Marker
+  ctx.fillStyle = '#ff0000';
+  ctx.fillRect(0, markerY - 5, 50, 10);
+
+  // Mittellinie
+  ctx.strokeStyle = '#888';
+  ctx.beginPath();
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(50, centerY);
+  ctx.stroke();
 }
 
 draw();
-pollGamepad();
 </script>
-
 </body>
 </html>
