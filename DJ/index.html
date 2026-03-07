@@ -45,8 +45,8 @@ color:white;
 }
 
 .knob{
-width:60px;
-height:60px;
+width:80px;
+height:80px;
 border-radius:50%;
 background:#444;
 cursor:grab;
@@ -54,6 +54,8 @@ display:flex;
 align-items:center;
 justify-content:center;
 font-weight:bold;
+font-size:14px;
+touch-action:none;
 }
 
 .knob-label{
@@ -83,12 +85,12 @@ input[type=file]{display:none;}
 </div>
 
 <div class="knob-container">
-<div class="knob" id="reverbKnobInner">0%</div>
+<div class="knob" id="reverbKnobInner">30%</div>
 <div class="knob-label">Reverb</div>
 </div>
 
 <div class="knob-container">
-<div class="knob" id="delayKnobInner">0%</div>
+<div class="knob" id="delayKnobInner">25%</div>
 <div class="knob-label">Delay</div>
 </div>
 
@@ -116,13 +118,13 @@ const convolver=audioContext.createConvolver();
 convolver.buffer=createReverbBuffer(audioContext,2);
 
 const delayNode=audioContext.createDelay(5.0);
-delayNode.delayTime.value=0.0;
+delayNode.delayTime.value=0.25;
 
 const feedbackGain=audioContext.createGain();
-feedbackGain.gain.value=0.0;
+feedbackGain.gain.value=0.3;
 
 const wetGain=audioContext.createGain();
-wetGain.gain.value=0.0;
+wetGain.gain.value=0.3;
 
 delayNode.connect(feedbackGain);
 feedbackGain.connect(delayNode);
@@ -169,7 +171,6 @@ audioBuffers=[];
 for(const file of this.files){
 
 const buffer=await file.arrayBuffer();
-
 audioBuffers.push(await audioContext.decodeAudioData(buffer));
 
 }
@@ -181,7 +182,6 @@ const totalNotes=endNote-startNote+1;
 for(let i=0;i<totalNotes;i++){
 
 const sampleIndex=Math.floor(i*audioBuffers.length/totalNotes);
-
 noteMap[startNote+i]=sampleIndex;
 
 }
@@ -189,41 +189,29 @@ noteMap[startNote+i]=sampleIndex;
 });
 
 if(navigator.requestMIDIAccess){
-
 navigator.requestMIDIAccess().then(onMIDISuccess,onMIDIFail);
-
 }
 
 function onMIDISuccess(midiAccess){
-
 for(let input of midiAccess.inputs.values()){
-
 input.onmidimessage=handleMIDI;
-
 }
-
 }
 
 function onMIDIFail(){
-
 console.warn("MIDI Zugriff fehlgeschlagen");
-
 }
 
 function handleMIDI(msg){
 
 const [status,data1,data2]=msg.data;
-
 const cmd=status>>4;
 
 if(cmd===9 && data2>0){
 
 const idx=noteMap[data1];
-
 if(idx!==undefined){
-
 selectedSampleIndex=idx;
-
 }
 
 }
@@ -233,15 +221,11 @@ else if(cmd===11){
 if(data1===64){
 
 if(data2>=126){
-
 sustainDown=true;
 triggerSample();
-
 }else{
-
 sustainDown=false;
 stopSample();
-
 }
 
 }
@@ -253,7 +237,6 @@ else if(cmd===14){
 const bend=((data2<<7)|data1)-8192;
 
 upPressed=bend>200;
-
 downPressed=bend<-200;
 
 }
@@ -275,11 +258,8 @@ src.start();
 activeSources.push(src);
 
 src.onended=()=>{
-
 const i=activeSources.indexOf(src);
-
 if(i!==-1) activeSources.splice(i,1);
-
 };
 
 }
@@ -287,9 +267,7 @@ if(i!==-1) activeSources.splice(i,1);
 function stopSample(){
 
 activeSources.forEach(src=>{
-
 try{src.stop();}catch{}
-
 });
 
 activeSources=[];
@@ -305,49 +283,38 @@ ctx.clearRect(0,0,canvas.width,canvas.height);
 const speed=25;
 
 if(upPressed) markerY-=speed*(markerY/canvas.height);
-
 if(downPressed) markerY+=speed*((canvas.height-markerY)/canvas.height);
 
 if(!upPressed && !downPressed) markerY+=(centerY-markerY)*0.25;
 
 if(markerY<0) markerY=0;
-
 if(markerY>canvas.height) markerY=canvas.height;
 
 const normalized=(centerY-markerY)/(canvas.height/2);
-
 const pitch=Math.pow(2,normalized*24/12);
 
 activeSources.forEach(src=>{
-
 src.playbackRate.value=pitch;
-
 });
 
 analyser.getByteTimeDomainData(dataArray);
 
 ctx.fillStyle='#000';
-
 ctx.fillRect(50,0,canvas.width-50,canvas.height);
 
 ctx.beginPath();
-
 ctx.lineWidth=2;
-
 ctx.strokeStyle='#00ff00';
 
 let sliceWidth=(canvas.width-50)/dataArray.length;
-
 let x=50;
 
 for(let i=0;i<dataArray.length;i++){
 
 let v=dataArray[i]/128;
-
 let y=v*canvas.height/2;
 
 if(i===0) ctx.moveTo(x,y);
-
 else ctx.lineTo(x,y);
 
 x+=sliceWidth;
@@ -357,21 +324,16 @@ x+=sliceWidth;
 ctx.stroke();
 
 ctx.fillStyle='#222';
-
 ctx.fillRect(0,0,50,canvas.height);
 
 ctx.fillStyle='#ff0000';
-
 ctx.fillRect(0,markerY-5,50,10);
 
 ctx.strokeStyle='#888';
 
 ctx.beginPath();
-
 ctx.moveTo(0,centerY);
-
 ctx.lineTo(50,centerY);
-
 ctx.stroke();
 
 }
@@ -380,25 +342,26 @@ draw();
 
 function createKnob(knobElement,initialValue,callback){
 
-let isDragging=false;
-
 let value=initialValue;
+let dragging=false;
+let lastY=0;
 
 knobElement.textContent=Math.round(value*100)+'%';
 
-knobElement.addEventListener('mousedown',e=>{
-
-isDragging=true;
-
-e.preventDefault();
-
+knobElement.addEventListener("pointerdown",e=>{
+dragging=true;
+lastY=e.clientY;
+knobElement.setPointerCapture(e.pointerId);
 });
 
-window.addEventListener('mousemove',e=>{
+knobElement.addEventListener("pointermove",e=>{
 
-if(!isDragging) return;
+if(!dragging) return;
 
-value=Math.min(Math.max(value-e.movementY/100,0),1);
+let dy=e.clientY-lastY;
+lastY=e.clientY;
+
+value=Math.min(Math.max(value-dy/150,0),1);
 
 knobElement.textContent=Math.round(value*100)+'%';
 
@@ -406,38 +369,28 @@ callback(value);
 
 });
 
-window.addEventListener('mouseup',()=>{
-
-if(isDragging) isDragging=false;
-
-});
+knobElement.addEventListener("pointerup",()=>dragging=false);
+knobElement.addEventListener("pointercancel",()=>dragging=false);
 
 callback(value);
 
 }
 
 createKnob(document.getElementById('volumeKnob'),0.5,v=>{
-
 masterGain.gain.value=v;
-
 });
 
 createKnob(document.getElementById('reverbKnobInner'),0.3,v=>{
-
 wetGain.gain.value=v;
-
 });
 
 createKnob(document.getElementById('delayKnobInner'),0.25,v=>{
-
 delayNode.delayTime.value=v;
-
 });
 
 function createReverbBuffer(ctx,duration=2){
 
 const sr=ctx.sampleRate;
-
 const len=sr*duration;
 
 const buf=ctx.createBuffer(2,len,sr);
@@ -447,9 +400,7 @@ for(let ch=0;ch<2;ch++){
 const data=buf.getChannelData(ch);
 
 for(let i=0;i<len;i++){
-
 data[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);
-
 }
 
 }
