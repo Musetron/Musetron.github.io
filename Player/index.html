@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Player</title>
+<title>Orange Player</title> 
 <style>
 body {
   font-family: 'Segoe UI', sans-serif;
@@ -45,7 +45,7 @@ video {
   transform-origin: center center;
   transition: transform 0.1s linear;
   touch-action: none;
-  pointer-events: none; /* direkte Steuerung deaktivieren */
+  pointer-events: none;
 }
 #video-controls {
   display: flex;
@@ -102,11 +102,33 @@ input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius
 .value-display { font-weight: 500; }
 .section-title { font-weight: 500; margin-bottom: 6px; font-size: 1.1rem; color:#ff6b6f;}
 small { color: #aaa; }
+
+/* Vollbild randlos für Handy */
+video:-webkit-full-screen {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 !important;
+}
+video:-moz-full-screen {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 !important;
+}
+video:-ms-fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 !important;
+}
+video:fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 !important;
+}
 </style>
 </head>
 <body>
 
-<h2>Player</h2>
+<h2>Orange Player</h2> 
 <input type="file" id="fileInput" accept="video/*">
 
 <div id="video-container">
@@ -116,6 +138,7 @@ small { color: #aaa; }
     <button id="playBtn">Play</button>
     <button id="pauseBtn">Pause</button>
     <button id="fullscreenBtn">Fullscreen</button>
+    <button id="exitFullscreenBtn">Zurück</button>
   </div>
 
   <canvas id="timeline"></canvas>
@@ -172,6 +195,7 @@ const ctx = timeline.getContext('2d');
 const playBtn = document.getElementById('playBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const fullscreenBtn = document.getElementById('fullscreenBtn');
+const exitFullscreenBtn = document.getElementById('exitFullscreenBtn');
 
 // Audio Nodes
 let audioCtx, sourceNode, dryGain, wetGain, convolverNode;
@@ -337,10 +361,22 @@ video.addEventListener('touchend', e=>{
 // Button Events
 playBtn.addEventListener('click', ()=>{ video.play(); });
 pauseBtn.addEventListener('click', ()=>{ video.pause(); });
-fullscreenBtn.addEventListener('click', ()=>{
-  if(video.requestFullscreen) video.requestFullscreen();
-  else if(video.webkitRequestFullscreen) video.webkitRequestFullscreen();
-  else if(video.msRequestFullscreen) video.msRequestFullscreen();
+
+// Fullscreen
+fullscreenBtn.addEventListener('click', async ()=>{
+  if(video.requestFullscreen) await video.requestFullscreen();
+  else if(video.webkitRequestFullscreen) await video.webkitRequestFullscreen();
+  else if(video.msRequestFullscreen) await video.msRequestFullscreen();
+  
+  // Randlos und Portrait/Landscape lock auf Handy
+  try { await screen.orientation.lock('landscape'); } catch(e){ /* fallback */ }
+});
+exitFullscreenBtn.addEventListener('click', async ()=>{
+  if(document.exitFullscreen) await document.exitFullscreen();
+  else if(document.webkitExitFullscreen) await document.webkitExitFullscreen();
+  else if(document.msExitFullscreen) await document.msExitFullscreen();
+  
+  try { await screen.orientation.unlock(); } catch(e){ /* fallback */ }
 });
 </script>
 </body>
