@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>CDJ-Style Video Player Modern mit Touch Zoom</title>
+<title>Player</title>
 <style>
 body {
   font-family: 'Segoe UI', sans-serif;
@@ -44,8 +44,27 @@ video {
   filter: brightness(1) saturate(1) blur(0px) contrast(1);
   transform-origin: center center;
   transition: transform 0.1s linear;
-  touch-action: none; /* notwendig für Pinch-Zoom */
+  touch-action: none;
+  pointer-events: none; /* direkte Steuerung deaktivieren */
 }
+#video-controls {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+#video-controls button {
+  background: #ff3b3f;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+#video-controls button:hover { background: #ff6b6f; }
+
 #timeline {
   margin-top: 12px;
   width: 100%;
@@ -91,7 +110,14 @@ small { color: #aaa; }
 <input type="file" id="fileInput" accept="video/*">
 
 <div id="video-container">
-  <video id="video" controls></video>
+  <video id="video"></video>
+
+  <div id="video-controls">
+    <button id="playBtn">Play</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="fullscreenBtn">Fullscreen</button>
+  </div>
+
   <canvas id="timeline"></canvas>
 </div>
 
@@ -142,6 +168,10 @@ const video = document.getElementById('video');
 const fileInput = document.getElementById('fileInput');
 const timeline = document.getElementById('timeline');
 const ctx = timeline.getContext('2d');
+
+const playBtn = document.getElementById('playBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const fullscreenBtn = document.getElementById('fullscreenBtn');
 
 // Audio Nodes
 let audioCtx, sourceNode, dryGain, wetGain, convolverNode;
@@ -204,7 +234,7 @@ fileInput.addEventListener('change', async () => {
   } catch(e){console.warn("Audio konnte nicht decodiert werden.", e);}
 });
 
-// Canvas
+// Timeline
 video.addEventListener('loadedmetadata', () => {
   timeline.width = timeline.clientWidth;
   timeline.height = timeline.clientHeight;
@@ -263,7 +293,7 @@ brightnessSlider.addEventListener('input',()=>{ const v=parseFloat(brightnessSli
 saturationSlider.addEventListener('input',()=>{ const v=parseFloat(saturationSlider.value); saturationValue.textContent=v.toFixed(2); updateVideoFilter(); });
 blurSlider.addEventListener('input',()=>{ const v=parseFloat(blurSlider.value); blurValue.textContent=v.toFixed(1)+'px'; updateVideoFilter(); });
 
-// Video Filter + Blur/Schärfe Crossfader
+// Video Filter
 function updateVideoFilter(){
   const b = parseFloat(brightnessSlider.value);
   const s = parseFloat(saturationSlider.value);
@@ -272,12 +302,12 @@ function updateVideoFilter(){
   let blurPx = 0;
   let contrastVal = 1;
 
-  if(blurVal < 0){ // links = Blur
+  if(blurVal < 0){ 
     blurPx = Math.abs(blurVal);
     contrastVal = 1;
-  } else if(blurVal > 0){ // rechts = Schärfe
+  } else if(blurVal > 0){ 
     blurPx = 0;
-    contrastVal = 1 + blurVal/10; // leichte Schärfe
+    contrastVal = 1 + blurVal/10;
   }
 
   video.style.filter = `brightness(${b}) saturate(${s}) blur(${blurPx}px) contrast(${contrastVal})`;
@@ -302,6 +332,15 @@ video.addEventListener('touchend', e=>{
     currentScale = transform ? parseFloat(transform[1]) : 1;
     initialDistance = 0;
   }
+});
+
+// Button Events
+playBtn.addEventListener('click', ()=>{ video.play(); });
+pauseBtn.addEventListener('click', ()=>{ video.pause(); });
+fullscreenBtn.addEventListener('click', ()=>{
+  if(video.requestFullscreen) video.requestFullscreen();
+  else if(video.webkitRequestFullscreen) video.webkitRequestFullscreen();
+  else if(video.msRequestFullscreen) video.msRequestFullscreen();
 });
 </script>
 </body>
