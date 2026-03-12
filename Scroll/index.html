@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scroll Vinyl</title>
+<style>
+html, body { margin:0; padding:0; overflow:hidden; width:100%; height:100%; background:#111; }
+canvas { display:block; width:100%; height:100%; }
+
+.wheel-container{
+  position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:260px; height:260px; pointer-events:none;
+}
+.wheel{
+  width:100%; height:100%; border:10px solid #555; border-radius:50%;
+  position:relative; box-shadow:0 0 20px rgba(0,0,0,0.6);
+}
+.spoke{
+  position:absolute; left:50%; top:50%; width:8px; height:110px;
+  background:#00ffc8; transform-origin:center bottom; transform:translate(-50%,-100%);
+}
+.spoke:nth-child(2){ transform:translate(-50%,-100%) rotate(120deg);}
+.spoke:nth-child(3){ transform:translate(-50%,-100%) rotate(240deg);}
+
+/* Volume Fader */
+#volumeContainer{
+  position:fixed; bottom:40px; left:50%; transform:translateX(-50%);
+  width:300px; height:20px; background:#333; border-radius:10px; cursor:pointer;
+}
+#volumeLevel{
+  width:50%; height:100%; background:#00ffc8; border-radius:10px;
+}
+</style>
+</head>
+<body>
+
+<canvas id="touchArea"></canvas>
+<div class="wheel-container">
+  <div class="wheel" id="wheel">
+    <div class="spoke"></div>
+    <div class="spoke"></div>
+    <div class="spoke"></div>
+  </div>
+</div>
+
+<!-- Horizontal Volume Fader -->
+<div id="volumeContainer">
+  <div id="volumeLevel"></div>
+</div>
+
+<script>
+const canvas = document.getElementById('touchArea');
+let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+// === Sawtooth + Noise Setup ===
+let osc = audioCtx.createOscillator();
+osc.type = 'sawtooth';
+osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+
+let oscGain = audioCtx.createGain();
+oscGain.gain.value = 0;
+
+function createNoiseBuffer(){
+    let buffer = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+    let data = buffer.getChannelData(0);
+    for(let i=0;i<data.length;i++){
+        data[i] = Math.random()*2-1;
+    }
+    return buffer;
+}
+let noiseSource = audioCtx.createBufferSource();
+noiseSource.buffer = createNoiseBuffer();
+noiseSource.loop = true;
+
+let noiseGain = audioCtx.createGain();
+noiseGain.gain.value = 0;
+
+let bandpass = audioCtx.createBiquadFilter();
+bandpass.type = 'bandpass';
+bandpass.frequency.setValueAtTime(1000, audioCtx.currentTime);
+bandpass.Q.setValueAtTime(8, audioCtx.currentTime);
+
+osc.connect(oscGain).connect(bandpass);
+noiseSource.connect(noiseGain).connect(bandpass);
+bandpass.connect(audioCtx.destination);
+
+osc.start();
+noiseSource.start();
+
+// === Wheel Visual + Scroll ===
+const wheel = document.getElementById("wheel");
+let rotation = 0;
+let lastWheelPos = 0;
+let lastInputTime = Date.now();
+let isScrolling = false;
+
+const sensitivity = 0.15;
+const maxGain = 10.0;
+const baseFreq = 200;
+const maxPitchShift = 1200;
+let wheelTarget = 0;
+
+function mapSpeed(speed){ return Math.min(speed/2,1); }
+
+window.addEventListener("wheel",(e)=>{
+    audioCtx.resume();
+    wheelTarget += e.deltaY * sensitivity;
+    if(wheelTarget > 120) wheelTarget = 120;
+    if(wheelTarget < -120) wheelTarget = -120;
+
+    lastInputTime = Date.now();
+    isScrolling = true;
+});
+
+// === Animate Loop ===
+function animate(){
+    if(Date.now() - lastInputTime > 60){
+        wheelTarget *= 0.92;
+        isScrolling = false;
+    }
+
+    rotation += (wheelTarget - rotation) * 0.2;
+    wheel.style.transform = `rotate(${rotation}deg)`;
+
+    let speed = rotation - lastWheelPos;
+    lastWheelPos = rotation;
+
+    if(isScrolling){
+        const factor = Math.min(Math.abs(speed) * 0.05, 1); 
+
+        osc.frequency.setTargetAtTime(baseFreq + factor*maxPitchShift, audioCtx.currentTime, 0.01);
+        oscGain.gain.setTargetAtTime(factor*maxGain * currentVolume, audioCtx.currentTime, 0.01);
+        noiseGain.gain.setTargetAtTime(factor*maxGain * currentVolume, audioCtx.currentTime, 0.01);
+        bandpass.frequency.setTargetAtTime(800 + factor*1000, audioCtx.currentTime, 0.02);
+    } else {
+        oscGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
+        noiseGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.02);
+        osc.frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.05);
+        bandpass.frequency.setTargetAtTime(1000, audioCtx.currentTime, 0.05);
+    }
+
+    requestAnimationFrame(animate);
+}
+
+animate();
+
+// === Volume Fader Logic ===
+const volumeContainer = document.getElementById('volumeContainer');
+const volumeLevel = document.getElementById('volumeLevel');
+let currentVolume = 0.5; // Startwert 50%
+
+function setVolume(x){
+    const rect = volumeContainer.getBoundingClientRect();
+    let vol = (x - rect.left) / rect.width;
+    vol = Math.max(0, Math.min(1, vol)); // Clamp 0..1
+    currentVolume = vol;
+    volumeLevel.style.width = `${vol*100}%`;
+}
+
+volumeContainer.addEventListener('mousedown', (e)=>{
+    setVolume(e.clientX);
+    function move(eMove){
+        setVolume(eMove.clientX);
+    }
+    function up(){ window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);}
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+});
+</script>
+</body>
+</html>
