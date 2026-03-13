@@ -45,7 +45,6 @@ video {
   transform-origin: center center;
   transition: transform 0.1s linear;
   touch-action: none;
-  pointer-events: none;
 }
 #video-controls {
   display: flex;
@@ -64,21 +63,6 @@ video {
   transition: background 0.3s;
 }
 #video-controls button:hover { background: #ff6b6f; }
-
-#exitFullscreenOverlayBtn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 10;
-  background: rgba(255, 59, 63, 0.8);
-  border: none;
-  padding: 8px 12px;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 0.9rem;
-  cursor: pointer;
-  display: none;
-}
 
 #timeline {
   margin-top: 12px;
@@ -117,12 +101,6 @@ input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius
 .value-display { font-weight: 500; }
 .section-title { font-weight: 500; margin-bottom: 6px; font-size: 1.1rem; color:#ff6b6f;}
 small { color: #aaa; }
-
-/* Vollbild randlos für Handy */
-video:-webkit-full-screen { width: 100% !important; height: 100% !important; border-radius: 0 !important; }
-video:-moz-full-screen { width: 100% !important; height: 100% !important; border-radius: 0 !important; }
-video:-ms-fullscreen { width: 100% !important; height: 100% !important; border-radius: 0 !important; }
-video:fullscreen { width: 100% !important; height: 100% !important; border-radius: 0 !important; }
 </style>
 </head>
 <body>
@@ -133,13 +111,9 @@ video:fullscreen { width: 100% !important; height: 100% !important; border-radiu
 <div id="video-container">
   <video id="video"></video>
 
-  <button id="exitFullscreenOverlayBtn">Zurück</button>
-
   <div id="video-controls">
     <button id="playBtn">Play</button>
     <button id="pauseBtn">Pause</button>
-    <button id="fullscreenBtn">Fullscreen</button>
-    <button id="exitFullscreenBtn">Zurück</button>
   </div>
 
   <canvas id="timeline"></canvas>
@@ -195,9 +169,6 @@ const ctx = timeline.getContext('2d');
 
 const playBtn = document.getElementById('playBtn');
 const pauseBtn = document.getElementById('pauseBtn');
-const fullscreenBtn = document.getElementById('fullscreenBtn');
-const exitFullscreenBtn = document.getElementById('exitFullscreenBtn');
-const exitFullscreenOverlayBtn = document.getElementById('exitFullscreenOverlayBtn');
 
 // Audio Nodes
 let audioCtx, sourceNode, dryGain, wetGain, convolverNode;
@@ -339,7 +310,7 @@ function updateVideoFilter(){
   video.style.filter = `brightness(${b}) saturate(${s}) blur(${blurPx}px) contrast(${contrastVal})`;
 }
 
-// Touch-Zoom
+// Touch-Zoom bleibt
 let initialDistance = 0, currentScale = 1;
 video.addEventListener('touchmove', e => {
   if(e.touches.length === 2){
@@ -360,31 +331,9 @@ video.addEventListener('touchend', e => {
   }
 });
 
-// Button Events
+// Play/Pause
 playBtn.addEventListener('click', ()=>{ video.play(); });
 pauseBtn.addEventListener('click', ()=>{ video.pause(); });
-
-// Fullscreen
-fullscreenBtn.addEventListener('click', async ()=>{
-  if(video.requestFullscreen) await video.requestFullscreen();
-  else if(video.webkitRequestFullscreen) await video.webkitRequestFullscreen();
-  else if(video.msRequestFullscreen) await video.msRequestFullscreen();
-  
-  try { await screen.orientation.lock('landscape'); } catch(e){ }
-  exitFullscreenOverlayBtn.style.display = 'block';
-});
-
-async function exitFullscreen() {
-  if(document.exitFullscreen) await document.exitFullscreen();
-  else if(document.webkitExitFullscreen) await document.webkitExitFullscreen();
-  else if(document.msExitFullscreen) await document.msExitFullscreen();
-  
-  try { await screen.orientation.unlock(); } catch(e){ }
-  exitFullscreenOverlayBtn.style.display = 'none';
-}
-
-exitFullscreenBtn.addEventListener('click', exitFullscreen);
-exitFullscreenOverlayBtn.addEventListener('click', exitFullscreen);
 
 </script>
 </body>
