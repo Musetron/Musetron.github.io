@@ -114,6 +114,7 @@ small { color: #aaa; }
   <div id="video-controls">
     <button id="playBtn">Play</button>
     <button id="pauseBtn">Pause</button>
+    <button id="dolbyBtn">DOLBY OFF</button>
   </div>
 
   <canvas id="timeline"></canvas>
@@ -169,9 +170,10 @@ const ctx = timeline.getContext('2d');
 
 const playBtn = document.getElementById('playBtn');
 const pauseBtn = document.getElementById('pauseBtn');
+const dolbyBtn = document.getElementById('dolbyBtn');
 
 // Audio Nodes
-let audioCtx, sourceNode, dryGain, wetGain, convolverNode;
+let audioCtx, sourceNode, dryGain, wetGain, convolverNode, pannerNode;
 
 // Slider & Werte
 const reverbSlider = document.getElementById('reverbSlider');
@@ -189,7 +191,7 @@ const saturationValue = document.getElementById('saturationValue');
 const blurValue = document.getElementById('blurValue');
 
 let leftData=[], rightData=[];
-let videoLoaded=false, isScrubbing=false;
+let videoLoaded=false, isScrubbing=false, dolbyOn=false;
 
 // Datei laden
 fileInput.addEventListener('change', async () => {
@@ -310,7 +312,7 @@ function updateVideoFilter(){
   video.style.filter = `brightness(${b}) saturate(${s}) blur(${blurPx}px) contrast(${contrastVal})`;
 }
 
-// Touch-Zoom bleibt
+// Touch-Zoom
 let initialDistance = 0, currentScale = 1;
 video.addEventListener('touchmove', e => {
   if(e.touches.length === 2){
@@ -335,6 +337,29 @@ video.addEventListener('touchend', e => {
 playBtn.addEventListener('click', ()=>{ video.play(); });
 pauseBtn.addEventListener('click', ()=>{ video.pause(); });
 
+// DOLBY Button
+dolbyBtn.addEventListener('click', () => {
+  if (!audioCtx || !sourceNode) return;
+
+  if (!dolbyOn) {
+    pannerNode = audioCtx.createPanner();
+    pannerNode.panningModel = 'HRTF';
+    pannerNode.distanceModel = 'inverse';
+    pannerNode.setPosition(0, 0, -1);
+    sourceNode.disconnect();
+    sourceNode.connect(pannerNode);
+    pannerNode.connect(dryGain);
+    pannerNode.connect(convolverNode);
+    dolbyBtn.textContent = 'DOLBY ON';
+  } else {
+    sourceNode.disconnect();
+    sourceNode.connect(dryGain);
+    sourceNode.connect(convolverNode);
+    dolbyBtn.textContent = 'DOLBY OFF';
+  }
+
+  dolbyOn = !dolbyOn;
+});
 </script>
 </body>
 </html>
