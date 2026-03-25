@@ -3,24 +3,45 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wurm folgt unsichtbarem Marker</title>
+<title>Worm</title>
+
 <style>
-  html, body {
-    margin:0; padding:0; overflow:hidden; touch-action:none;
-    background:#111;
-    filter: blur(2px); /* Seite leicht unscharf */
-  }
-  canvas { 
-    display:block;
-    filter: blur(2px); /* optional: Wurm selbst ebenfalls leicht unscharf */
-  }
-  .tip {
-    display: none; /* Marker unsichtbar */
-  }
+html, body {
+  margin:0;
+  padding:0;
+  overflow:hidden;
+  touch-action:none;
+
+  /* Hintergrundbild */
+  background: url("https://iili.io/q8VW9FR.jpg") no-repeat center center fixed;
+  background-size: cover;
+
+  /* leichte Unschärfe + dunkler */
+  filter: blur(2px) brightness(0.7);
+}
+
+canvas {
+  display:block;
+  position: relative;
+  z-index: 1;
+
+  /* optional: Wurm leicht weich */
+  filter: blur(1px);
+}
+
+.tip {
+  display: none; /* Marker unsichtbar */
+}
 </style>
 </head>
+
 <body>
 <canvas id="canvas"></canvas>
+
+<!-- Hintergrundmusik -->
+<audio autoplay loop>
+  <source src="https://stream.laut.fm/relaxing-piano" type="audio/mpeg">
+</audio>
 
 <script>
 // --- Canvas Setup ---
@@ -32,23 +53,30 @@ canvas.height = window.innerHeight;
 // --- Wurm Setup ---
 const wormImg = new Image();
 wormImg.src = "https://iili.io/qvUJL2S.png";
+
 const SEGMENTS = 25;
 let skeleton = [];
-let segmentLength = 0; // wird später aus Bildbreite berechnet
+let segmentLength = 0;
 
 wormImg.onload = () => {
     segmentLength = wormImg.width / SEGMENTS;
     for(let i=0;i<SEGMENTS;i++){
-        skeleton.push({x: canvas.width/2 - i*segmentLength, y: canvas.height/2});
+        skeleton.push({
+            x: canvas.width/2 - i*segmentLength,
+            y: canvas.height/2
+        });
     }
     animate();
 };
 
-// --- Marker Setup (unsichtbar) ---
+// --- Unsichtbarer Marker ---
 const tip = { x: 50, y: 50 };
 
 // --- Hilfsfunktionen ---
-function random(min, max) { return Math.random() * (max - min) + min; }
+function random(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
 function getNextTarget(currentX, currentY) {
   let x, y;
   if (Math.random() < 0.7) {
@@ -58,33 +86,44 @@ function getNextTarget(currentX, currentY) {
     x = currentX + random(-250, 250);
     y = currentY + random(-250, 250);
   }
+
   x = Math.max(10, Math.min(window.innerWidth - 10, x));
   y = Math.max(10, Math.min(window.innerHeight - 10, y));
+
   return { x, y };
 }
 
-// Marker Bewegung mit Wackeln
+// --- Marker Bewegung ---
 function moveTo(x, y, duration = null) {
   return new Promise(resolve => {
     const startX = tip.x;
     const startY = tip.y;
     const distance = Math.hypot(x - startX, y - startY);
+
     if (!duration) duration = Math.max(400, distance * random(2, 4));
 
     let startTime = null;
+
     const wobble = [];
     for (let i = 0; i < 3; i++) {
-      wobble.push({ freq: random(0.3, 1.5), amp: random(1.5, 6), phase: random(0, Math.PI * 2) });
+      wobble.push({
+        freq: random(0.3, 1.5),
+        amp: random(1.5, 6),
+        phase: random(0, Math.PI * 2)
+      });
     }
 
     function animateTip(time) {
       if (!startTime) startTime = time;
+
       let t = (time - startTime) / duration;
       if (t > 1) t = 1;
+
       const ease = t < 0.5 ? 2*t*t : -1 + (4 - 2*t)*t;
 
       let tipX = startX + (x - startX) * ease;
       let tipY = startY + (y - startY) * ease;
+
       wobble.forEach(w => {
         tipX += Math.sin(t * Math.PI * 2 * w.freq + w.phase) * w.amp * (1 - t);
         tipY += Math.cos(t * Math.PI * 2 * w.freq + w.phase) * w.amp * (1 - t);
@@ -96,22 +135,26 @@ function moveTo(x, y, duration = null) {
       if (t < 1) requestAnimationFrame(animateTip);
       else resolve();
     }
+
     requestAnimationFrame(animateTip);
   });
 }
 
-// Mikro-Pause Bewegungen
+// --- Mikrobewegung ---
 async function microPause(duration) {
-  const pauseStart = performance.now();
-  while (performance.now() - pauseStart < duration) {
-    const t = (performance.now() - pauseStart) / duration;
+  const start = performance.now();
+
+  while (performance.now() - start < duration) {
+    const t = (performance.now() - start) / duration;
+
     tip.x += Math.sin(t * Math.PI * 2 * random(0.5,1.2)) * random(0.1,1.2);
     tip.y += Math.cos(t * Math.PI * 2 * random(0.5,1.2)) * random(0.1,1.2);
+
     await new Promise(r => requestAnimationFrame(r));
   }
 }
 
-// Endlosschleife für Marker
+// --- Endlosschleife ---
 async function loopMarker() {
   while(true) {
     const { x, y } = getNextTarget(tip.x, tip.y);
@@ -121,64 +164,85 @@ async function loopMarker() {
 }
 loopMarker();
 
-// --- Wurm-Bewegung ---
+// --- Wurm Mathe ---
 function getCatmullRomPoint(p0,p1,p2,p3,t){
-    const t2 = t*t, t3 = t2*t;
+    const t2 = t*t;
+    const t3 = t2*t;
+
     const x = 0.5*((2*p1.x) + (-p0.x + p2.x)*t + (2*p0.x -5*p1.x + 4*p2.x - p3.x)*t2 + (-p0.x + 3*p1.x-3*p2.x + p3.x)*t3);
     const y = 0.5*((2*p1.y) + (-p0.y + p2.y)*t + (2*p0.y -5*p1.y + 4*p2.y - p3.y)*t2 + (-p0.y + 3*p1.y-3*p2.y + p3.y)*t3);
+
     return {x,y};
 }
 
+// --- Bewegung ---
 function updateSkeleton(){
-    // Spitze folgt Marker
     let head = skeleton[0];
+
     let dx = tip.x - head.x;
     let dy = tip.y - head.y;
     let angle = Math.atan2(dy, dx);
+
     head.x += Math.cos(angle)*5;
     head.y += Math.sin(angle)*5;
 
-    // Segmente konstant halten
     for(let i=1;i<SEGMENTS;i++){
         let prev = skeleton[i-1];
         let seg = skeleton[i];
+
         let dx = seg.x - prev.x;
         let dy = seg.y - prev.y;
+
         let dist = Math.sqrt(dx*dx + dy*dy);
         let diff = dist - segmentLength;
+
         let offsetX = (dx/dist)*diff;
         let offsetY = (dy/dist)*diff;
+
         seg.x -= offsetX;
         seg.y -= offsetY;
     }
 }
 
+// --- Zeichnen ---
 function drawWorm(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
+
     const imgH = wormImg.height;
     const steps = wormImg.width;
+
     for(let i=0;i<steps;i++){
         const t = i / steps * (SEGMENTS-3) + 1;
         const seg = Math.floor(t);
         const localT = t - seg;
+
         const p0 = skeleton[Math.max(seg-1,0)];
         const p1 = skeleton[seg];
         const p2 = skeleton[Math.min(seg+1,SEGMENTS-1)];
         const p3 = skeleton[Math.min(seg+2,SEGMENTS-1)];
+
         const pos = getCatmullRomPoint(p0,p1,p2,p3,localT);
 
         const nextT = Math.min(localT + 0.01,1);
         const nextPos = getCatmullRomPoint(p0,p1,p2,p3,nextT);
+
         const angle = Math.atan2(nextPos.y - pos.y, nextPos.x - pos.x);
 
         ctx.save();
         ctx.translate(pos.x,pos.y);
         ctx.rotate(angle);
-        ctx.drawImage(wormImg, i,0,1,imgH, 0,-imgH/2,1,imgH);
+
+        ctx.drawImage(
+            wormImg,
+            i,0,1,imgH,
+            0,-imgH/2,1,imgH
+        );
+
         ctx.restore();
     }
 }
 
+// --- Loop ---
 function animate(){
     updateSkeleton();
     drawWorm();
