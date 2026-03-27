@@ -1,270 +1,344 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Fixed Camera Swarm & Worm</title>
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            width: 100%;
-            height: 100%;
-            background: black;
-            /* Globaler Blur-Effekt wie im ursprünglichen Wurm-Code */
-            filter: blur(2px);
-        }
-        canvas {
-            display: block;
-            width: 100vw;
-            height: 100vh;
-            touch-action: none;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MicroWorld</title>
+
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    background: black;
+}
+
+canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    touch-action: none;
+}
+</style>
 </head>
+
 <body>
-    <canvas id="c"></canvas>
 
-    <script>
-        const canvas = document.getElementById("c");
-        const ctx = canvas.getContext("2d", { alpha: true });
+<canvas id="c"></canvas>
 
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        resize();
-        window.addEventListener("resize", resize);
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d", { alpha: true });
 
-        // ================= IMAGES =================
-        const bg = new Image();
-        const fly = new Image();
-        const dirtImg = new Image();
-        const viewImg = new Image();
-        const swarmImg = new Image();
-        const wormImg = new Image();
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener("resize", resize);
 
-        bg.src = "https://iili.io/qDle00J.th.jpg";
-        fly.src = "https://iili.io/qDlgu5J.th.jpg";
-        dirtImg.src = "Dirt.png";
-        viewImg.src = "https://iili.io/qDl600P.th.jpg";
-        swarmImg.src = "https://iili.io/qZQw63N.th.png";
-        wormImg.src = "https://iili.io/qvUJL2S.png";
+// ================= IMAGES =================
+const bg = new Image();
+const fly = new Image();
+const dirtImg = new Image();
+const viewImg = new Image();
+const swarmImg = new Image();
 
-        // ================= CAMERA =================
-        const cam = { x: 0, y: 0, zoom: 2.8 };
-        let dragging = false;
-        let lastX = 0, lastY = 0;
-        let lastCamX = 0, lastCamY = 0, camSpeed = 0;
+bg.src = "Background.jpg";
+fly.src = "FlyBy.jpg";
+dirtImg.src = "Dirt.png";
+viewImg.src = "View.jpg";
+swarmImg.src = "https://iili.io/qZQw63N.th.png";
 
-        function clampCamera() {
-            const w = canvas.width, h = canvas.height;
-            const maxX = (w * (cam.zoom - 1)) / (2 * cam.zoom);
-            const maxY = (h * (cam.zoom - 1)) / (2 * cam.zoom);
-            cam.x = Math.max(-maxX, Math.min(maxX, cam.x));
-            cam.y = Math.max(-maxY, Math.min(maxY, cam.y));
-        }
+// ================= CAMERA =================
+const cam = {
+    x: 0,
+    y: 0,
+    zoom: 2.8
+};
 
-        canvas.addEventListener("pointerdown", (e) => {
-            dragging = true;
-            canvas.setPointerCapture(e.pointerId);
-            lastX = e.clientX; lastY = e.clientY;
+let dragging = false;
+let lastX = 0;
+let lastY = 0;
+
+// ================= MOTION BLUR =================
+let lastCamX = 0;
+let lastCamY = 0;
+let camSpeed = 0;
+
+// ================= CAMERA BOUNDS =================
+function clampCamera() {
+    const w = canvas.width;
+    const h = canvas.height;
+
+    const maxX = (w * (cam.zoom - 1)) / (2 * cam.zoom);
+    const maxY = (h * (cam.zoom - 1)) / (2 * cam.zoom);
+
+    cam.x = Math.max(-maxX, Math.min(maxX, cam.x));
+    cam.y = Math.max(-maxY, Math.min(maxY, cam.y));
+}
+
+// ================= INPUT =================
+canvas.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    canvas.setPointerCapture(e.pointerId);
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+});
+
+canvas.addEventListener("pointerup", (e) => {
+    dragging = false;
+    canvas.releasePointerCapture(e.pointerId);
+});
+
+canvas.addEventListener("pointercancel", () => dragging = false);
+
+canvas.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+
+    const dx = (e.clientX - lastX) / cam.zoom;
+    const dy = (e.clientY - lastY) / cam.zoom;
+
+    cam.x += dx;
+    cam.y += dy;
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    clampCamera();
+});
+
+// ================= STATE =================
+let t = 0;
+let fx = 0, fy = 0;
+let vx = 0, vy = 0;
+
+let dirt = [];
+let swarm = [];
+
+// ================= OFFSCREEN MASKS =================
+const off = document.createElement("canvas");
+const octx = off.getContext("2d");
+
+// New: Offscreen canvas for final post-processing blur
+const finalOff = document.createElement("canvas");
+const foctx = finalOff.getContext("2d");
+
+// ================= DIRT =================
+function spawnDirt() {
+    dirt = [];
+    for (let i = 0; i < 3; i++) {
+        dirt.push({
+            x: Math.random() * window.innerWidth,
+            y: Math.random() * window.innerHeight,
+            size: 200 + Math.random() * 500,
+            alpha: 0.08 + Math.random() * 0.2
         });
-        canvas.addEventListener("pointerup", (e) => {
-            dragging = false;
-            canvas.releasePointerCapture(e.pointerId);
-        });
-        canvas.addEventListener("pointermove", (e) => {
-            if (!dragging) return;
-            cam.x += (e.clientX - lastX) / cam.zoom;
-            cam.y += (e.clientY - lastY) / cam.zoom;
-            lastX = e.clientX; lastY = e.clientY;
-            clampCamera();
-        });
+    }
+}
+spawnDirt();
 
-        // ================= WORM STATE =================
-        const SEGMENTS = 25;
-        let skeleton = [];
-        let segmentLength = 0;
-        const tip = { x: 50, y: 50 };
+// ================= SWARM =================
+function spawnStar() {
+    if (swarm.length >= 25) return;
 
-        function initWorm() {
-            segmentLength = wormImg.width / SEGMENTS;
-            for(let i=0; i<SEGMENTS; i++){
-                skeleton.push({x: canvas.width/2 - i*segmentLength, y: canvas.height/2});
-            }
+    const fromLeft = Math.random() < 0.5;
+
+    swarm.push({
+        x: fromLeft ? -80 : window.innerWidth + 80,
+        y: Math.random() * window.innerHeight * 0.3,
+
+        vx: fromLeft ? (2 + Math.random() * 5) : -(2 + Math.random() * 5),
+        vy: 2 + Math.random() * 6,
+
+        drift: (Math.random() - 0.5) * 1.2,
+
+        size: 8 + Math.random() * 90,
+        opacity: 0.02 + Math.random() * 0.12,
+        blur: 2 + Math.random() * 10,
+
+        rot: (Math.random() - 0.5) * 40,
+        seed: Math.random() * 1000,
+
+        life: 0,
+        maxLife: 2500 + Math.random() * 3500
+    });
+}
+setInterval(spawnStar, 160);
+
+// ================= DRAW =================
+function draw() {
+    t += 0.01;
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // ================= MOTION BLUR =================
+    const dxCam = cam.x - lastCamX;
+    const dyCam = cam.y - lastCamY;
+
+    camSpeed = Math.sqrt(dxCam * dxCam + dyCam * dyCam);
+
+    lastCamX = cam.x;
+    lastCamY = cam.y;
+
+    ctx.fillStyle = `rgba(0,0,0,${0.15 + camSpeed * 0.08})`;
+    ctx.fillRect(0, 0, w, h);
+
+    // ================= CAMERA =================
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-w / 2 + cam.x, -h / 2 + cam.y);
+
+    // BACKGROUND
+    ctx.drawImage(bg, 0, 0, w, h);
+
+    // WARP
+    const slice = 12;
+
+    for (let y = 0; y < h; y += slice) {
+        for (let x = 0; x < w; x += slice) {
+
+            let dx = Math.sin(x * 0.01 + t) * 4;
+            let dy = Math.cos(y * 0.01 + t) * 4;
+
+            ctx.drawImage(
+                bg,
+                (x + dx) * (bg.width / w),
+                (y + dy) * (bg.height / h),
+                slice * (bg.width / w),
+                slice * (bg.height / h),
+                x, y,
+                slice, slice
+            );
         }
+    }
 
-        function random(min, max) { return Math.random() * (max - min) + min; }
-        
-        async function moveTo(x, y, duration = null) {
-            return new Promise(resolve => {
-                const startX = tip.x, startY = tip.y;
-                const distance = Math.hypot(x - startX, y - startY);
-                if (!duration) duration = Math.max(400, distance * random(2, 4));
-                let startTime = null;
-                const wobble = [];
-                for (let i = 0; i < 3; i++) wobble.push({ freq: random(0.3, 1.5), amp: random(1.5, 6), phase: random(0, Math.PI * 2) });
-                function animateTip(time) {
-                    if (!startTime) startTime = time;
-                    let t = Math.min(1, (time - startTime) / duration);
-                    const ease = t < 0.5 ? 2*t*t : -1 + (4 - 2*t)*t;
-                    let tx = startX + (x - startX) * ease, ty = startY + (y - startY) * ease;
-                    wobble.forEach(w => {
-                        tx += Math.sin(t * Math.PI * 2 * w.freq + w.phase) * w.amp * (1 - t);
-                        ty += Math.cos(t * Math.PI * 2 * w.freq + w.phase) * w.amp * (1 - t);
-                    });
-                    tip.x = tx; tip.y = ty;
-                    if (t < 1) requestAnimationFrame(animateTip); else resolve();
-                }
-                requestAnimationFrame(animateTip);
-            });
+    // FLY
+    vx += (Math.random() - 0.5) * 0.2;
+    vy += (Math.random() - 0.5) * 0.2;
+
+    vx *= 0.96;
+    vy *= 0.96;
+
+    fx += vx;
+    fy += vy;
+
+    if (fx > w) fx = -w;
+    if (fy > h) fy = -h;
+
+    ctx.globalAlpha = 0.18;
+    ctx.globalCompositeOperation = "screen";
+    ctx.drawImage(fly, fx, fy, w, h);
+
+    // DIRT
+    ctx.globalCompositeOperation = "multiply";
+
+    for (let d of dirt) {
+        ctx.globalAlpha = d.alpha;
+        ctx.drawImage(dirtImg, d.x, d.y, d.size, d.size);
+    }
+
+    // ================= SWARM =================
+    ctx.globalCompositeOperation = "screen";
+
+    for (let i = swarm.length - 1; i >= 0; i--) {
+        let s = swarm[i];
+
+        s.life += 16;
+
+        s.vx *= 0.985;
+        s.x += s.vx + s.drift;
+        s.y += s.vy;
+        s.vy += 0.03;
+
+        const sizeFactor = Math.max(0.1, 1 - (s.size / 100));
+
+        // ================= CLEAN SIZE-BASED JITTER =================
+        const smallness = s.size / 100;
+
+        const baseSpeed = 0.02 + (1 - smallness) * 0.06;
+        const baseAmp = (1 - smallness) * 6;
+
+        const jx = Math.sin(s.seed + s.life * baseSpeed) * baseAmp;
+        const jy = Math.cos(s.seed * 1.7 + s.life * baseSpeed) * baseAmp;
+
+        let fade = 1 - (s.life / s.maxLife);
+        if (fade < 0) fade = 0;
+
+        ctx.save();
+        ctx.globalAlpha = s.opacity * fade;
+        ctx.filter = `blur(${s.blur}px)`;
+
+        ctx.translate(s.x + jx, s.y + jy);
+        ctx.rotate(s.rot * Math.PI / 180);
+
+        ctx.drawImage(swarmImg, -s.size / 2, -s.size / 2, s.size, s.size);
+
+        ctx.restore();
+
+        if (s.life > s.maxLife || s.y > h + 300) {
+            swarm.splice(i, 1);
         }
+    }
 
-        async function loopMarker() {
-            while(true) {
-                let x = tip.x + random(-80, 80), y = tip.y + random(-80, 80);
-                if(Math.random() > 0.7) { x += random(-170, 170); y += random(-170, 170); }
-                x = Math.max(10, Math.min(window.innerWidth - 10, x));
-                y = Math.max(10, Math.min(window.innerHeight - 10, y));
-                await moveTo(x, y);
-                await new Promise(r => setTimeout(r, random(150, 1200)));
-            }
-        }
+    ctx.restore();
 
-        function getCatmullRomPoint(p0,p1,p2,p3,t){
-            const t2 = t*t, t3 = t2*t;
-            const x = 0.5*((2*p1.x) + (-p0.x + p2.x)*t + (2*p0.x -5*p1.x + 4*p2.x - p3.x)*t2 + (-p0.x + 3*p1.x-3*p2.x + p3.x)*t3);
-            const y = 0.5*((2*p1.y) + (-p0.y + p2.y)*t + (2*p0.y -5*p1.y + 4*p2.y - p3.y)*t2 + (-p0.y + 3*p1.y-3*p2.y + p3.y)*t3);
-            return {x,y};
-        }
+    // MASK
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.filter = "none";
 
-        // ================= OTHER STATE =================
-        let t = 0, fx = 0, fy = 0, vx = 0, vy = 0;
-        let dirt = [], swarm = [];
-        const off = document.createElement("canvas");
-        const octx = off.getContext("2d");
+    off.width = w;
+    off.height = h;
 
-        function spawnDirt() {
-            dirt = [];
-            for (let i = 0; i < 3; i++) {
-                dirt.push({ x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight, size: 200 + Math.random() * 500, alpha: 0.08 + Math.random() * 0.2 });
-            }
-        }
-        spawnDirt();
+    octx.drawImage(viewImg, 0, 0, w, h);
 
-        function spawnStar() {
-            if (swarm.length >= 25) return;
-            const fromLeft = Math.random() < 0.5;
-            swarm.push({
-                x: fromLeft ? -80 : window.innerWidth + 80, y: Math.random() * window.innerHeight * 0.3,
-                vx: fromLeft ? (2 + Math.random() * 5) : -(2 + Math.random() * 5), vy: 2 + Math.random() * 6,
-                drift: (Math.random() - 0.5) * 1.2, size: 8 + Math.random() * 90, opacity: 0.02 + Math.random() * 0.12,
-                blur: 2 + Math.random() * 10, rot: (Math.random() - 0.5) * 40, seed: Math.random() * 1000, life: 0, maxLife: 2500 + Math.random() * 3500
-            });
-        }
-        setInterval(spawnStar, 160);
+    const imgData = octx.getImageData(0, 0, w, h);
+    const data = imgData.data;
 
-        // ================= DRAW LOOP =================
-        function draw() {
-            t += 0.01;
-            const w = canvas.width, h = canvas.height;
+    for (let i = 0; i < data.length; i += 4) {
+        const lum = (data[i] + data[i+1] + data[i+2]) / 3;
+        data[i+3] = (1 - lum / 255) * 255;
+    }
 
-            camSpeed = Math.sqrt(Math.pow(cam.x - lastCamX, 2) + Math.pow(cam.y - lastCamY, 2));
-            lastCamX = cam.x; lastCamY = cam.y;
+    octx.putImageData(imgData, 0, 0);
+    ctx.drawImage(off, 0, 0, w, h);
 
-            ctx.fillStyle = `rgba(0,0,0,${0.15 + camSpeed * 0.08})`;
-            ctx.fillRect(0, 0, w, h);
+    // ================= POST-PROCESSING BLUR =================
+    // 1. Copy the current frame to the finalOff canvas
+    finalOff.width = w;
+    finalOff.height = h;
+    foctx.drawImage(canvas, 0, 0);
 
-            ctx.save();
-            ctx.translate(w / 2, h / 2);
-            ctx.scale(cam.zoom, cam.zoom);
-            ctx.translate(-w / 2 + cam.x, -h / 2 + cam.y);
+    // 2. Clear the main canvas
+    ctx.clearRect(0, 0, w, h);
 
-            // 1. BACKGROUND & WARP
-            ctx.drawImage(bg, 0, 0, w, h);
-            const slice = 12;
-            for (let y = 0; y < h; y += slice) {
-                for (let x = 0; x < w; x += slice) {
-                    let dxW = Math.sin(x * 0.01 + t) * 4, dyW = Math.cos(y * 0.01 + t) * 4;
-                    ctx.drawImage(bg, (x + dxW) * (bg.width / w), (y + dyW) * (bg.height / h), slice * (bg.width / w), slice * (bg.height / h), x, y, slice, slice);
-                }
-            }
+    // 3. Apply the global blur filter
+    ctx.filter = "blur(1.5px)"; // <--- ADJUST BLUR STRENGTH HERE
 
-            // 2. WORM (Layered above background, zittern reduziert)
-            let head = skeleton[0];
-            let angleHead = Math.atan2(tip.y - head.y, tip.x - head.x);
-            // Reduzierter Schritt (Zittern verringert)
-            head.x += Math.cos(angleHead)*1.5; head.y += Math.sin(angleHead)*1.5; 
-            for(let i=1; i<SEGMENTS; i++){
-                let prev = skeleton[i-1], seg = skeleton[i];
-                let dxS = seg.x - prev.x, dyS = seg.y - prev.y;
-                let dist = Math.sqrt(dxS*dxS + dyS*dyS);
-                let diff = dist - segmentLength;
-                // Erhöhte Dämpfung (Zittern verringert)
-                seg.x -= (dxS/dist)*diff*0.7; seg.y -= (dyS/dist)*diff*0.7;
-            }
-            const steps = wormImg.width;
-            for(let i=0; i<steps; i++){
-                const wt = i / steps * (SEGMENTS-3) + 1;
-                const segIdx = Math.floor(wt);
-                const localT = wt - segIdx;
-                const p0 = skeleton[Math.max(segIdx-1,0)], p1 = skeleton[segIdx], p2 = skeleton[Math.min(segIdx+1,SEGMENTS-1)], p3 = skeleton[Math.min(segIdx+2,SEGMENTS-1)];
-                const pos = getCatmullRomPoint(p0,p1,p2,p3,localT);
-                const nextPos = getCatmullRomPoint(p0,p1,p2,p3,Math.min(localT + 0.01,1));
-                ctx.save();
-                ctx.translate(pos.x, pos.y);
-                ctx.rotate(Math.atan2(nextPos.y - pos.y, nextPos.x - pos.x));
-                ctx.drawImage(wormImg, i, 0, 1, wormImg.height, 0, -wormImg.height/2, 1, wormImg.height);
-                ctx.restore();
-            }
+    // 4. Draw the blurred frame back onto the main canvas
+    ctx.drawImage(finalOff, 0, 0);
 
-            // 3. FLY & DIRT
-            vx += (Math.random() - 0.5) * 0.2; vy += (Math.random() - 0.5) * 0.2;
-            vx *= 0.96; vy *= 0.96; fx += vx; fy += vy;
-            if (fx > w) fx = -w; if (fy > h) fy = -h;
-            ctx.globalAlpha = 0.18; ctx.globalCompositeOperation = "screen";
-            ctx.drawImage(fly, fx, fy, w, h);
-            ctx.globalCompositeOperation = "multiply";
-            for (let d of dirt) { ctx.globalAlpha = d.alpha; ctx.drawImage(dirtImg, d.x, d.y, d.size, d.size); }
+    // 5. Reset the filter for the next frame
+    ctx.filter = "none";
 
-            // 4. SWARM
-            ctx.globalCompositeOperation = "screen";
-            for (let i = swarm.length - 1; i >= 0; i--) {
-                let s = swarm[i]; s.life += 16; s.vx *= 0.985; s.x += s.vx + s.drift; s.y += s.vy; s.vy += 0.03;
-                const smallness = s.size / 100;
-                const baseSpeed = 0.02 + (1 - smallness) * 0.06, baseAmp = (1 - smallness) * 6;
-                const jx = Math.sin(s.seed + s.life * baseSpeed) * baseAmp, jy = Math.cos(s.seed * 1.7 + s.life * baseSpeed) * baseAmp;
-                let fade = Math.max(0, 1 - (s.life / s.maxLife));
-                ctx.save();
-                ctx.globalAlpha = s.opacity * fade; ctx.filter = `blur(${s.blur}px)`;
-                ctx.translate(s.x + jx, s.y + jy); ctx.rotate(s.rot * Math.PI / 180);
-                ctx.drawImage(swarmImg, -s.size / 2, -s.size / 2, s.size, s.size);
-                ctx.restore();
-                if (s.life > s.maxLife || s.y > h + 300) swarm.splice(i, 1);
-            }
-            ctx.restore();
+    requestAnimationFrame(draw);
+}
 
-            // 5. MASK
-            off.width = w; off.height = h;
-            octx.drawImage(viewImg, 0, 0, w, h);
-            const imgData = octx.getImageData(0, 0, w, h);
-            const data = imgData.data;
-            for (let i = 0; i < data.length; i += 4) {
-                const lum = (data[i] + data[i+1] + data[i+2]) / 3;
-                data[i+3] = (1 - lum / 255) * 255;
-            }
-            octx.putImageData(imgData, 0, 0);
-            ctx.drawImage(off, 0, 0, w, h);
+// ================= START =================
+let loaded = 0;
+[bg, fly, dirtImg, viewImg, swarmImg].forEach(img => {
+    img.onload = () => {
+        loaded++;
+        if (loaded === 5) draw();
+    };
+});
+</script>
 
-            requestAnimationFrame(draw);
-        }
-
-        let loaded = 0;
-        [bg, fly, dirtImg, viewImg, swarmImg, wormImg].forEach(img => {
-            img.onload = () => { if (++loaded === 6) { initWorm(); loopMarker(); draw(); } };
-        });
-    </script>
 </body>
 </html>
