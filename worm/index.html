@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>MicroWorld</title>
+<title>Fixed Camera Swarm with Post-Processing Blur</title>
 
 <style>
 html, body {
@@ -40,17 +40,21 @@ resize();
 window.addEventListener("resize", resize);
 
 // ================= IMAGES =================
-const bg = new Image();
-const fly = new Image();
-const dirtImg = new Image();
-const viewImg = new Image();
-const swarmImg = new Image();
+function load(src) {
+    const img = new Image();
+    img.src = src;
 
-bg.src = "Background.jpg";
-fly.src = "FlyBy.jpg";
-dirtImg.src = "Dirt.png";
-viewImg.src = "View.jpg";
-swarmImg.src = "https://iili.io/qZQw63N.th.png";
+    img.onload = () => console.log("Loaded:", src);
+    img.onerror = () => console.error("FAILED:", src);
+
+    return img;
+}
+
+const bg = load("Background.jpg");
+const fly = load("FlyBy.jpg");
+const dirtImg = load("Dirt.png");
+const viewImg = load("View.jpg");
+const swarmImg = load("https://iili.io/qZQw63N.th.png");
 
 // ================= CAMERA =================
 const cam = {
@@ -68,18 +72,6 @@ let lastCamX = 0;
 let lastCamY = 0;
 let camSpeed = 0;
 
-// ================= CAMERA BOUNDS =================
-function clampCamera() {
-    const w = canvas.width;
-    const h = canvas.height;
-
-    const maxX = (w * (cam.zoom - 1)) / (2 * cam.zoom);
-    const maxY = (h * (cam.zoom - 1)) / (2 * cam.zoom);
-
-    cam.x = Math.max(-maxX, Math.min(maxX, cam.x));
-    cam.y = Math.max(-maxY, Math.min(maxY, cam.y));
-}
-
 // ================= INPUT =================
 canvas.addEventListener("pointerdown", (e) => {
     dragging = true;
@@ -89,26 +81,17 @@ canvas.addEventListener("pointerdown", (e) => {
     lastY = e.clientY;
 });
 
-canvas.addEventListener("pointerup", (e) => {
-    dragging = false;
-    canvas.releasePointerCapture(e.pointerId);
-});
-
+canvas.addEventListener("pointerup", () => dragging = false);
 canvas.addEventListener("pointercancel", () => dragging = false);
 
 canvas.addEventListener("pointermove", (e) => {
     if (!dragging) return;
 
-    const dx = (e.clientX - lastX) / cam.zoom;
-    const dy = (e.clientY - lastY) / cam.zoom;
-
-    cam.x += dx;
-    cam.y += dy;
+    cam.x += (e.clientX - lastX) / cam.zoom;
+    cam.y += (e.clientY - lastY) / cam.zoom;
 
     lastX = e.clientX;
     lastY = e.clientY;
-
-    clampCamera();
 });
 
 // ================= STATE =================
@@ -119,11 +102,10 @@ let vx = 0, vy = 0;
 let dirt = [];
 let swarm = [];
 
-// ================= OFFSCREEN MASKS =================
+// ================= OFFSCREENS =================
 const off = document.createElement("canvas");
 const octx = off.getContext("2d");
 
-// New: Offscreen canvas for final post-processing blur
 const finalOff = document.createElement("canvas");
 const foctx = finalOff.getContext("2d");
 
@@ -171,12 +153,13 @@ setInterval(spawnStar, 160);
 
 // ================= DRAW =================
 function draw() {
+    requestAnimationFrame(draw);
+
     t += 0.01;
 
     const w = canvas.width;
     const h = canvas.height;
 
-    // ================= MOTION BLUR =================
     const dxCam = cam.x - lastCamX;
     const dyCam = cam.y - lastCamY;
 
@@ -195,9 +178,11 @@ function draw() {
     ctx.translate(-w / 2 + cam.x, -h / 2 + cam.y);
 
     // BACKGROUND
-    ctx.drawImage(bg, 0, 0, w, h);
+    if (bg.complete) {
+        ctx.drawImage(bg, 0, 0, w, h);
+    }
 
-    // WARP
+    // WARP (unchanged)
     const slice = 12;
 
     for (let y = 0; y < h; y += slice) {
@@ -256,9 +241,6 @@ function draw() {
         s.y += s.vy;
         s.vy += 0.03;
 
-        const sizeFactor = Math.max(0.1, 1 - (s.size / 100));
-
-        // ================= CLEAN SIZE-BASED JITTER =================
         const smallness = s.size / 100;
 
         const baseSpeed = 0.02 + (1 - smallness) * 0.06;
@@ -288,7 +270,7 @@ function draw() {
 
     ctx.restore();
 
-    // MASK
+    // ================= MASK =================
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
     ctx.filter = "none";
@@ -309,33 +291,34 @@ function draw() {
     octx.putImageData(imgData, 0, 0);
     ctx.drawImage(off, 0, 0, w, h);
 
-    // ================= POST-PROCESSING BLUR =================
-    // 1. Copy the current frame to the finalOff canvas
+    // ================= POST BLUR =================
     finalOff.width = w;
     finalOff.height = h;
     foctx.drawImage(canvas, 0, 0);
 
-    // 2. Clear the main canvas
     ctx.clearRect(0, 0, w, h);
-
-    // 3. Apply the global blur filter
-    ctx.filter = "blur(1.5px)"; // <--- ADJUST BLUR STRENGTH HERE
-
-    // 4. Draw the blurred frame back onto the main canvas
+    ctx.filter = "blur(1.5px)";
     ctx.drawImage(finalOff, 0, 0);
-
-    // 5. Reset the filter for the next frame
     ctx.filter = "none";
-
-    requestAnimationFrame(draw);
 }
 
 // ================= START =================
 let loaded = 0;
-[bg, fly, dirtImg, viewImg, swarmImg].forEach(img => {
+const imgs = [bg, fly, dirtImg, viewImg, swarmImg];
+
+imgs.forEach(img => {
     img.onload = () => {
         loaded++;
-        if (loaded === 5) draw();
+        if (loaded === imgs.length) {
+            draw();
+        }
+    };
+    img.onerror = () => {
+        console.error("Missing file:", img.src);
+        loaded++;
+        if (loaded === imgs.length) {
+            draw();
+        }
     };
 });
 </script>
