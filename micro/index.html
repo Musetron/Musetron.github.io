@@ -11,7 +11,7 @@
     body {
       margin: 0;
       overflow: hidden;
-      background: #011901; /* ✅ geändert */
+      background: #011901;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -20,8 +20,8 @@
 
     #unity-container {
       position: relative;
-      width: 90vw;          /* ✅ breiter */
-      max-width: 1000px;    /* optional */
+      width: 90vw;
+      max-width: 1000px;
     }
 
     canvas {
@@ -44,20 +44,12 @@
     </div>
 
     <div id="unity-warning"></div>
-
-    <div id="unity-footer">
-      <div id="unity-webgl-logo"></div>
-      <div id="unity-fullscreen-button"></div>
-      <div id="unity-build-title">MicroWorld</div>
-    </div>
   </div>
 
   <script>
-    var container = document.querySelector("#unity-container");
     var canvas = document.querySelector("#unity-canvas");
     var loadingBar = document.querySelector("#unity-loading-bar");
     var progressBarFull = document.querySelector("#unity-progress-bar-full");
-    var fullscreenButton = document.querySelector("#unity-fullscreen-button");
     var warningBanner = document.querySelector("#unity-warning");
 
     function unityShowBanner(msg, type) {
@@ -102,11 +94,11 @@
       document.head.appendChild(meta);
     }
 
-    // 🔲 Breiter statt Quadrat (ca. 1.2:1)
+    // 🔲 Breiteres Format
     function resizeCanvas() {
       let size = Math.min(window.innerWidth, window.innerHeight);
 
-      let width = size * 1.2;  // ✅ breiter
+      let width = size * 1.2;
       let height = size;
 
       canvas.style.width = width + "px";
@@ -128,12 +120,7 @@
 
         loadingBar.style.display = "none";
 
-        // 🔥 Fullscreen versuchen
-        unityInstance.SetFullscreen(1);
-
-        fullscreenButton.onclick = () => {
-          unityInstance.SetFullscreen(1);
-        };
+        // ❌ Kein Fullscreen mehr
 
       }).catch((message) => {
         alert(message);
