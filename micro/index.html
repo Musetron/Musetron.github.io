@@ -11,7 +11,7 @@
     body {
       margin: 0;
       overflow: hidden;
-      background: black;
+      background: #011901; /* ✅ geändert */
       display: flex;
       justify-content: center;
       align-items: center;
@@ -20,10 +20,14 @@
 
     #unity-container {
       position: relative;
+      width: 90vw;          /* ✅ breiter */
+      max-width: 1000px;    /* optional */
     }
 
     canvas {
       display: block;
+      width: 100%;
+      height: auto;
     }
   </style>
 </head>
@@ -98,15 +102,19 @@
       document.head.appendChild(meta);
     }
 
-    // 🔲 Quadrat berechnen
-    function resizeCanvasToSquare() {
+    // 🔲 Breiter statt Quadrat (ca. 1.2:1)
+    function resizeCanvas() {
       let size = Math.min(window.innerWidth, window.innerHeight);
-      canvas.style.width = size + "px";
-      canvas.style.height = size + "px";
+
+      let width = size * 1.2;  // ✅ breiter
+      let height = size;
+
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
     }
 
-    window.addEventListener("resize", resizeCanvasToSquare);
-    resizeCanvasToSquare();
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
 
     loadingBar.style.display = "block";
 
@@ -120,7 +128,7 @@
 
         loadingBar.style.display = "none";
 
-        // 🔥 Versuche direkt Fullscreen
+        // 🔥 Fullscreen versuchen
         unityInstance.SetFullscreen(1);
 
         fullscreenButton.onclick = () => {
