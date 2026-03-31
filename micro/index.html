@@ -1,133 +1,133 @@
 <!DOCTYPE html>
 <html lang="en-us">
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <title>Unity WebGL Player | MicroWorld</title>
-  <link rel="shortcut icon" href="TemplateData/favicon.ico">
-  <link rel="stylesheet" href="TemplateData/style.css">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Unity WebGL Player | MicroWorld</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
 
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: #011901;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #011901; /* ✅ geändert */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
 
-    #unity-container {
-      position: relative;
-      width: 90vw;
-      max-width: 1000px;
-    }
+      #unity-container {
+        position: relative;
+        width: 90vw;
+        max-width: 1000px;
+      }
 
-    canvas {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-  </style>
-</head>
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+    </style>
+  </head>
 
-<body>
-  <div id="unity-container">
-    <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <body>
+    <div id="unity-container" class="unity-desktop">
+      <canvas id="unity-canvas" tabindex="-1"></canvas>
 
-    <div id="unity-loading-bar">
-      <div id="unity-logo"></div>
-      <div id="unity-progress-bar-empty">
-        <div id="unity-progress-bar-full"></div>
+      <div id="unity-loading-bar">
+        <div id="unity-logo"></div>
+        <div id="unity-progress-bar-empty">
+          <div id="unity-progress-bar-full"></div>
+        </div>
       </div>
+
+      <div id="unity-warning"></div>
     </div>
 
-    <div id="unity-warning"></div>
-  </div>
+    <script>
+      var canvas = document.querySelector("#unity-canvas");
+      var loadingBar = document.querySelector("#unity-loading-bar");
+      var progressBarFull = document.querySelector("#unity-progress-bar-full");
+      var warningBanner = document.querySelector("#unity-warning");
 
-  <script>
-    var canvas = document.querySelector("#unity-canvas");
-    var loadingBar = document.querySelector("#unity-loading-bar");
-    var progressBarFull = document.querySelector("#unity-progress-bar-full");
-    var warningBanner = document.querySelector("#unity-warning");
+      function unityShowBanner(msg, type) {
+        function updateBannerVisibility() {
+          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+        }
+        var div = document.createElement('div');
+        div.innerHTML = msg;
+        warningBanner.appendChild(div);
 
-    function unityShowBanner(msg, type) {
-      function updateBannerVisibility() {
-        warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+        if (type == 'error') div.style = 'background: red; padding: 10px;';
+        else {
+          if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
+          setTimeout(function() {
+            warningBanner.removeChild(div);
+            updateBannerVisibility();
+          }, 5000);
+        }
+        updateBannerVisibility();
       }
-      var div = document.createElement('div');
-      div.innerHTML = msg;
-      warningBanner.appendChild(div);
 
-      if (type == 'error') div.style = 'background: red; padding: 10px;';
-      else {
-        if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
-        setTimeout(function () {
-          warningBanner.removeChild(div);
-          updateBannerVisibility();
-        }, 5000);
+      var buildUrl = "Build";
+      var loaderUrl = buildUrl + "/Neuer Ordner (6).loader.js";
+
+      var config = {
+        dataUrl: buildUrl + "/Neuer Ordner (6).data",
+        frameworkUrl: buildUrl + "/Neuer Ordner (6).framework.js",
+        codeUrl: buildUrl + "/Neuer Ordner (6).wasm",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "DefaultCompany",
+        productName: "MicroWorld",
+        productVersion: "1.0",
+        showBanner: unityShowBanner,
+        matchWebGLToCanvasSize: true
+      };
+
+      // 📱 Mobile
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no';
+        document.head.appendChild(meta);
       }
-      updateBannerVisibility();
-    }
 
-    var buildUrl = "Build";
-    var loaderUrl = buildUrl + "/Neuer Ordner (5).loader.js";
+      // 🔲 Breiter statt Quadrat
+      function resizeCanvas() {
+        let size = Math.min(window.innerWidth, window.innerHeight);
 
-    var config = {
-      dataUrl: buildUrl + "/Neuer Ordner (5).data",
-      frameworkUrl: buildUrl + "/Neuer Ordner (5).framework.js",
-      codeUrl: buildUrl + "/Neuer Ordner (5).wasm",
-      streamingAssetsUrl: "StreamingAssets",
-      companyName: "DefaultCompany",
-      productName: "MicroWorld",
-      productVersion: "1.0",
-      showBanner: unityShowBanner,
-      matchWebGLToCanvasSize: true
-    };
+        let width = size * 1.2;
+        let height = size;
 
-    // 📱 Mobile Anpassung
-    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-      var meta = document.createElement('meta');
-      meta.name = 'viewport';
-      meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no';
-      document.head.appendChild(meta);
-    }
+        canvas.style.width = width + "px";
+        canvas.style.height = height + "px";
+      }
 
-    // 🔲 Breiteres Format
-    function resizeCanvas() {
-      let size = Math.min(window.innerWidth, window.innerHeight);
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
 
-      let width = size * 1.2;
-      let height = size;
+      loadingBar.style.display = "block";
 
-      canvas.style.width = width + "px";
-      canvas.style.height = height + "px";
-    }
+      var script = document.createElement("script");
+      script.src = loaderUrl;
 
-    window.addEventListener("resize", resizeCanvas);
-    resizeCanvas();
+      script.onload = () => {
+        createUnityInstance(canvas, config, (progress) => {
+          progressBarFull.style.width = 100 * progress + "%";
+        }).then((unityInstance) => {
 
-    loadingBar.style.display = "block";
+          loadingBar.style.display = "none";
 
-    var script = document.createElement("script");
-    script.src = loaderUrl;
+          // ❌ Fullscreen entfernt
 
-    script.onload = () => {
-      createUnityInstance(canvas, config, (progress) => {
-        progressBarFull.style.width = (progress * 100) + "%";
-      }).then((unityInstance) => {
+        }).catch((message) => {
+          alert(message);
+        });
+      };
 
-        loadingBar.style.display = "none";
-
-        // ❌ Kein Fullscreen mehr
-
-      }).catch((message) => {
-        alert(message);
-      });
-    };
-
-    document.body.appendChild(script);
-  </script>
-</body>
+      document.body.appendChild(script);
+    </script>
+  </body>
 </html>
