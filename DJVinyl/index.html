@@ -190,8 +190,8 @@ function createKnob(knobElement, initialValue, callback){
   callback(value);  
 }  
 createKnob(document.getElementById('volumeKnob'),0.5,v=>{ masterGain.gain.value=v; });  
-createKnob(document.getElementById('reverbKnobInner'),0.3,v=>{ wetGain.gain.value=v; });  
-createKnob(document.getElementById('delayKnobInner'),0.25,v=>{ delayNode.delayTime.value=v; });  
+createKnob(document.getElementById('reverbKnobInner'),0.0,v=>{ wetGain.gain.value=v; });  
+createKnob(document.getElementById('delayKnobInner'),0.0,v=>{ delayNode.delayTime.value=v; });  
   
 // --- Reverb Buffer ---  
 function createReverbBuffer(ctx,duration=2){  
