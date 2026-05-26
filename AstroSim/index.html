@@ -6,6 +6,7 @@
 <title>Sci-Fi Sonnensystem</title>
 
 <style>
+
 body{
   margin:0;
   overflow:hidden;
@@ -23,14 +24,18 @@ body{
   border-radius:10px;
   z-index:10;
 }
+
 </style>
 </head>
 
 <body>
 
-<div id="info">Klicke auf einen Planeten</div>
+<div id="info">
+Klicke auf einen Planeten
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
 <script>
@@ -39,20 +44,28 @@ body{
 // Szene
 // =========================
 
-const scene = new THREE.Scene();
+const scene =
+  new THREE.Scene();
 
-const camera = new THREE.PerspectiveCamera(
-  75,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  4000
+const camera =
+  new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth /
+    window.innerHeight,
+    0.1,
+    4000
+  );
+
+camera.position.set(
+  0,
+  20,
+  60
 );
 
-camera.position.set(0,20,60);
-
-const renderer = new THREE.WebGLRenderer({
-  antialias:true
-});
+const renderer =
+  new THREE.WebGLRenderer({
+    antialias:true
+  });
 
 renderer.setSize(
   window.innerWidth,
@@ -91,7 +104,6 @@ loader.load(
       new THREE.MeshBasicMaterial({
 
         map:tex,
-
         side:THREE.BackSide
 
       });
@@ -302,13 +314,9 @@ loader.load(
     planets.push({
 
       mesh:sunMesh,
-
       orbitGroup:sunGroup,
-
       spin:0.002,
-
       orbit:0,
-
       name:'Sonne'
 
     });
@@ -338,14 +346,10 @@ loader.load(
       new THREE.MeshBasicMaterial({
 
         map:tex,
-
         transparent:true,
-
         blending:
           THREE.AdditiveBlending,
-
         side:THREE.DoubleSide,
-
         depthWrite:false
 
       });
@@ -382,16 +386,11 @@ loader.load(
       new THREE.MeshBasicMaterial({
 
         map:tex,
-
         transparent:true,
-
         blending:
           THREE.AdditiveBlending,
-
         side:THREE.DoubleSide,
-
         depthWrite:false,
-
         opacity:0.3
 
       });
@@ -431,14 +430,10 @@ loader.load(
       new THREE.MeshBasicMaterial({
 
         map:rayTex,
-
         transparent:true,
-
         blending:
           THREE.AdditiveBlending,
-
         side:THREE.DoubleSide,
-
         depthWrite:false
 
       });
@@ -514,15 +509,13 @@ for(let i=1;i<data.length;i++){
         new THREE.MeshStandardMaterial({
 
           map:texture,
-
           metalness:0,
-
           roughness:1
 
         });
 
       // =====================
-      // Nacht Shader
+      // FIXED NIGHT SHADER
       // =====================
 
       if(i === 2){
@@ -530,24 +523,44 @@ for(let i=1;i<data.length;i++){
         material.onBeforeCompile =
           (shader)=>{
 
-          shader.uniforms
-            .sunDirection = {
-
-            value:
-              new THREE.Vector3()
-
+          shader.uniforms.sunDirection = {
+            value:new THREE.Vector3()
           };
 
-          shader.uniforms
-            .nightMap = {
-
+          shader.uniforms.nightMap = {
             value:cityTexture
-
           };
+
+          shader.vertexShader =
+            shader.vertexShader.replace(
+
+            '#include <common>',
+
+            `
+            #include <common>
+
+            varying vec3 vWorldNormal;
+            `
+          );
+
+          shader.vertexShader =
+            shader.vertexShader.replace(
+
+            '#include <beginnormal_vertex>',
+
+            `
+            #include <beginnormal_vertex>
+
+            vWorldNormal =
+              normalize(
+                mat3(modelMatrix)
+                * objectNormal
+              );
+            `
+          );
 
           shader.fragmentShader =
-            shader.fragmentShader
-            .replace(
+            shader.fragmentShader.replace(
 
             '#include <common>',
 
@@ -556,23 +569,23 @@ for(let i=1;i<data.length;i++){
 
             uniform sampler2D nightMap;
             uniform vec3 sunDirection;
+
+            varying vec3 vWorldNormal;
             `
           );
 
           shader.fragmentShader =
-            shader.fragmentShader
-            .replace(
+            shader.fragmentShader.replace(
 
             '#include <dithering_fragment>',
 
             `
 
-            vec3 normalDirection =
-              normalize(vNormal);
-
             float lightDot =
               dot(
-                normalDirection,
+                normalize(
+                  vWorldNormal
+                ),
                 normalize(
                   sunDirection
                 )
@@ -580,8 +593,8 @@ for(let i=1;i<data.length;i++){
 
             float nightFactor =
               smoothstep(
-                0.15,
-                -0.2,
+                0.1,
+                -0.15,
                 lightDot
               );
 
@@ -593,7 +606,7 @@ for(let i=1;i<data.length;i++){
 
             gl_FragColor.rgb +=
               nightColor.rgb *
-              2.5 *
+              2.2 *
               nightFactor;
 
             #include <dithering_fragment>
@@ -609,7 +622,6 @@ for(let i=1;i<data.length;i++){
 
       // =====================
       // Rot Glow
-      // Nur rote Bereiche
       // =====================
 
       if(i === 1 || i === 3){
@@ -628,7 +640,6 @@ for(let i=1;i<data.length;i++){
             vec3 texColor =
               gl_FragColor.rgb;
 
-            // Nur echte Rotbereiche
             float redOnly =
               max(
                 texColor.r -
@@ -639,7 +650,6 @@ for(let i=1;i<data.length;i++){
                 0.0
               );
 
-            // Rot Glow
             texColor += vec3(
               redOnly * 1.2,
               redOnly * 0.15,
@@ -733,15 +743,11 @@ for(let i=1;i<data.length;i++){
               new THREE.MeshBasicMaterial({
 
                 map:rayTex,
-
                 transparent:true,
-
                 blending:
                   THREE.AdditiveBlending,
-
                 side:
                   THREE.DoubleSide,
-
                 depthWrite:false
 
               });
@@ -763,7 +769,7 @@ for(let i=1;i<data.length;i++){
       }
 
       // =====================
-      // Planet 2 Rays
+      // Planet Rays
       // =====================
 
       if(i === 2){
@@ -785,17 +791,12 @@ for(let i=1;i<data.length;i++){
               new THREE.MeshBasicMaterial({
 
                 map:rayTex,
-
                 transparent:true,
-
                 blending:
                   THREE.AdditiveBlending,
-
                 side:
                   THREE.DoubleSide,
-
                 depthWrite:false,
-
                 opacity:0.9
 
               });
@@ -832,13 +833,9 @@ for(let i=1;i<data.length;i++){
       planets.push({
 
         mesh,
-
         orbitGroup,
-
         spin:d.spin,
-
         orbit:d.orbit,
-
         name:d.name
 
       });
