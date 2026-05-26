@@ -1,0 +1,395 @@
+<!DOCTYPE html><html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Planet</title>  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      z-index: 10;
+      font-family: Arial;
+      background: rgba(0,0,0,0.6);
+      padding: 10px;
+      border-radius: 10px;
+    }
+  </style></head>
+<body><div id="info">
+  Sonnensystem mit 7 individuellen Planeten<br>
+  Nutze Bilder 1.jpg bis 7.jpg
+</div><script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script><script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script><script>
+  const scene = new THREE.Scene();
+
+  const camera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
+  );
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+
+  // Kamera Steuerung
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.enablePan = true;
+  controls.minDistance = 1;
+  controls.maxDistance = 120;
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Licht
+  const light = new THREE.PointLight(0xffffff, 2);
+  light.position.set(5, 5, 5);
+  scene.add(light);
+
+  const ambient = new THREE.AmbientLight(0x404040, 2);
+  scene.add(ambient);
+
+  // Realistische Sci‑Fi Planetendaten
+  const planetData = [
+    {
+      name: 'Sonne',
+      size: 2.4,
+      distance: 0,
+      rotationSpeed: 0.001,
+      orbitSpeed: 0,
+      emissive: 0xff2200,
+      glow: true,
+      light: true
+    },
+    {
+      name: 'Hell',
+      size: 0.38,
+      distance: 4,
+      rotationSpeed: 0.02,
+      orbitSpeed: 0.03,
+      emissive: 0x441100,
+      tidalLock: true
+    },
+    {
+      name: 'AlienParadiese',
+      size: 0.95,
+      distance: 7,
+      rotationSpeed: 0.01,
+      orbitSpeed: 0.012,
+      emissive: 0x001122
+    },
+    {
+      name: 'SpyEye',
+      size: 0.52,
+      distance: 11,
+      rotationSpeed: 0.006,
+      orbitSpeed: 0.009,
+      emissive: 0x222222
+    },
+    {
+      name: 'Thalor',
+      size: 0.72,
+      distance: 15,
+      rotationSpeed: 0.007,
+      orbitSpeed: 0.006,
+      emissive: 0x331100
+    },
+    {
+      name: 'Nivar',
+      size: 2.2,
+      distance: 23,
+      rotationSpeed: 0.014,
+      orbitSpeed: 0.0025,
+      emissive: 0x221100
+    },
+    {
+      name: 'Pechno',
+      size: 0.85,
+      distance: 31,
+      rotationSpeed: 0.004,
+      orbitSpeed: 0.0015,
+      emissive: 0x001144
+    }
+  ];
+
+  const loader = new THREE.TextureLoader();
+  const planets = [];
+
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  let selectedPlanet = null;
+
+  // Sonne als einzige Lichtquelle
+  const sunLight = new THREE.PointLight(0xff6633, 4, 300);
+  sunLight.position.set(0, 0, 0);
+  scene.add(sunLight);
+
+  planetData.forEach((data, index) => {
+    loader.load(`${index + 1}.jpg`, function(texture) {
+
+      const geometry = new THREE.SphereGeometry(data.size, 128, 128);
+
+      const material = new THREE.MeshStandardMaterial({
+        map: texture,
+        emissive: data.emissive,
+        emissiveIntensity: data.glow ? 3 : 0.05,
+        roughness: 1,
+        metalness: data.name === 'SpyEye' ? 0.8 : 0.1
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+
+      const orbitGroup = new THREE.Object3D();
+      scene.add(orbitGroup);
+
+      mesh.position.x = data.distance;
+      orbitGroup.add(mesh);
+
+      // Orbit Linie
+      if (data.distance > 0) {
+        const orbitGeometry = new THREE.RingGeometry(
+          data.distance - 0.02,
+          data.distance + 0.02,
+          256
+        );
+
+        const orbitMaterial = new THREE.MeshBasicMaterial({
+          color: 0x444444,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.35
+        });
+
+        const orbitRing = new THREE.Mesh(orbitGeometry, orbitMaterial);
+        orbitRing.rotation.x = Math.PI / 2;
+        scene.add(orbitRing);
+      }
+
+      // Sonnen Glow
+      if (data.glow) {
+        const glowGeometry = new THREE.SphereGeometry(data.size * 1.35, 128, 128);
+
+        const glowMaterial = new THREE.MeshBasicMaterial({
+          color: 0xff5522,
+          transparent: true,
+          opacity: 0.3
+        });
+
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        scene.add(glow);
+      }
+
+      // SpyEye Laser Auge
+      if (data.name === 'SpyEye') {
+        const eyeGeometry = new THREE.SphereGeometry(0.08, 32, 32);
+        const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const eye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        eye.position.set(data.size * 0.95, 0, 0);
+        mesh.add(eye);
+      }
+
+      // Atmosphären
+      if (data.name === 'AlienParadiese' || data.name === 'Pechno') {
+        const atmosphereGeometry = new THREE.SphereGeometry(data.size * 1.06, 128, 128);
+        const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+        mesh.add(atmosphere);
+      }
+
+      // Nivar Ring
+      if (data.name === 'Nivar') {
+        const ringGeometry = new THREE.RingGeometry(data.size * 1.4, data.size * 2.2, 128);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+          color: 0xccaa88,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.6
+        });
+
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.rotation.x = Math.PI / 2.5;
+        mesh.add(ring);
+      }
+
+      // Mond bei AlienParadiese
+      if (data.name === 'AlienParadiese') {
+        const moonGeometry = new THREE.SphereGeometry(0.18, 32, 32);
+        const moonMaterial = new THREE.MeshStandardMaterial({ color: 0xaaaaaa });
+        const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+
+        const moonOrbit = new THREE.Object3D();
+        moon.position.x = 1.8;
+        moonOrbit.add(moon);
+        mesh.add(moonOrbit);
+
+        mesh.userData.moonOrbit = moonOrbit;
+      }
+
+      mesh.userData.planetName = data.name;
+
+      planets.push({
+        name: data.name,
+        mesh,
+        orbitGroup,
+        rotationSpeed: data.rotationSpeed,
+        orbitSpeed: data.orbitSpeed,
+        tidalLock: data.tidalLock
+      });
+    });
+  });
+
+  // Zusätzliche Effekte
+
+  // Sonnen Partikel
+  const particleGeometry = new THREE.BufferGeometry();
+  const particleVertices = [];
+
+  for (let i = 0; i < 3000; i++) {
+    particleVertices.push(
+      (Math.random() - 0.5) * 12,
+      (Math.random() - 0.5) * 12,
+      (Math.random() - 0.5) * 12
+    );
+  }
+
+  particleGeometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(particleVertices, 3)
+  );
+
+  const particleMaterial = new THREE.PointsMaterial({
+    color: 0xff5522,
+    size: 0.05,
+    transparent: true,
+    opacity: 0.7
+  });
+
+  const solarParticles = new THREE.Points(particleGeometry, particleMaterial);
+  scene.add(solarParticles);
+
+  // Atmosphären und Monde
+  const atmosphereMaterial = new THREE.MeshBasicMaterial({
+    color: 0x66bbff,
+    transparent: true,
+    opacity: 0.12,
+    side: THREE.BackSide
+  });
+
+  // Sternenhimmel
+  const starsGeometry = new THREE.BufferGeometry();
+  const starsVertices = [];
+
+  for (let i = 0; i < 20000; i++) {
+    starsVertices.push(
+      (Math.random() - 0.5) * 1500,
+      (Math.random() - 0.5) * 1500,
+      (Math.random() - 0.5) * 1500
+    );
+  }
+
+  starsGeometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(starsVertices, 3)
+  );
+
+  const starsMaterial = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.12
+  });
+
+  const stars = new THREE.Points(starsGeometry, starsMaterial);
+  scene.add(stars);
+
+  camera.position.set(0, 14, 50);
+
+  // Klick / Touch Auswahl
+  function selectPlanet(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+
+    let clientX;
+    let clientY;
+
+    if (event.touches && event.touches.length > 0) {
+      clientX = event.touches[0].clientX;
+      clientY = event.touches[0].clientY;
+    } else {
+      clientX = event.clientX;
+      clientY = event.clientY;
+    }
+
+    mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersects = raycaster.intersectObjects(
+      planets.map(p => p.mesh)
+    );
+
+    if (intersects.length > 0) {
+      const target = intersects[0].object;
+      selectedPlanet = target;
+
+      const worldPosition = new THREE.Vector3();
+      target.getWorldPosition(worldPosition);
+
+      const direction = worldPosition.clone().normalize();
+
+      camera.position.copy(
+        worldPosition.clone().add(direction.multiplyScalar(4))
+      );
+
+      controls.target.copy(worldPosition);
+
+      document.getElementById('info').innerHTML =
+        'Planet: ' + target.userData.planetName;
+    }
+  }
+
+  window.addEventListener('click', selectPlanet);
+  window.addEventListener('touchstart', selectPlanet);
+  camera.lookAt(0, 0, 0);
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    planets.forEach((planet) => {
+      // Eigenrotation
+      planet.mesh.rotation.y += planet.rotationSpeed;
+
+      // Tidally locked Planet (immer gleiche Seite zur Sonne)
+      if (planet.tidalLock) {
+        planet.mesh.lookAt(0, 0, 0);
+      }
+
+      // Orbit um die Sonne
+      planet.orbitGroup.rotation.y += planet.orbitSpeed;
+    });
+
+    // Monde bewegen
+      if (planet.mesh.userData.moonOrbit) {
+        planet.mesh.userData.moonOrbit.rotation.y += 0.02;
+      }
+
+      // Sonnenpartikel rotieren
+      solarParticles.rotation.y += 0.0008;
+      solarParticles.rotation.x += 0.0002;
+
+      controls.update();
+      renderer.render(scene, camera);
+  }
+
+  animate();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+</script></body>
+</html>
