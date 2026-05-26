@@ -6,22 +6,22 @@
 <title>Sci-Fi Sonnensystem</title>
 
 <style>
-body {
-  margin: 0;
-  overflow: hidden;
-  background: black;
-  font-family: Arial;
+body{
+  margin:0;
+  overflow:hidden;
+  background:black;
+  font-family:Arial;
 }
 
-#info {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  color: white;
-  background: rgba(0,0,0,0.6);
-  padding: 10px;
-  border-radius: 10px;
-  z-index: 10;
+#info{
+  position:absolute;
+  top:10px;
+  left:10px;
+  color:white;
+  background:rgba(0,0,0,0.6);
+  padding:10px;
+  border-radius:10px;
+  z-index:10;
 }
 </style>
 </head>
@@ -35,133 +35,857 @@ body {
 
 <script>
 
+// =========================
+// Szene
+// =========================
+
 const scene = new THREE.Scene();
 
 const camera = new THREE.PerspectiveCamera(
   75,
   window.innerWidth / window.innerHeight,
   0.1,
-  2000
+  4000
 );
 
-camera.position.set(0, 20, 60);
+camera.position.set(0,20,60);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-document.body.appendChild(renderer.domElement);
+const renderer = new THREE.WebGLRenderer({
+  antialias:true
+});
 
+renderer.setSize(
+  window.innerWidth,
+  window.innerHeight
+);
+
+renderer.outputColorSpace =
+  THREE.SRGBColorSpace;
+
+document.body.appendChild(
+  renderer.domElement
+);
+
+// =========================
+// SKYBOX
+// =========================
+
+const loader =
+  new THREE.TextureLoader();
+
+loader.load(
+  'space.jpg',
+  function(tex){
+
+    tex.colorSpace =
+      THREE.SRGBColorSpace;
+
+    const skyGeo =
+      new THREE.SphereGeometry(
+        1800,
+        64,
+        64
+      );
+
+    const skyMat =
+      new THREE.MeshBasicMaterial({
+
+        map:tex,
+
+        side:THREE.BackSide
+
+      });
+
+    const sky =
+      new THREE.Mesh(
+        skyGeo,
+        skyMat
+      );
+
+    scene.add(sky);
+
+  }
+);
+
+// =========================
 // Controls
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
+// =========================
+
+const controls =
+  new THREE.OrbitControls(
+    camera,
+    renderer.domElement
+  );
+
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
+// =========================
 // Licht
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+// =========================
+
+const ambientLight =
+  new THREE.AmbientLight(
+    0xffffff,
+    0.35
+  );
+
 scene.add(ambientLight);
 
-// 🌞 Sonne (reduziert & warm)
-const sunLight = new THREE.PointLight(0xffaa55, 2.5, 900);
+const sunLight =
+  new THREE.PointLight(
+    0xffaa55,
+    2.5,
+    900
+  );
+
 scene.add(sunLight);
 
+// =========================
 // Sterne
-const starsGeometry = new THREE.BufferGeometry();
+// =========================
+
+const starsGeometry =
+  new THREE.BufferGeometry();
+
 const starsVertices = [];
 
-for (let i = 0; i < 20000; i++) {
+for(let i=0;i<25000;i++){
+
   starsVertices.push(
-    (Math.random() - 0.5) * 2000,
-    (Math.random() - 0.5) * 2000,
-    (Math.random() - 0.5) * 2000
+    (Math.random()-0.5)*2500,
+    (Math.random()-0.5)*2500,
+    (Math.random()-0.5)*2500
   );
+
 }
 
 starsGeometry.setAttribute(
   'position',
-  new THREE.Float32BufferAttribute(starsVertices, 3)
+
+  new THREE.Float32BufferAttribute(
+    starsVertices,
+    3
+  )
 );
 
-const starsMaterial = new THREE.PointsMaterial({
-  color: 0xffffff,
-  size: 0.7
-});
+const starsMaterial =
+  new THREE.PointsMaterial({
 
-const stars = new THREE.Points(starsGeometry, starsMaterial);
+    color:0xffffff,
+    size:0.7
+
+  });
+
+const stars =
+  new THREE.Points(
+    starsGeometry,
+    starsMaterial
+  );
+
 scene.add(stars);
 
+// =========================
 // Planet Daten
+// =========================
+
 const data = [
-  { name:'Sonne', size:3, dist:0, orbit:0, spin:0.002 },
-  { name:'Hell', size:0.4, dist:6, orbit:0.03, spin:0.01 },
-  { name:'AlienParadiese', size:1, dist:10, orbit:0.01, spin:0.008 },
-  { name:'SpyEye', size:0.6, dist:15, orbit:0.008, spin:0.004 },
-  { name:'Thalor', size:0.8, dist:21, orbit:0.005, spin:0.005 },
-  { name:'Nivar', size:2.2, dist:30, orbit:0.002, spin:0.02 },
-  { name:'Pechno', size:1.1, dist:40, orbit:0.001, spin:0.003 }
+
+  {
+    name:'Sonne',
+    size:3,
+    dist:0,
+    orbit:0,
+    spin:0.002
+  },
+
+  {
+    name:'Hell',
+    size:0.4,
+    dist:6,
+    orbit:0.03,
+    spin:0.01
+  },
+
+  {
+    name:'AlienParadiese',
+    size:1,
+    dist:10,
+    orbit:0.01,
+    spin:0.008
+  },
+
+  {
+    name:'SpyEye',
+    size:0.6,
+    dist:15,
+    orbit:0.008,
+    spin:0.004
+  },
+
+  {
+    name:'Thalor',
+    size:0.8,
+    dist:21,
+    orbit:0.005,
+    spin:0.005
+  },
+
+  {
+    name:'Nivar',
+    size:2.2,
+    dist:30,
+    orbit:0.002,
+    spin:0.02
+  },
+
+  {
+    name:'Pechno',
+    size:1.1,
+    dist:40,
+    orbit:0.001,
+    spin:0.003
+  }
+
 ];
 
-const loader = new THREE.TextureLoader();
 const planets = [];
 
-for (let i = 0; i < data.length; i++) {
+// =========================
+// SONNE
+// =========================
+
+const sunGroup =
+  new THREE.Group();
+
+scene.add(sunGroup);
+
+loader.load(
+  `1.jpg`,
+  function(texture){
+
+    texture.colorSpace =
+      THREE.SRGBColorSpace;
+
+    const sunGeo =
+      new THREE.SphereGeometry(
+        3,
+        64,
+        64
+      );
+
+    const sunMat =
+      new THREE.MeshStandardMaterial({
+
+        map:texture,
+
+        emissive:
+          new THREE.Color(
+            0xffaa33
+          ),
+
+        emissiveIntensity:0.6
+
+      });
+
+    const sunMesh =
+      new THREE.Mesh(
+        sunGeo,
+        sunMat
+      );
+
+    sunMesh.userData.name =
+      'Sonne';
+
+    sunGroup.add(sunMesh);
+
+    planets.push({
+
+      mesh:sunMesh,
+
+      orbitGroup:sunGroup,
+
+      spin:0.002,
+
+      orbit:0,
+
+      name:'Sonne'
+
+    });
+
+  }
+);
+
+// =========================
+// Sonnen Overlays
+// =========================
+
+loader.load(
+  `12.png`,
+  function(tex){
+
+    tex.colorSpace =
+      THREE.SRGBColorSpace;
+
+    const geo =
+      new THREE.SphereGeometry(
+        3.02,
+        64,
+        64
+      );
+
+    const mat =
+      new THREE.MeshBasicMaterial({
+
+        map:tex,
+
+        transparent:true,
+
+        blending:
+          THREE.AdditiveBlending,
+
+        side:THREE.DoubleSide,
+
+        depthWrite:false
+
+      });
+
+    const sphere1 =
+      new THREE.Mesh(
+        geo,
+        mat
+      );
+
+    sunGroup.add(sphere1);
+
+    sunGroup.userData.overlay1 =
+      sphere1;
+
+  }
+);
+
+loader.load(
+  `12.png`,
+  function(tex){
+
+    tex.colorSpace =
+      THREE.SRGBColorSpace;
+
+    const geo =
+      new THREE.SphereGeometry(
+        3.01,
+        64,
+        64
+      );
+
+    const mat =
+      new THREE.MeshBasicMaterial({
+
+        map:tex,
+
+        transparent:true,
+
+        blending:
+          THREE.AdditiveBlending,
+
+        side:THREE.DoubleSide,
+
+        depthWrite:false,
+
+        opacity:0.3
+
+      });
+
+    const sphere2 =
+      new THREE.Mesh(
+        geo,
+        mat
+      );
+
+    sunGroup.add(sphere2);
+
+    sunGroup.userData.overlay2 =
+      sphere2;
+
+  }
+);
+
+// =========================
+// Sonnenstrahlen
+// =========================
+
+loader.load(
+  `13.png`,
+  function(rayTex){
+
+    rayTex.colorSpace =
+      THREE.SRGBColorSpace;
+
+    const rayGeo =
+      new THREE.PlaneGeometry(
+        9.5,
+        9.5
+      );
+
+    const rayMat =
+      new THREE.MeshBasicMaterial({
+
+        map:rayTex,
+
+        transparent:true,
+
+        blending:
+          THREE.AdditiveBlending,
+
+        side:THREE.DoubleSide,
+
+        depthWrite:false
+
+      });
+
+    const rays1 =
+      new THREE.Mesh(
+        rayGeo,
+        rayMat
+      );
+
+    const rays2 =
+      new THREE.Mesh(
+        rayGeo,
+        rayMat.clone()
+      );
+
+    sunGroup.add(rays1);
+    sunGroup.add(rays2);
+
+    sunGroup.userData.rays1 =
+      rays1;
+
+    sunGroup.userData.rays2 =
+      rays2;
+
+  }
+);
+
+// =========================
+// PLANETEN
+// =========================
+
+for(let i=1;i<data.length;i++){
 
   const d = data[i];
 
-  const orbitGroup = new THREE.Object3D();
+  const orbitGroup =
+    new THREE.Object3D();
+
   scene.add(orbitGroup);
 
-  loader.load(`${i+1}.jpg`, function(texture) {
+  loader.load(
+    `${i+1}.jpg`,
+    function(texture){
 
-    texture.colorSpace = THREE.SRGBColorSpace;
+      texture.colorSpace =
+        THREE.SRGBColorSpace;
 
-    const geometry = new THREE.SphereGeometry(d.size, 64, 64);
+      let cityTexture = null;
 
-    const material = new THREE.MeshStandardMaterial({
-      map: texture,
-      emissive: i === 0 ? new THREE.Color(0xffaa33) : new THREE.Color(0x000000),
-      emissiveIntensity: i === 0 ? 0.6 : 0,
-      metalness: 0,
-      roughness: 1
-    });
+      // =====================
+      // Nacht Overlay
+      // =====================
 
-    const mesh = new THREE.Mesh(geometry, material);
+      if(i === 2){
 
-    mesh.position.x = d.dist;
-    orbitGroup.add(mesh);
+        cityTexture =
+          loader.load(`33.png`);
 
-    mesh.userData.name = d.name;
+        cityTexture.colorSpace =
+          THREE.SRGBColorSpace;
 
-    planets.push({
-      mesh,
-      orbitGroup,
-      spin: d.spin,
-      orbit: d.orbit,
-      name: d.name
-    });
+      }
 
-  });
-}
+      const geometry =
+        new THREE.SphereGeometry(
+          d.size,
+          64,
+          64
+        );
 
-// Klick Auswahl
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
+      const material =
+        new THREE.MeshStandardMaterial({
 
-function clickPlanet(event) {
+          map:texture,
 
-  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+          metalness:0,
 
-  raycaster.setFromCamera(mouse, camera);
+          roughness:1
 
-  const intersects = raycaster.intersectObjects(
-    planets.map(p => p.mesh)
+        });
+
+      // =====================
+      // Nacht Shader
+      // =====================
+
+      if(i === 2){
+
+        material.onBeforeCompile =
+          (shader)=>{
+
+          shader.uniforms
+            .sunDirection = {
+
+            value:
+              new THREE.Vector3()
+
+          };
+
+          shader.uniforms
+            .nightMap = {
+
+            value:cityTexture
+
+          };
+
+          shader.fragmentShader =
+            shader.fragmentShader
+            .replace(
+
+            '#include <common>',
+
+            `
+            #include <common>
+
+            uniform sampler2D nightMap;
+            uniform vec3 sunDirection;
+            `
+          );
+
+          shader.fragmentShader =
+            shader.fragmentShader
+            .replace(
+
+            '#include <dithering_fragment>',
+
+            `
+
+            vec3 normalDirection =
+              normalize(vNormal);
+
+            float lightDot =
+              dot(
+                normalDirection,
+                normalize(
+                  sunDirection
+                )
+              );
+
+            float nightFactor =
+              smoothstep(
+                0.15,
+                -0.2,
+                lightDot
+              );
+
+            vec4 nightColor =
+              texture2D(
+                nightMap,
+                vUv
+              );
+
+            gl_FragColor.rgb +=
+              nightColor.rgb *
+              2.5 *
+              nightFactor;
+
+            #include <dithering_fragment>
+            `
+          );
+
+          mesh.userData.shader =
+            shader;
+
+        };
+
+      }
+
+      // =====================
+      // Rot Glow
+      // Nur rote Bereiche
+      // =====================
+
+      if(i === 1 || i === 3){
+
+        material.onBeforeCompile =
+          (shader)=>{
+
+          shader.fragmentShader =
+            shader.fragmentShader
+            .replace(
+
+            '#include <dithering_fragment>',
+
+            `
+
+            vec3 texColor =
+              gl_FragColor.rgb;
+
+            // Nur echte Rotbereiche
+            float redOnly =
+              max(
+                texColor.r -
+                max(
+                  texColor.g,
+                  texColor.b
+                ),
+                0.0
+              );
+
+            // Rot Glow
+            texColor += vec3(
+              redOnly * 1.2,
+              redOnly * 0.15,
+              redOnly * 0.15
+            );
+
+            gl_FragColor.rgb =
+              texColor;
+
+            #include <dithering_fragment>
+            `
+          );
+
+        };
+
+      }
+
+      const mesh =
+        new THREE.Mesh(
+          geometry,
+          material
+        );
+
+      // =====================
+      // Shader Update
+      // =====================
+
+      if(i === 2){
+
+        mesh.onBeforeRender =
+          ()=>{
+
+          if(mesh.userData.shader){
+
+            const worldPos =
+              new THREE.Vector3();
+
+            mesh.getWorldPosition(
+              worldPos
+            );
+
+            const sunPos =
+              new THREE.Vector3(
+                0,
+                0,
+                0
+              );
+
+            const dir =
+              sunPos
+              .sub(worldPos)
+              .normalize();
+
+            mesh.userData.shader
+              .uniforms
+              .sunDirection
+              .value
+              .copy(dir);
+
+          }
+
+        };
+
+      }
+
+      mesh.position.x =
+        d.dist;
+
+      orbitGroup.add(mesh);
+
+      // =====================
+      // Rays für Hell
+      // =====================
+
+      if(i === 1){
+
+        loader.load(
+          `13.png`,
+          function(rayTex){
+
+            rayTex.colorSpace =
+              THREE.SRGBColorSpace;
+
+            const rayGeo =
+              new THREE.PlaneGeometry(
+                0.5,
+                0.5
+              );
+
+            const rayMat =
+              new THREE.MeshBasicMaterial({
+
+                map:rayTex,
+
+                transparent:true,
+
+                blending:
+                  THREE.AdditiveBlending,
+
+                side:
+                  THREE.DoubleSide,
+
+                depthWrite:false
+
+              });
+
+            const rays =
+              new THREE.Mesh(
+                rayGeo,
+                rayMat
+              );
+
+            mesh.add(rays);
+
+            mesh.userData.rays =
+              rays;
+
+          }
+        );
+
+      }
+
+      // =====================
+      // Planet 2 Rays
+      // =====================
+
+      if(i === 2){
+
+        loader.load(
+          `32.png`,
+          function(rayTex){
+
+            rayTex.colorSpace =
+              THREE.SRGBColorSpace;
+
+            const rayGeo =
+              new THREE.PlaneGeometry(
+                3.0,
+                3.0
+              );
+
+            const rayMat =
+              new THREE.MeshBasicMaterial({
+
+                map:rayTex,
+
+                transparent:true,
+
+                blending:
+                  THREE.AdditiveBlending,
+
+                side:
+                  THREE.DoubleSide,
+
+                depthWrite:false,
+
+                opacity:0.9
+
+              });
+
+            const rays1 =
+              new THREE.Mesh(
+                rayGeo,
+                rayMat
+              );
+
+            const rays2 =
+              new THREE.Mesh(
+                rayGeo,
+                rayMat.clone()
+              );
+
+            mesh.add(rays1);
+            mesh.add(rays2);
+
+            mesh.userData.rays1 =
+              rays1;
+
+            mesh.userData.rays2 =
+              rays2;
+
+          }
+        );
+
+      }
+
+      mesh.userData.name =
+        d.name;
+
+      planets.push({
+
+        mesh,
+
+        orbitGroup,
+
+        spin:d.spin,
+
+        orbit:d.orbit,
+
+        name:d.name
+
+      });
+
+    }
   );
 
-  if (intersects.length > 0) {
+}
 
-    const target = intersects[0].object;
+// =========================
+// Klick Auswahl
+// =========================
 
-    const pos = new THREE.Vector3();
+const raycaster =
+  new THREE.Raycaster();
+
+const mouse =
+  new THREE.Vector2();
+
+function clickPlanet(event){
+
+  mouse.x =
+    (event.clientX /
+    window.innerWidth) * 2 - 1;
+
+  mouse.y =
+    -(event.clientY /
+    window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(
+    mouse,
+    camera
+  );
+
+  const intersects =
+    raycaster.intersectObjects(
+      planets.map(p=>p.mesh)
+    );
+
+  if(intersects.length > 0){
+
+    const target =
+      intersects[0].object;
+
+    const pos =
+      new THREE.Vector3();
+
     target.getWorldPosition(pos);
 
     camera.position.set(
@@ -172,35 +896,146 @@ function clickPlanet(event) {
 
     controls.target.copy(pos);
 
-    document.getElementById('info').innerHTML = target.userData.name;
+    document.getElementById(
+      'info'
+    ).innerHTML =
+      target.userData.name;
+
   }
+
 }
 
-window.addEventListener('click', clickPlanet);
-window.addEventListener('touchstart', (e) => {
-  clickPlanet(e.touches[0]);
-});
+window.addEventListener(
+  'click',
+  clickPlanet
+);
 
+window.addEventListener(
+  'touchstart',
+  (e)=>{
+    clickPlanet(
+      e.touches[0]
+    );
+  }
+);
+
+// =========================
 // Animation
-function animate() {
-  requestAnimationFrame(animate);
+// =========================
 
-  planets.forEach(p => {
-    p.mesh.rotation.y += p.spin;
-    p.orbitGroup.rotation.y += p.orbit;
+function animate(){
+
+  requestAnimationFrame(
+    animate
+  );
+
+  planets.forEach(p=>{
+
+    p.mesh.rotation.y +=
+      p.spin;
+
+    p.orbitGroup.rotation.y +=
+      p.orbit;
+
+    // Kleine Rays
+
+    if(p.mesh.userData.rays){
+
+      const r =
+        p.mesh.userData.rays;
+
+      r.lookAt(camera.position);
+
+      r.rotation.z += 0.01;
+
+    }
+
+    // Planet Rays
+
+    if(p.mesh.userData.rays1){
+
+      const r1 =
+        p.mesh.userData.rays1;
+
+      const r2 =
+        p.mesh.userData.rays2;
+
+      r1.lookAt(camera.position);
+      r2.lookAt(camera.position);
+
+      r1.rotation.z += 0.01;
+      r2.rotation.z -= 0.008;
+
+    }
+
   });
 
+  // Sonnen Overlays
+
+  if(sunGroup.userData.overlay1){
+
+    sunGroup.userData.overlay1
+      .rotation.y += 0.01;
+
+  }
+
+  if(sunGroup.userData.overlay2){
+
+    sunGroup.userData.overlay2
+      .rotation.y -= 0.008;
+
+  }
+
+  // Sonnenstrahlen
+
+  if(sunGroup.userData.rays1){
+
+    const r1 =
+      sunGroup.userData.rays1;
+
+    const r2 =
+      sunGroup.userData.rays2;
+
+    r1.lookAt(camera.position);
+    r2.lookAt(camera.position);
+
+    r1.rotation.z += 0.004;
+    r2.rotation.z -= 0.004;
+
+  }
+
   controls.update();
-  renderer.render(scene, camera);
+
+  renderer.render(
+    scene,
+    camera
+  );
+
 }
 
 animate();
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+// =========================
+// Resize
+// =========================
+
+window.addEventListener(
+  'resize',
+  ()=>{
+
+    camera.aspect =
+      window.innerWidth /
+      window.innerHeight;
+
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(
+      window.innerWidth,
+      window.innerHeight
+    );
+
+  }
+);
 
 </script>
 
