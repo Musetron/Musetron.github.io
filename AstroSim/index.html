@@ -80,6 +80,36 @@ document.body.appendChild(
 );
 
 // =========================
+// Background Music
+// =========================
+
+const listener =
+  new THREE.AudioListener();
+
+camera.add(listener);
+
+const backgroundMusic =
+  new THREE.Audio(listener);
+
+const audioLoader =
+  new THREE.AudioLoader();
+
+audioLoader.load(
+  'music.mp3',
+  function(buffer){
+
+    backgroundMusic.setBuffer(buffer);
+
+    backgroundMusic.setLoop(true);
+
+    backgroundMusic.setVolume(0.5);
+
+    backgroundMusic.play();
+
+  }
+);
+
+// =========================
 // SKYBOX
 // =========================
 
@@ -131,6 +161,12 @@ const controls =
 
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
+
+// =========================
+// Camera Lock
+// =========================
+
+let lockedPlanet = null;
 
 // =========================
 // Licht
@@ -880,6 +916,8 @@ function clickPlanet(event){
     const target =
       intersects[0].object;
 
+    lockedPlanet = target;
+
     const pos =
       new THREE.Vector3();
 
@@ -966,6 +1004,21 @@ function animate(){
     }
 
   });
+
+  // =========================
+  // Camera Lock Update
+  // =========================
+
+  if(lockedPlanet){
+
+    const pos =
+      new THREE.Vector3();
+
+    lockedPlanet.getWorldPosition(pos);
+
+    controls.target.copy(pos);
+
+  }
 
   // Sonnen Overlays
 
