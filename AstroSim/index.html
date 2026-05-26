@@ -208,55 +208,55 @@ const data = [
     size:3,
     dist:0,
     orbit:0,
-    spin:0.002
+    spin:0.0003
   },
 
   {
     name:'Hell',
     size:0.4,
     dist:6,
-    orbit:0.03,
-    spin:0.01
+    orbit:0.002,
+    spin:0.001
   },
 
   {
     name:'AlienParadiese',
     size:1,
     dist:10,
-    orbit:0.01,
-    spin:0.008
+    orbit:0.0012,
+    spin:0.0008
   },
 
   {
     name:'SpyEye',
     size:0.6,
     dist:15,
-    orbit:0.008,
-    spin:0.004
+    orbit:0.0009,
+    spin:0.0005
   },
 
   {
     name:'Thalor',
     size:0.8,
     dist:21,
-    orbit:0.005,
-    spin:0.005
+    orbit:0.0006,
+    spin:0.0004
   },
 
   {
     name:'Nivar',
     size:2.2,
     dist:30,
-    orbit:0.002,
-    spin:0.02
+    orbit:0.0003,
+    spin:0.0015
   },
 
   {
     name:'Pechno',
     size:1.1,
     dist:40,
-    orbit:0.001,
-    spin:0.003
+    orbit:0.00015,
+    spin:0.0003
   }
 
 ];
@@ -943,7 +943,7 @@ function animate(){
 
       r.lookAt(camera.position);
 
-      r.rotation.z += 0.01;
+      r.rotation.z += 0.001;
 
     }
 
@@ -972,14 +972,14 @@ function animate(){
   if(sunGroup.userData.overlay1){
 
     sunGroup.userData.overlay1
-      .rotation.y += 0.01;
+      .rotation.y += 0.001;
 
   }
 
   if(sunGroup.userData.overlay2){
 
     sunGroup.userData.overlay2
-      .rotation.y -= 0.008;
+      .rotation.y -= 0.0008;
 
   }
 
