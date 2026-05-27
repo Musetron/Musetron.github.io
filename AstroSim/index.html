@@ -264,7 +264,7 @@ const data = [
   },
 
   {
-    name:'Aegis‑9',
+    name:'Aegis-9',
     size:0.6,
     dist:15,
     orbit:0.0009,
@@ -431,16 +431,16 @@ loader.load(
 
       });
 
-    const sphere2 =
-      new THREE.Mesh(
-        geo,
-        mat
-      );
+      const sphere2 =
+        new THREE.Mesh(
+          geo,
+          mat
+        );
 
-    sunGroup.add(sphere2);
+      sunGroup.add(sphere2);
 
-    sunGroup.userData.overlay2 =
-      sphere2;
+      sunGroup.userData.overlay2 =
+        sphere2;
 
   }
 );
@@ -520,10 +520,6 @@ for(let i=1;i<data.length;i++){
 
       let cityTexture = null;
 
-      // =====================
-      // Nacht Overlay
-      // =====================
-
       if(i === 2){
 
         cityTexture =
@@ -550,10 +546,6 @@ for(let i=1;i<data.length;i++){
 
         });
 
-      // =====================
-      // FIXED NIGHT SHADER
-      // =====================
-
       if(i === 2){
 
         material.onBeforeCompile =
@@ -574,7 +566,6 @@ for(let i=1;i<data.length;i++){
 
             `
             #include <common>
-
             varying vec3 vWorldNormal;
             `
           );
@@ -656,10 +647,6 @@ for(let i=1;i<data.length;i++){
 
       }
 
-      // =====================
-      // Rot Glow
-      // =====================
-
       if(i === 1 || i === 3){
 
         material.onBeforeCompile =
@@ -709,10 +696,6 @@ for(let i=1;i<data.length;i++){
           material
         );
 
-      // =====================
-      // Shader Update
-      // =====================
-
       if(i === 2){
 
         mesh.onBeforeRender =
@@ -755,10 +738,6 @@ for(let i=1;i<data.length;i++){
         d.dist;
 
       orbitGroup.add(mesh);
-
-      // =====================
-      // Rays für Kharos
-      // =====================
 
       if(i === 1){
 
@@ -803,10 +782,6 @@ for(let i=1;i<data.length;i++){
         );
 
       }
-
-      // =====================
-      // Planet Rays
-      // =====================
 
       if(i === 2){
 
@@ -878,6 +853,78 @@ for(let i=1;i<data.length;i++){
 
     }
   );
+
+}
+
+// =========================
+// Asteroiden -> Vorex
+// =========================
+
+const meteorGroup =
+  new THREE.Group();
+
+scene.add(meteorGroup);
+
+const meteors = [];
+
+for(let i=0;i<15;i++){
+
+  const geo =
+    new THREE.BufferGeometry();
+
+  geo.setAttribute(
+
+    'position',
+
+    new THREE.Float32BufferAttribute(
+      [0,0,0],
+      3
+    )
+
+  );
+
+  const mat =
+    new THREE.PointsMaterial({
+
+      color:0xffffff,
+      size:0.1
+
+    });
+
+  const star =
+    new THREE.Points(
+      geo,
+      mat
+    );
+
+  const angle =
+    Math.random() *
+    Math.PI * 2;
+
+  const height =
+    (Math.random()-0.5) * 50;
+
+  const radius =
+    120 +
+    Math.random() * 260;
+
+  star.position.set(
+
+    Math.cos(angle) * radius,
+
+    height,
+
+    Math.sin(angle) * radius
+
+  );
+
+  star.userData.speed =
+    0.25 +
+    Math.random() * 0.55;
+
+  meteorGroup.add(star);
+
+  meteors.push(star);
 
 }
 
@@ -972,8 +1019,6 @@ function animate(){
     p.orbitGroup.rotation.y +=
       p.orbit;
 
-    // Kleine Rays
-
     if(p.mesh.userData.rays){
 
       const r =
@@ -984,8 +1029,6 @@ function animate(){
       r.rotation.z += 0.001;
 
     }
-
-    // Planet Rays
 
     if(p.mesh.userData.rays1){
 
@@ -1051,6 +1094,82 @@ function animate(){
 
     r1.rotation.z += 0.004;
     r2.rotation.z -= 0.004;
+
+  }
+
+  // =========================
+  // Asteroiden -> Vorex
+  // =========================
+
+  const vorex =
+    planets.find(
+      p => p.name === 'Vorex'
+    );
+
+  if(vorex){
+
+    const vorexPos =
+      new THREE.Vector3();
+
+    vorex.mesh.getWorldPosition(
+      vorexPos
+    );
+
+    meteors.forEach(m=>{
+
+      const dir =
+        new THREE.Vector3()
+        .subVectors(
+          vorexPos,
+          m.position
+        )
+        .normalize();
+
+      m.position.add(
+
+        dir.multiplyScalar(
+          m.userData.speed
+        )
+
+      );
+
+      if(
+
+        m.position.distanceTo(
+          vorexPos
+        ) < 2.5
+
+      ){
+
+        const angle =
+          Math.random() *
+          Math.PI * 2;
+
+        const height =
+          (Math.random()-0.5)
+          * 60;
+
+        const radius =
+          180 +
+          Math.random() * 260;
+
+        m.position.set(
+
+          vorexPos.x +
+          Math.cos(angle)
+          * radius,
+
+          height,
+
+          vorexPos.z +
+          Math.sin(angle)
+          * radius
+
+        );
+
+      }
+
+    });
 
   }
 
