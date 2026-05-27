@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sci-Fi Sonnensystem</title>
+<title>SolarSim</title>
 
 <style>
 
@@ -31,7 +31,7 @@ body{
 <body>
 
 <div id="info">
-Klicke auf einen Planeten
+Click on a Planet!
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -240,7 +240,7 @@ scene.add(stars);
 const data = [
 
   {
-    name:'Sonne',
+    name:'Vareth',
     size:3,
     dist:0,
     orbit:0,
@@ -248,7 +248,7 @@ const data = [
   },
 
   {
-    name:'Hell',
+    name:'Kharos',
     size:0.4,
     dist:6,
     orbit:0.002,
@@ -256,7 +256,7 @@ const data = [
   },
 
   {
-    name:'AlienParadiese',
+    name:'Elyra',
     size:1,
     dist:10,
     orbit:0.0012,
@@ -264,7 +264,7 @@ const data = [
   },
 
   {
-    name:'SpyEye',
+    name:'Aegis‑9',
     size:0.6,
     dist:15,
     orbit:0.0009,
@@ -272,7 +272,7 @@ const data = [
   },
 
   {
-    name:'Thalor',
+    name:'Morvane',
     size:0.8,
     dist:21,
     orbit:0.0006,
@@ -280,7 +280,7 @@ const data = [
   },
 
   {
-    name:'Nivar',
+    name:'Vorex',
     size:2.2,
     dist:30,
     orbit:0.0003,
@@ -288,7 +288,7 @@ const data = [
   },
 
   {
-    name:'Pechno',
+    name:'Cryos',
     size:1.1,
     dist:40,
     orbit:0.00015,
@@ -300,7 +300,7 @@ const data = [
 const planets = [];
 
 // =========================
-// SONNE
+// Vareth
 // =========================
 
 const sunGroup =
@@ -343,7 +343,7 @@ loader.load(
       );
 
     sunMesh.userData.name =
-      'Sonne';
+      'Vareth';
 
     sunGroup.add(sunMesh);
 
@@ -353,7 +353,7 @@ loader.load(
       orbitGroup:sunGroup,
       spin:0.002,
       orbit:0,
-      name:'Sonne'
+      name:'Vareth'
 
     });
 
@@ -757,7 +757,7 @@ for(let i=1;i<data.length;i++){
       orbitGroup.add(mesh);
 
       // =====================
-      // Rays für Hell
+      // Rays für Kharos
       // =====================
 
       if(i === 1){
