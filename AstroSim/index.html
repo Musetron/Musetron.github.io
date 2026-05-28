@@ -92,6 +92,99 @@ canvas.addEventListener("wheel", e => {
   camera.y = mouseY - worldY * camera.zoom;
 }, { passive:false });
 
+
+
+////////////////////////////////////////////////////////////
+// 📱 TOUCH SUPPORT
+////////////////////////////////////////////////////////////
+
+let lastTouchDistance = 0;
+
+function touchDistance(t1, t2){
+  const dx = t2.clientX - t1.clientX;
+  const dy = t2.clientY - t1.clientY;
+  return Math.hypot(dx, dy);
+}
+
+function touchCenter(t1, t2){
+  return {
+    x: (t1.clientX + t2.clientX) / 2,
+    y: (t1.clientY + t2.clientY) / 2
+  };
+}
+
+canvas.addEventListener("touchstart", e => {
+
+  // EIN Finger = bewegen
+  if(e.touches.length === 1){
+
+    isDragging = true;
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+  }
+
+  // ZWEI Finger = pinch zoom
+  if(e.touches.length === 2){
+
+    isDragging = false;
+
+    lastTouchDistance = touchDistance(
+      e.touches[0],
+      e.touches[1]
+    );
+  }
+
+}, { passive:false });
+
+canvas.addEventListener("touchmove", e => {
+
+  e.preventDefault();
+
+  // PAN
+  if(e.touches.length === 1 && isDragging){
+
+    const t = e.touches[0];
+
+    camera.x += t.clientX - lastX;
+    camera.y += t.clientY - lastY;
+
+    lastX = t.clientX;
+    lastY = t.clientY;
+  }
+
+  // PINCH ZOOM
+  if(e.touches.length === 2){
+
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+
+    const newDistance = touchDistance(t1, t2);
+
+    const center = touchCenter(t1, t2);
+
+    const worldX = (center.x - camera.x) / camera.zoom;
+    const worldY = (center.y - camera.y) / camera.zoom;
+
+    const zoomFactor = newDistance / lastTouchDistance;
+
+    camera.zoom *= zoomFactor;
+
+    camera.zoom = Math.min(Math.max(camera.zoom, 0.1), 100);
+
+    camera.x = center.x - worldX * camera.zoom;
+    camera.y = center.y - worldY * camera.zoom;
+
+    lastTouchDistance = newDistance;
+  }
+
+}, { passive:false });
+
+canvas.addEventListener("touchend", () => {
+
+  isDragging = false;
+
+}, { passive:false });
+
 ////////////////////////////////////////////////////////////
 // 🌟 STARS
 ////////////////////////////////////////////////////////////
@@ -320,5 +413,3 @@ draw();
 </script>
 </body>
 </html>
-
-wo mach ich die sonnensystem größe realistisch groß?
