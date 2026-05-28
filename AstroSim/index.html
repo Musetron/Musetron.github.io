@@ -1,1212 +1,324 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SolarSim</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Galaxy + Vareth System</title>
 
 <style>
-
 body{
   margin:0;
   overflow:hidden;
-  background:black;
-  font-family:Arial;
+  background: radial-gradient(circle at center, #05070f, #02030a);
 }
-
-#info{
-  position:absolute;
-  top:10px;
-  left:10px;
-  color:white;
-  background:rgba(0,0,0,0.6);
-  padding:10px;
-  border-radius:10px;
-  z-index:10;
+canvas{
+  display:block;
+  touch-action:none;
 }
-
 </style>
 </head>
 
 <body>
-
-<div id="info">
-Click on a Planet!
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<canvas id="c"></canvas>
 
 <script>
 
-// =========================
-// Szene
-// =========================
+////////////////////////////////////////////////////////////
+// 🖥️ CANVAS
+////////////////////////////////////////////////////////////
 
-const scene =
-  new THREE.Scene();
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
 
-const camera =
-  new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth /
-    window.innerHeight,
-    0.1,
-    4000
-  );
+function resize(){
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+}
+addEventListener("resize", resize);
+resize();
 
-camera.position.set(
-  0,
-  20,
-  60
-);
+const cx = () => canvas.width / 2;
+const cy = () => canvas.height / 2;
 
-const renderer =
-  new THREE.WebGLRenderer({
-    antialias:true
+////////////////////////////////////////////////////////////
+// 🧭 CAMERA
+////////////////////////////////////////////////////////////
+
+const camera = {
+  x: 0,
+  y: 0,
+  zoom: 1
+};
+
+let isDragging = false;
+let lastX = 0;
+let lastY = 0;
+
+canvas.addEventListener("mousedown", e => {
+  isDragging = true;
+  lastX = e.clientX;
+  lastY = e.clientY;
+});
+
+addEventListener("mouseup", () => isDragging = false);
+
+addEventListener("mousemove", e => {
+  if(!isDragging) return;
+
+  camera.x += e.clientX - lastX;
+  camera.y += e.clientY - lastY;
+
+  lastX = e.clientX;
+  lastY = e.clientY;
+});
+
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+
+  const zoomFactor = 1.1;
+
+  const mouseX = e.clientX;
+  const mouseY = e.clientY;
+
+  const worldX = (mouseX - camera.x) / camera.zoom;
+  const worldY = (mouseY - camera.y) / camera.zoom;
+
+  const dir = e.deltaY > 0 ? 1 / zoomFactor : zoomFactor;
+  camera.zoom *= dir;
+
+  camera.zoom = Math.min(Math.max(camera.zoom, 0.1), 100);
+
+  camera.x = mouseX - worldX * camera.zoom;
+  camera.y = mouseY - worldY * camera.zoom;
+}, { passive:false });
+
+////////////////////////////////////////////////////////////
+// 🌟 STARS
+////////////////////////////////////////////////////////////
+
+const stars = [];
+for(let i=0;i<9000;i++){
+  stars.push({
+    x: Math.random()*innerWidth,
+    y: Math.random()*innerHeight,
+    r: Math.random()*0.6,
+    a: Math.random()*0.8+0.2
+  });
+}
+
+////////////////////////////////////////////////////////////
+// 🌌 GALAXY ASSETS
+////////////////////////////////////////////////////////////
+
+const cloud = new Image();
+cloud.src = "cloud.png";
+
+const hole = new Image();
+hole.src = "hole.png";
+
+////////////////////////////////////////////////////////////
+// 🧬 HASH
+////////////////////////////////////////////////////////////
+
+function hash(n){
+  return fract(Math.sin(n) * 43758.5453123);
+}
+function fract(x){
+  return x - Math.floor(x);
+}
+
+////////////////////////////////////////////////////////////
+// 🌌 GALAXY PARTICLES
+////////////////////////////////////////////////////////////
+
+const arms = 3;
+const count = 3500;
+const radiusMax = 420;
+
+const particles = [];
+
+for(let i=0;i<count;i++){
+  const armOffset = (Math.PI * 2 / arms) * (i % arms);
+  const t = Math.pow(Math.random(), 0.65);
+
+  particles.push({
+    armOffset,
+    radius: t * radiusMax,
+    size: 6 + Math.random()*60,
+    alpha: 0.05 + Math.random()*0.35,
+    spin: 0.1 * t,
+    seed: Math.random() * 10000
+  });
+}
+
+let rotation = 0;
+
+////////////////////////////////////////////////////////////
+// 🪐 SYSTEM DATA
+////////////////////////////////////////////////////////////
+
+const SYSTEM = {
+  sun: { img: "vareth.png" },
+  planets: [
+    { name:"Khratos", diameterKm:4879, orbitKm: 58_000_000, img:"khratos.png" },
+    { name:"Elyra", diameterKm:12700, orbitKm: 108_000_000, img:"elyra.png" },
+    { name:"Aegis-9", diameterKm:160, orbitKm: 180_000_000, img:"aegis9.png" },
+    { name:"Morvane", diameterKm:6779, orbitKm: 228_000_000, img:"morvane.png" },
+    { name:"Vorex", diameterKm:142976, orbitKm: 778_000_000, img:"vorex.png" },
+    { name:"Cryos", diameterKm:10104, orbitKm: 4_500_000_000, img:"cryos.png" }
+  ]
+};
+
+const SCALE = {
+  kmToPxOrbit: 8e-8,
+  timeScale: 0.0002
+};
+
+const EARTH = 12742;
+
+function planetSize(km){
+  const ratio = km / EARTH;
+  return Math.pow(ratio, 0.2) * 3;
+}
+
+function sunSize(){ return 60; }
+
+function load(src){
+  const img = new Image();
+  img.src = src;
+  return img;
+}
+
+const sunImg = load(SYSTEM.sun.img);
+
+const planets = SYSTEM.planets.map((p,i)=>({
+  ...p,
+  img: load(p.img),
+  angle: Math.random()*Math.PI*2,
+  orbitPx: p.orbitKm * SCALE.kmToPxOrbit * (1 + i*0.4)
+}));
+
+const offsetX = () => canvas.width * 0.25; // links
+const offsetY = () => canvas.height * 0.70; // unten
+
+////////////////////////////////////////////////////////////
+// 🎬 DRAW LOOP
+////////////////////////////////////////////////////////////
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const time = performance.now() * 0.000005;
+
+  ////////////////////////////////////////////////////////////
+  // 🌟 STARS (screen space)
+  ////////////////////////////////////////////////////////////
+
+  ctx.globalCompositeOperation = "source-over";
+
+  for(const s of stars){
+    ctx.globalAlpha = s.a;
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+
+  ////////////////////////////////////////////////////////////
+  // 🌌 GALAXY
+  ////////////////////////////////////////////////////////////
+
+  ctx.save();
+  ctx.translate(camera.x, camera.y);
+  ctx.scale(camera.zoom, camera.zoom);
+  ctx.translate(cx(), cy());
+  ctx.rotate(rotation);
+
+  ctx.globalCompositeOperation = "lighter";
+
+  for(const p of particles){
+
+    const n1 = hash(p.seed*1.3)-0.5;
+    const n2 = hash(p.seed*2.1)-0.5;
+
+    const angle =
+      p.armOffset +
+      p.spin +
+      (p.radius * 0.012) +
+      time +
+      n1 * 0.8;
+
+    const r = p.radius + n2 * 18;
+
+    const x = Math.cos(angle)*r;
+    const y = Math.sin(angle)*r;
+
+    ctx.globalAlpha = p.alpha;
+
+    ctx.drawImage(cloud, x-p.size/2, y-p.size/2, p.size, p.size);
+  }
+
+  ctx.restore();
+
+  ////////////////////////////////////////////////////////////
+  // 🕳️ BLACK HOLE
+  ////////////////////////////////////////////////////////////
+
+  ctx.save();
+  ctx.translate(camera.x, camera.y);
+  ctx.scale(camera.zoom, camera.zoom);
+  ctx.translate(cx(), cy());
+
+  ctx.globalAlpha = 1;
+  ctx.drawImage(hole, -130, -130, 260, 260);
+  ctx.restore();
+
+  ////////////////////////////////////////////////////////////
+  // 🪐 SOLAR SYSTEM
+  ////////////////////////////////////////////////////////////
+
+  ctx.save();
+  ctx.translate(camera.x, camera.y);
+  ctx.scale(camera.zoom, camera.zoom);
+
+  const originX = offsetX();
+  const originY = offsetY();
+
+  const s = sunSize();
+
+  ctx.drawImage(sunImg, originX-s/2, originY-s/2, s, s);
+
+  planets.forEach((p,i)=>{
+
+    p.angle += SCALE.timeScale/(i+1);
+
+    const x = originX + Math.cos(p.angle)*p.orbitPx;
+    const y = originY + Math.sin(p.angle)*p.orbitPx;
+
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    ctx.lineWidth = 0.1;
+    ctx.beginPath();
+    ctx.arc(originX, originY, p.orbitPx, 0, Math.PI*2);
+    ctx.stroke();
+
+    const size = Math.max(1, planetSize(p.diameterKm));
+
+    ctx.drawImage(p.img, x-size/2, y-size/2, size, size);
   });
 
-renderer.setSize(
-  window.innerWidth,
-  window.innerHeight
-);
+  ctx.restore();
 
-renderer.outputColorSpace =
-  THREE.SRGBColorSpace;
+  rotation += 0.0002;
 
-document.body.appendChild(
-  renderer.domElement
-);
-
-// =========================
-// Background Music
-// =========================
-
-const listener =
-  new THREE.AudioListener();
-
-camera.add(listener);
-
-const backgroundMusic =
-  new THREE.Audio(listener);
-
-const audioLoader =
-  new THREE.AudioLoader();
-
-audioLoader.load(
-  'music.mp3',
-  function(buffer){
-
-    backgroundMusic.setBuffer(buffer);
-
-    backgroundMusic.setLoop(true);
-
-    backgroundMusic.setVolume(0.5);
-
-    backgroundMusic.play();
-
-  }
-);
-
-// =========================
-// SKYBOX
-// =========================
-
-const loader =
-  new THREE.TextureLoader();
-
-loader.load(
-  'space.jpg',
-  function(tex){
-
-    tex.colorSpace =
-      THREE.SRGBColorSpace;
-
-    const skyGeo =
-      new THREE.SphereGeometry(
-        1800,
-        64,
-        64
-      );
-
-    const skyMat =
-      new THREE.MeshBasicMaterial({
-
-        map:tex,
-        side:THREE.BackSide
-
-      });
-
-    const sky =
-      new THREE.Mesh(
-        skyGeo,
-        skyMat
-      );
-
-    scene.add(sky);
-
-  }
-);
-
-// =========================
-// Controls
-// =========================
-
-const controls =
-  new THREE.OrbitControls(
-    camera,
-    renderer.domElement
-  );
-
-controls.enableDamping = true;
-controls.dampingFactor = 0.05;
-
-// =========================
-// Camera Lock
-// =========================
-
-let lockedPlanet = null;
-
-// =========================
-// Licht
-// =========================
-
-const ambientLight =
-  new THREE.AmbientLight(
-    0xffffff,
-    0.35
-  );
-
-scene.add(ambientLight);
-
-const sunLight =
-  new THREE.PointLight(
-    0xffaa55,
-    2.5,
-    900
-  );
-
-scene.add(sunLight);
-
-// =========================
-// Sterne
-// =========================
-
-const starsGeometry =
-  new THREE.BufferGeometry();
-
-const starsVertices = [];
-
-for(let i=0;i<25000;i++){
-
-  starsVertices.push(
-    (Math.random()-0.5)*2500,
-    (Math.random()-0.5)*2500,
-    (Math.random()-0.5)*2500
-  );
-
+  requestAnimationFrame(draw);
 }
 
-starsGeometry.setAttribute(
-  'position',
-
-  new THREE.Float32BufferAttribute(
-    starsVertices,
-    3
-  )
-);
-
-const starsMaterial =
-  new THREE.PointsMaterial({
-
-    color:0xffffff,
-    size:0.7
-
-  });
-
-const stars =
-  new THREE.Points(
-    starsGeometry,
-    starsMaterial
-  );
-
-scene.add(stars);
-
-// =========================
-// Planet Daten
-// =========================
-
-const data = [
-
-  {
-    name:'Vareth',
-    size:3,
-    dist:0,
-    orbit:0,
-    spin:0.0003
-  },
-
-  {
-    name:'Kharos',
-    size:0.4,
-    dist:6,
-    orbit:0.002,
-    spin:0.001
-  },
-
-  {
-    name:'Elyra',
-    size:1,
-    dist:10,
-    orbit:0.0012,
-    spin:0.0008
-  },
-
-  {
-    name:'Aegis-9',
-    size:0.6,
-    dist:15,
-    orbit:0.0009,
-    spin:0.0005
-  },
-
-  {
-    name:'Morvane',
-    size:0.8,
-    dist:21,
-    orbit:0.0006,
-    spin:0.0004
-  },
-
-  {
-    name:'Vorex',
-    size:2.2,
-    dist:30,
-    orbit:0.0003,
-    spin:0.0015
-  },
-
-  {
-    name:'Cryos',
-    size:1.1,
-    dist:40,
-    orbit:0.00015,
-    spin:0.0003
-  }
-
-];
-
-const planets = [];
-
-// =========================
-// Vareth
-// =========================
-
-const sunGroup =
-  new THREE.Group();
-
-scene.add(sunGroup);
-
-loader.load(
-  `1.jpg`,
-  function(texture){
-
-    texture.colorSpace =
-      THREE.SRGBColorSpace;
-
-    const sunGeo =
-      new THREE.SphereGeometry(
-        3,
-        64,
-        64
-      );
-
-    const sunMat =
-      new THREE.MeshStandardMaterial({
-
-        map:texture,
-
-        emissive:
-          new THREE.Color(
-            0xffaa33
-          ),
-
-        emissiveIntensity:0.6
-
-      });
-
-    const sunMesh =
-      new THREE.Mesh(
-        sunGeo,
-        sunMat
-      );
-
-    sunMesh.userData.name =
-      'Vareth';
-
-    sunGroup.add(sunMesh);
-
-    planets.push({
-
-      mesh:sunMesh,
-      orbitGroup:sunGroup,
-      spin:0.002,
-      orbit:0,
-      name:'Vareth'
-
-    });
-
-  }
-);
-
-// =========================
-// Sonnen Overlays
-// =========================
-
-loader.load(
-  `12.png`,
-  function(tex){
-
-    tex.colorSpace =
-      THREE.SRGBColorSpace;
-
-    const geo =
-      new THREE.SphereGeometry(
-        3.02,
-        64,
-        64
-      );
-
-    const mat =
-      new THREE.MeshBasicMaterial({
-
-        map:tex,
-        transparent:true,
-        blending:
-          THREE.AdditiveBlending,
-        side:THREE.DoubleSide,
-        depthWrite:false
-
-      });
-
-    const sphere1 =
-      new THREE.Mesh(
-        geo,
-        mat
-      );
-
-    sunGroup.add(sphere1);
-
-    sunGroup.userData.overlay1 =
-      sphere1;
-
-  }
-);
-
-loader.load(
-  `12.png`,
-  function(tex){
-
-    tex.colorSpace =
-      THREE.SRGBColorSpace;
-
-    const geo =
-      new THREE.SphereGeometry(
-        3.01,
-        64,
-        64
-      );
-
-    const mat =
-      new THREE.MeshBasicMaterial({
-
-        map:tex,
-        transparent:true,
-        blending:
-          THREE.AdditiveBlending,
-        side:THREE.DoubleSide,
-        depthWrite:false,
-        opacity:0.3
-
-      });
-
-      const sphere2 =
-        new THREE.Mesh(
-          geo,
-          mat
-        );
-
-      sunGroup.add(sphere2);
-
-      sunGroup.userData.overlay2 =
-        sphere2;
-
-  }
-);
-
-// =========================
-// Sonnenstrahlen
-// =========================
-
-loader.load(
-  `13.png`,
-  function(rayTex){
-
-    rayTex.colorSpace =
-      THREE.SRGBColorSpace;
-
-    const rayGeo =
-      new THREE.PlaneGeometry(
-        9.5,
-        9.5
-      );
-
-    const rayMat =
-      new THREE.MeshBasicMaterial({
-
-        map:rayTex,
-        transparent:true,
-        blending:
-          THREE.AdditiveBlending,
-        side:THREE.DoubleSide,
-        depthWrite:false
-
-      });
-
-    const rays1 =
-      new THREE.Mesh(
-        rayGeo,
-        rayMat
-      );
-
-    const rays2 =
-      new THREE.Mesh(
-        rayGeo,
-        rayMat.clone()
-      );
-
-    sunGroup.add(rays1);
-    sunGroup.add(rays2);
-
-    sunGroup.userData.rays1 =
-      rays1;
-
-    sunGroup.userData.rays2 =
-      rays2;
-
-  }
-);
-
-// =========================
-// PLANETEN
-// =========================
-
-for(let i=1;i<data.length;i++){
-
-  const d = data[i];
-
-  const orbitGroup =
-    new THREE.Object3D();
-
-  scene.add(orbitGroup);
-
-  loader.load(
-    `${i+1}.jpg`,
-    function(texture){
-
-      texture.colorSpace =
-        THREE.SRGBColorSpace;
-
-      let cityTexture = null;
-
-      if(i === 2){
-
-        cityTexture =
-          loader.load(`33.png`);
-
-        cityTexture.colorSpace =
-          THREE.SRGBColorSpace;
-
-      }
-
-      const geometry =
-        new THREE.SphereGeometry(
-          d.size,
-          64,
-          64
-        );
-
-      const material =
-        new THREE.MeshStandardMaterial({
-
-          map:texture,
-          metalness:0,
-          roughness:1
-
-        });
-
-      if(i === 2){
-
-        material.onBeforeCompile =
-          (shader)=>{
-
-          shader.uniforms.sunDirection = {
-            value:new THREE.Vector3()
-          };
-
-          shader.uniforms.nightMap = {
-            value:cityTexture
-          };
-
-          shader.vertexShader =
-            shader.vertexShader.replace(
-
-            '#include <common>',
-
-            `
-            #include <common>
-            varying vec3 vWorldNormal;
-            `
-          );
-
-          shader.vertexShader =
-            shader.vertexShader.replace(
-
-            '#include <beginnormal_vertex>',
-
-            `
-            #include <beginnormal_vertex>
-
-            vWorldNormal =
-              normalize(
-                mat3(modelMatrix)
-                * objectNormal
-              );
-            `
-          );
-
-          shader.fragmentShader =
-            shader.fragmentShader.replace(
-
-            '#include <common>',
-
-            `
-            #include <common>
-
-            uniform sampler2D nightMap;
-            uniform vec3 sunDirection;
-
-            varying vec3 vWorldNormal;
-            `
-          );
-
-          shader.fragmentShader =
-            shader.fragmentShader.replace(
-
-            '#include <dithering_fragment>',
-
-            `
-
-            float lightDot =
-              dot(
-                normalize(
-                  vWorldNormal
-                ),
-                normalize(
-                  sunDirection
-                )
-              );
-
-            float nightFactor =
-              smoothstep(
-                0.1,
-                -0.15,
-                lightDot
-              );
-
-            vec4 nightColor =
-              texture2D(
-                nightMap,
-                vUv
-              );
-
-            gl_FragColor.rgb +=
-              nightColor.rgb *
-              2.2 *
-              nightFactor;
-
-            #include <dithering_fragment>
-            `
-          );
-
-          mesh.userData.shader =
-            shader;
-
-        };
-
-      }
-
-      if(i === 1 || i === 3){
-
-        material.onBeforeCompile =
-          (shader)=>{
-
-          shader.fragmentShader =
-            shader.fragmentShader
-            .replace(
-
-            '#include <dithering_fragment>',
-
-            `
-
-            vec3 texColor =
-              gl_FragColor.rgb;
-
-            float redOnly =
-              max(
-                texColor.r -
-                max(
-                  texColor.g,
-                  texColor.b
-                ),
-                0.0
-              );
-
-            texColor += vec3(
-              redOnly * 1.2,
-              redOnly * 0.15,
-              redOnly * 0.15
-            );
-
-            gl_FragColor.rgb =
-              texColor;
-
-            #include <dithering_fragment>
-            `
-          );
-
-        };
-
-      }
-
-      const mesh =
-        new THREE.Mesh(
-          geometry,
-          material
-        );
-
-      if(i === 2){
-
-        mesh.onBeforeRender =
-          ()=>{
-
-          if(mesh.userData.shader){
-
-            const worldPos =
-              new THREE.Vector3();
-
-            mesh.getWorldPosition(
-              worldPos
-            );
-
-            const sunPos =
-              new THREE.Vector3(
-                0,
-                0,
-                0
-              );
-
-            const dir =
-              sunPos
-              .sub(worldPos)
-              .normalize();
-
-            mesh.userData.shader
-              .uniforms
-              .sunDirection
-              .value
-              .copy(dir);
-
-          }
-
-        };
-
-      }
-
-      mesh.position.x =
-        d.dist;
-
-      orbitGroup.add(mesh);
-
-      if(i === 1){
-
-        loader.load(
-          `13.png`,
-          function(rayTex){
-
-            rayTex.colorSpace =
-              THREE.SRGBColorSpace;
-
-            const rayGeo =
-              new THREE.PlaneGeometry(
-                0.5,
-                0.5
-              );
-
-            const rayMat =
-              new THREE.MeshBasicMaterial({
-
-                map:rayTex,
-                transparent:true,
-                blending:
-                  THREE.AdditiveBlending,
-                side:
-                  THREE.DoubleSide,
-                depthWrite:false
-
-              });
-
-            const rays =
-              new THREE.Mesh(
-                rayGeo,
-                rayMat
-              );
-
-            mesh.add(rays);
-
-            mesh.userData.rays =
-              rays;
-
-          }
-        );
-
-      }
-
-      if(i === 2){
-
-        loader.load(
-          `32.png`,
-          function(rayTex){
-
-            rayTex.colorSpace =
-              THREE.SRGBColorSpace;
-
-            const rayGeo =
-              new THREE.PlaneGeometry(
-                3.0,
-                3.0
-              );
-
-            const rayMat =
-              new THREE.MeshBasicMaterial({
-
-                map:rayTex,
-                transparent:true,
-                blending:
-                  THREE.AdditiveBlending,
-                side:
-                  THREE.DoubleSide,
-                depthWrite:false,
-                opacity:0.9
-
-              });
-
-            const rays1 =
-              new THREE.Mesh(
-                rayGeo,
-                rayMat
-              );
-
-            const rays2 =
-              new THREE.Mesh(
-                rayGeo,
-                rayMat.clone()
-              );
-
-            mesh.add(rays1);
-            mesh.add(rays2);
-
-            mesh.userData.rays1 =
-              rays1;
-
-            mesh.userData.rays2 =
-              rays2;
-
-          }
-        );
-
-      }
-
-      mesh.userData.name =
-        d.name;
-
-      planets.push({
-
-        mesh,
-        orbitGroup,
-        spin:d.spin,
-        orbit:d.orbit,
-        name:d.name
-
-      });
-
-    }
-  );
-
-}
-
-// =========================
-// Asteroiden -> Vorex
-// =========================
-
-const meteorGroup =
-  new THREE.Group();
-
-scene.add(meteorGroup);
-
-const meteors = [];
-
-for(let i=0;i<15;i++){
-
-  const geo =
-    new THREE.BufferGeometry();
-
-  geo.setAttribute(
-
-    'position',
-
-    new THREE.Float32BufferAttribute(
-      [0,0,0],
-      3
-    )
-
-  );
-
-  const mat =
-    new THREE.PointsMaterial({
-
-      color:0xffffff,
-      size:0.1
-
-    });
-
-  const star =
-    new THREE.Points(
-      geo,
-      mat
-    );
-
-  const angle =
-    Math.random() *
-    Math.PI * 2;
-
-  const height =
-    (Math.random()-0.5) * 50;
-
-  const radius =
-    120 +
-    Math.random() * 260;
-
-  star.position.set(
-
-    Math.cos(angle) * radius,
-
-    height,
-
-    Math.sin(angle) * radius
-
-  );
-
-  star.userData.speed =
-    0.25 +
-    Math.random() * 0.55;
-
-  meteorGroup.add(star);
-
-  meteors.push(star);
-
-}
-
-// =========================
-// Klick Auswahl
-// =========================
-
-const raycaster =
-  new THREE.Raycaster();
-
-const mouse =
-  new THREE.Vector2();
-
-function clickPlanet(event){
-
-  mouse.x =
-    (event.clientX /
-    window.innerWidth) * 2 - 1;
-
-  mouse.y =
-    -(event.clientY /
-    window.innerHeight) * 2 + 1;
-
-  raycaster.setFromCamera(
-    mouse,
-    camera
-  );
-
-  const intersects =
-    raycaster.intersectObjects(
-      planets.map(p=>p.mesh)
-    );
-
-  if(intersects.length > 0){
-
-    const target =
-      intersects[0].object;
-
-    lockedPlanet = target;
-
-    const pos =
-      new THREE.Vector3();
-
-    target.getWorldPosition(pos);
-
-    camera.position.set(
-      pos.x + 4,
-      pos.y + 2,
-      pos.z + 4
-    );
-
-    controls.target.copy(pos);
-
-    document.getElementById(
-      'info'
-    ).innerHTML =
-      target.userData.name;
-
-  }
-
-}
-
-window.addEventListener(
-  'click',
-  clickPlanet
-);
-
-window.addEventListener(
-  'touchstart',
-  (e)=>{
-    clickPlanet(
-      e.touches[0]
-    );
-  }
-);
-
-// =========================
-// Animation
-// =========================
-
-function animate(){
-
-  requestAnimationFrame(
-    animate
-  );
-
-  planets.forEach(p=>{
-
-    p.mesh.rotation.y +=
-      p.spin;
-
-    p.orbitGroup.rotation.y +=
-      p.orbit;
-
-    if(p.mesh.userData.rays){
-
-      const r =
-        p.mesh.userData.rays;
-
-      r.lookAt(camera.position);
-
-      r.rotation.z += 0.001;
-
-    }
-
-    if(p.mesh.userData.rays1){
-
-      const r1 =
-        p.mesh.userData.rays1;
-
-      const r2 =
-        p.mesh.userData.rays2;
-
-      r1.lookAt(camera.position);
-      r2.lookAt(camera.position);
-
-      r1.rotation.z += 0.01;
-      r2.rotation.z -= 0.008;
-
-    }
-
-  });
-
-  // =========================
-  // Camera Lock Update
-  // =========================
-
-  if(lockedPlanet){
-
-    const pos =
-      new THREE.Vector3();
-
-    lockedPlanet.getWorldPosition(pos);
-
-    controls.target.copy(pos);
-
-  }
-
-  // Sonnen Overlays
-
-  if(sunGroup.userData.overlay1){
-
-    sunGroup.userData.overlay1
-      .rotation.y += 0.001;
-
-  }
-
-  if(sunGroup.userData.overlay2){
-
-    sunGroup.userData.overlay2
-      .rotation.y -= 0.0008;
-
-  }
-
-  // Sonnenstrahlen
-
-  if(sunGroup.userData.rays1){
-
-    const r1 =
-      sunGroup.userData.rays1;
-
-    const r2 =
-      sunGroup.userData.rays2;
-
-    r1.lookAt(camera.position);
-    r2.lookAt(camera.position);
-
-    r1.rotation.z += 0.004;
-    r2.rotation.z -= 0.004;
-
-  }
-
-  // =========================
-  // Asteroiden -> Vorex
-  // =========================
-
-  const vorex =
-    planets.find(
-      p => p.name === 'Vorex'
-    );
-
-  if(vorex){
-
-    const vorexPos =
-      new THREE.Vector3();
-
-    vorex.mesh.getWorldPosition(
-      vorexPos
-    );
-
-    meteors.forEach(m=>{
-
-      const dir =
-        new THREE.Vector3()
-        .subVectors(
-          vorexPos,
-          m.position
-        )
-        .normalize();
-
-      m.position.add(
-
-        dir.multiplyScalar(
-          m.userData.speed
-        )
-
-      );
-
-      if(
-
-        m.position.distanceTo(
-          vorexPos
-        ) < 2.5
-
-      ){
-
-        const angle =
-          Math.random() *
-          Math.PI * 2;
-
-        const height =
-          (Math.random()-0.5)
-          * 60;
-
-        const radius =
-          180 +
-          Math.random() * 260;
-
-        m.position.set(
-
-          vorexPos.x +
-          Math.cos(angle)
-          * radius,
-
-          height,
-
-          vorexPos.z +
-          Math.sin(angle)
-          * radius
-
-        );
-
-      }
-
-    });
-
-  }
-
-  controls.update();
-
-  renderer.render(
-    scene,
-    camera
-  );
-
-}
-
-animate();
-
-// =========================
-// Resize
-// =========================
-
-window.addEventListener(
-  'resize',
-  ()=>{
-
-    camera.aspect =
-      window.innerWidth /
-      window.innerHeight;
-
-    camera.updateProjectionMatrix();
-
-    renderer.setSize(
-      window.innerWidth,
-      window.innerHeight
-    );
-
-  }
-);
+draw();
 
 </script>
-
 </body>
 </html>
+
+wo mach ich die sonnensystem größe realistisch groß?
