@@ -1,157 +1,262 @@
-<!DOCTYPE html><html lang="de">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Magnetometer Laser Oscilloscope</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: #000;
-      height: 100vh;
-    }canvas {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  background: radial-gradient(circle at center, rgba(0,20,10,0.9) 0%, rgba(0,0,0,1) 100%);
+<meta charset="utf-8">
+<title>Luke's Web Telescope</title>
+<style>
+body { margin:0; background:black; overflow:hidden; }
+canvas { display:block; }
+button {
+    position:fixed;
+    top:10px;
+    left:10px;
+    z-index:10;
 }
-
-.ui {
-  position: fixed;
-  bottom: 18px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-}
-
-.panel {
-  background: rgba(0,0,0,0.25);
-  border: 1px solid rgba(0,255,136,0.25);
-  border-radius: 999px;
-  padding: 10px 18px;
-  backdrop-filter: blur(10px);
-}
-
-input[type="range"] {
-  width: 260px;
-  accent-color: #00ff88;
-}
-
-  </style>
+</style>
 </head>
-<body>  <div class="ui">
-    <div class="panel">
-      <input type="range" id="gain" min="0.1" max="10" step="0.1" value="2" />
-    </div>
-  </div><canvas id="c"></canvas>
+<body>
 
-  <script>
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
+<button id="start">START</button>
+<canvas id="c"></canvas>
 
-    function resize() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+<script src="https://cdn.jsdelivr.net/npm/fft.js@4.0.4/dist/fft.min.js"></script>
+
+<script>
+const c = document.getElementById("c");
+const ctx = c.getContext("2d");
+
+// ---------------- PYTHON PARAMS ----------------
+let WINDOW_WIDTH = 420;
+let WINDOW_HEIGHT = 600;
+
+let WIDTH = 64;
+let HEIGHT = 64;
+
+let SAMPLE_RATE = 44100;
+let FFT_SIZE = 512;
+let SPEC_HISTORY = 256;
+
+// ---------------- BUFFERS (deque equivalent) ----------------
+let frame_buffer = [];
+let output_buffer = [];
+let spec_buffer = Array.from({length: SPEC_HISTORY}, () => new Array(WIDTH).fill(0));
+
+// ---------------- UI STATE ----------------
+let brightness = 0.5;
+let contrast = 0.5;
+
+let slider_pos = 200;
+let dragging_slider = false;
+
+let line_left, line_right, line_middle;
+let dragging_line = null;
+
+// ---------------- AUDIO ----------------
+let audioCtx;
+let analyser;
+let dataArray;
+
+// ---------------- FFT ----------------
+const fft = new FFTJS(FFT_SIZE);
+const input = new Array(FFT_SIZE).fill(0);
+const out = fft.createComplexArray();
+const spectrum = fft.createComplexArray();
+
+// ---------------- RESIZE ----------------
+function resize(){
+    c.width = window.innerWidth;
+    c.height = window.innerHeight;
+
+    WINDOW_WIDTH = c.width;
+    WINDOW_HEIGHT = c.height;
+
+    line_left = WINDOW_WIDTH / 4;
+    line_right = WINDOW_WIDTH * 3 / 4;
+    line_middle = (line_left + line_right) / 2;
+}
+window.addEventListener("resize", resize);
+resize();
+
+// ---------------- AUDIO START ----------------
+document.getElementById("start").onclick = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+
+    audioCtx = new AudioContext();
+    const src = audioCtx.createMediaStreamSource(stream);
+
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+
+    src.connect(analyser);
+
+    dataArray = new Float32Array(analyser.fftSize);
+
+    loop();
+};
+
+// ---------------- FFT HELP ----------------
+function doFFT(samples){
+    input.fill(0);
+
+    for (let i=0;i<FFT_SIZE;i++){
+        input[i] = samples[i] || 0;
     }
-    resize();
-    window.addEventListener('resize', resize);
 
-    const gainSlider = document.getElementById('gain');
-    let gain = parseFloat(gainSlider.value);
+    fft.realTransform(out, input);
+    fft.completeSpectrum(out);
 
-    gainSlider.addEventListener('input', () => {
-      gain = parseFloat(gainSlider.value);
+    let mag = [];
+
+    for (let i=0;i<FFT_SIZE/2;i++){
+        let re = out[i*2];
+        let im = out[i*2+1];
+        mag.push(Math.log1p(Math.sqrt(re*re + im*im)));
+    }
+
+    let max = Math.max(...mag) + 1e-6;
+    return mag.map(v => v / max);
+}
+
+// ---------------- LOOP ----------------
+function loop(){
+    requestAnimationFrame(loop);
+
+    ctx.fillStyle = "black";
+    ctx.fillRect(0,0,c.width,c.height);
+
+    if (!analyser) return;
+
+    analyser.getFloatTimeDomainData(dataArray);
+
+    // ---------------- deque.push ----------------
+    for (let i=0;i<dataArray.length;i++){
+        frame_buffer.push(dataArray[i]);
+    }
+
+    if (frame_buffer.length > WIDTH*HEIGHT){
+        frame_buffer.splice(0, frame_buffer.length - WIDTH*HEIGHT);
+    }
+
+    // ---------------- AUDIO PROCESS (512 samples) ----------------
+    if (frame_buffer.length >= FFT_SIZE){
+
+        let samples = frame_buffer.splice(0, FFT_SIZE);
+
+        // FFT SPEC
+        let mag = doFFT(samples);
+
+        let mag_resized = new Array(WIDTH);
+        for (let i=0;i<WIDTH;i++){
+            let t = i / WIDTH * mag.length;
+            let idx = Math.floor(t);
+            mag_resized[i] = mag[idx] || 0;
+        }
+
+        spec_buffer.push(mag_resized);
+        if (spec_buffer.length > SPEC_HISTORY) spec_buffer.shift();
+
+        // ---------------- BANDPASS ----------------
+        let fftData = fft.createComplexArray();
+        fft.realTransform(fftData, samples);
+        fft.completeSpectrum(fftData);
+
+        let fft_freqs = new Array(FFT_SIZE/2);
+        let nyq = SAMPLE_RATE / 2;
+
+        for (let i=0;i<FFT_SIZE/2;i++){
+            fft_freqs[i] = i / (FFT_SIZE/2) * nyq;
+        }
+
+        let f_low = line_left / WINDOW_WIDTH * nyq;
+        let f_high = line_right / WINDOW_WIDTH * nyq;
+
+        for (let i=0;i<FFT_SIZE/2;i++){
+            if (fft_freqs[i] < f_low || fft_freqs[i] > f_high){
+                fftData[i*2] = 0;
+                fftData[i*2+1] = 0;
+            }
+        }
+
+        fft.inverseTransform(out, fftData);
+
+        let bandpassed = [];
+        for (let i=0;i<FFT_SIZE;i++){
+            let v = out[i*2];
+            bandpassed.push(Math.max(-1, Math.min(1, v * (1 + contrast*2))));
+        }
+
+        output_buffer.push(...bandpassed);
+    }
+
+    // ---------------- TV IMAGE ----------------
+    if (frame_buffer.length >= WIDTH*HEIGHT){
+
+        let img = ctx.createImageData(WIDTH, HEIGHT);
+
+        let nyq = SAMPLE_RATE / 2;
+        let f_low = line_left / WINDOW_WIDTH * nyq;
+        let f_high = line_right / WINDOW_WIDTH * nyq;
+
+        let samples = frame_buffer.slice(-WIDTH*HEIGHT);
+
+        for (let i=0;i<WIDTH*HEIGHT;i++){
+            let v = samples[i] || 0;
+
+            v = Math.abs(v) ** 0.6 * brightness;
+
+            let c = Math.min(255, v * 255);
+
+            img.data[i*4+0] = c;
+            img.data[i*4+1] = c;
+            img.data[i*4+2] = c;
+            img.data[i*4+3] = 255;
+        }
+
+        let off = document.createElement("canvas");
+        off.width = WIDTH;
+        off.height = HEIGHT;
+
+        off.getContext("2d").putImageData(img,0,0);
+
+        ctx.drawImage(off, 0, 0, c.width, c.height*0.6);
+    }
+
+    // ---------------- SPECTROGRAM ----------------
+    let img2 = ctx.createImageData(WIDTH, SPEC_HISTORY);
+
+    for (let y=0;y<SPEC_HISTORY;y++){
+        for (let x=0;x<WIDTH;x++){
+            let v = spec_buffer[y][x] || 0;
+            let c2 = v * 255;
+
+            let i = (y*WIDTH + x)*4;
+            img2.data[i] = c2;
+            img2.data[i+1] = c2;
+            img2.data[i+2] = c2;
+            img2.data[i+3] = 255;
+        }
+    }
+
+    let off2 = document.createElement("canvas");
+    off2.width = WIDTH;
+    off2.height = SPEC_HISTORY;
+
+    off2.getContext("2d").putImageData(img2,0,0);
+
+    ctx.drawImage(off2, 0, c.height*0.6, c.width, c.height*0.4);
+
+    // ---------------- LINES ----------------
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 2;
+
+    [line_left, line_middle, line_right].forEach(x=>{
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, c.height);
+        ctx.stroke();
     });
+}
+</script>
 
-    let points = [];
-    const maxPoints = 600;
-
-    let baseX = null;
-    let baseY = null;
-
-    function addPoint(x, y) {
-      points.push({ x, y });
-      if (points.length > maxPoints) points.shift();
-    }
-
-    function draw() {
-      requestAnimationFrame(draw);
-
-      ctx.fillStyle = 'rgba(0,0,0,0.08)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-
-      ctx.beginPath();
-
-      for (let i = 0; i < points.length; i++) {
-        const p = points[i];
-        const x = cx + p.x * gain;
-        const y = cy + p.y * gain;
-
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-
-      ctx.strokeStyle = '#00ff88';
-      ctx.shadowColor = '#00ff88';
-      ctx.shadowBlur = 28;
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-    }
-
-    draw();
-
-    async function startMagnetometer() {
-      try {
-        if (!('Magnetometer' in window)) {
-          alert('Magnetometer API nicht unterstützt');
-          return;
-        }
-
-        // Optional permission (mainly Chrome/Android)
-        if (navigator.permissions) {
-          try {
-            const status = await navigator.permissions.query({ name: 'magnetometer' });
-            console.log('Magnetometer permission:', status.state);
-          } catch (e) {}
-        }
-
-        const sensor = new Magnetometer({ frequency: 60 });
-
-        sensor.addEventListener('reading', () => {
-          let x = sensor.x || 0;
-          let y = sensor.y || 0;
-
-          // calibration baseline
-          if (baseX === null) {
-            baseX = x;
-            baseY = y;
-          }
-
-          x = x - baseX;
-          y = y - baseY;
-
-          // soften signal
-          x *= 0.6;
-          y *= 0.6;
-
-          addPoint(x, y);
-        });
-
-        sensor.addEventListener('error', (event) => {
-          console.error(event.error);
-        });
-
-        sensor.start();
-      } catch (e) {
-        console.error(e);
-        alert('Sensor Zugriff fehlgeschlagen (HTTPS + Gerät nötig)');
-      }
-    }
-
-    startMagnetometer();
-  </script></body>
+</body>
 </html>
