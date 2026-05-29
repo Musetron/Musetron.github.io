@@ -2,86 +2,52 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Luke's Web Telescope</title>
+<title>Spirit Viewer AUDIO FIX</title>
 <style>
-body { margin:0; background:black; overflow:hidden; }
+body { margin:0; background:black; }
 canvas { display:block; }
 button {
-    position:fixed;
-    top:10px;
-    left:10px;
-    z-index:10;
+  position:fixed;
+  top:20px;
+  left:20px;
+  z-index:10;
+  padding:10px;
 }
 </style>
 </head>
 <body>
 
-<button id="start">START</button>
+<button id="start">START MIC</button>
 <canvas id="c"></canvas>
-
-<script src="https://cdn.jsdelivr.net/npm/fft.js@4.0.4/dist/fft.min.js"></script>
 
 <script>
 const c = document.getElementById("c");
 const ctx = c.getContext("2d");
 
-// ---------------- PYTHON PARAMS ----------------
-let WINDOW_WIDTH = 420;
-let WINDOW_HEIGHT = 600;
+let analyser = null;
+let data = null;
+let running = false;
 
 let WIDTH = 64;
 let HEIGHT = 64;
 
-let SAMPLE_RATE = 44100;
-let FFT_SIZE = 512;
-let SPEC_HISTORY = 256;
+let buffer = [];
+let spec = Array.from({length: 120}, () => new Array(WIDTH).fill(0));
 
-// ---------------- BUFFERS (deque equivalent) ----------------
-let frame_buffer = [];
-let output_buffer = [];
-let spec_buffer = Array.from({length: SPEC_HISTORY}, () => new Array(WIDTH).fill(0));
-
-// ---------------- UI STATE ----------------
-let brightness = 0.5;
-let contrast = 0.5;
-
-let slider_pos = 200;
-let dragging_slider = false;
-
-let line_left, line_right, line_middle;
-let dragging_line = null;
-
-// ---------------- AUDIO ----------------
-let audioCtx;
-let analyser;
-let dataArray;
-
-// ---------------- FFT ----------------
-const fft = new FFTJS(FFT_SIZE);
-const input = new Array(FFT_SIZE).fill(0);
-const out = fft.createComplexArray();
-const spectrum = fft.createComplexArray();
-
-// ---------------- RESIZE ----------------
+// resize
 function resize(){
-    c.width = window.innerWidth;
-    c.height = window.innerHeight;
-
-    WINDOW_WIDTH = c.width;
-    WINDOW_HEIGHT = c.height;
-
-    line_left = WINDOW_WIDTH / 4;
-    line_right = WINDOW_WIDTH * 3 / 4;
-    line_middle = (line_left + line_right) / 2;
+  c.width = innerWidth;
+  c.height = innerHeight;
 }
 window.addEventListener("resize", resize);
 resize();
 
-// ---------------- AUDIO START ----------------
+// ---------------- START MIC ----------------
 document.getElementById("start").onclick = async () => {
+  try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
 
-    audioCtx = new AudioContext();
+    const audioCtx = new AudioContext();
     const src = audioCtx.createMediaStreamSource(stream);
 
     analyser = audioCtx.createAnalyser();
@@ -89,172 +55,101 @@ document.getElementById("start").onclick = async () => {
 
     src.connect(analyser);
 
-    dataArray = new Float32Array(analyser.fftSize);
+    data = new Float32Array(analyser.fftSize);
+
+    running = true;
+    document.getElementById("start").remove();
 
     loop();
+
+  } catch (e) {
+    alert("Mikrofon blockiert oder nicht erlaubt");
+    console.log(e);
+  }
 };
-
-// ---------------- FFT HELP ----------------
-function doFFT(samples){
-    input.fill(0);
-
-    for (let i=0;i<FFT_SIZE;i++){
-        input[i] = samples[i] || 0;
-    }
-
-    fft.realTransform(out, input);
-    fft.completeSpectrum(out);
-
-    let mag = [];
-
-    for (let i=0;i<FFT_SIZE/2;i++){
-        let re = out[i*2];
-        let im = out[i*2+1];
-        mag.push(Math.log1p(Math.sqrt(re*re + im*im)));
-    }
-
-    let max = Math.max(...mag) + 1e-6;
-    return mag.map(v => v / max);
-}
 
 // ---------------- LOOP ----------------
 function loop(){
-    requestAnimationFrame(loop);
+  requestAnimationFrame(loop);
 
-    ctx.fillStyle = "black";
-    ctx.fillRect(0,0,c.width,c.height);
+  ctx.fillStyle = "black";
+  ctx.fillRect(0,0,c.width,c.height);
 
-    if (!analyser) return;
+  if (!running || !analyser) return;
 
-    analyser.getFloatTimeDomainData(dataArray);
+  analyser.getFloatTimeDomainData(data);
 
-    // ---------------- deque.push ----------------
-    for (let i=0;i<dataArray.length;i++){
-        frame_buffer.push(dataArray[i]);
+  // buffer
+  for (let i=0;i<data.length;i++){
+    buffer.push(data[i]);
+  }
+
+  if (buffer.length > WIDTH*HEIGHT){
+    buffer.splice(0, buffer.length - WIDTH*HEIGHT);
+  }
+
+  // fake spectrum (stabil)
+  let mag = new Array(WIDTH).fill(0);
+
+  for (let i=0;i<WIDTH;i++){
+    mag[i] = Math.abs(data[i] || 0);
+  }
+
+  let max = Math.max(...mag) + 0.0001;
+  mag = mag.map(v => v/max);
+
+  spec.push(mag);
+  if (spec.length > 120) spec.shift();
+
+  // ---------------- IMAGE ----------------
+  if (buffer.length >= WIDTH*HEIGHT){
+
+    let img = ctx.createImageData(WIDTH, HEIGHT);
+
+    for (let i=0;i<WIDTH*HEIGHT;i++){
+      let v = buffer[buffer.length - WIDTH*HEIGHT + i];
+
+      v = Math.abs(v) * 4;
+
+      let c = Math.min(255, v * 255);
+
+      img.data[i*4+0] = c;
+      img.data[i*4+1] = c;
+      img.data[i*4+2] = c;
+      img.data[i*4+3] = 255;
     }
 
-    if (frame_buffer.length > WIDTH*HEIGHT){
-        frame_buffer.splice(0, frame_buffer.length - WIDTH*HEIGHT);
+    let off = document.createElement("canvas");
+    off.width = WIDTH;
+    off.height = HEIGHT;
+
+    off.getContext("2d").putImageData(img,0,0);
+
+    ctx.drawImage(off, 0, 0, c.width, c.height*0.6);
+  }
+
+  // ---------------- SPECTROGRAM ----------------
+  let img2 = ctx.createImageData(WIDTH, 120);
+
+  for (let y=0;y<120;y++){
+    for (let x=0;x<WIDTH;x++){
+      let v = spec[y][x] || 0;
+
+      let i = (y*WIDTH + x)*4;
+      img2.data[i] = v*255;
+      img2.data[i+1] = v*255;
+      img2.data[i+2] = v*255;
+      img2.data[i+3] = 255;
     }
+  }
 
-    // ---------------- AUDIO PROCESS (512 samples) ----------------
-    if (frame_buffer.length >= FFT_SIZE){
+  let off2 = document.createElement("canvas");
+  off2.width = WIDTH;
+  off2.height = 120;
 
-        let samples = frame_buffer.splice(0, FFT_SIZE);
+  off2.getContext("2d").putImageData(img2,0,0);
 
-        // FFT SPEC
-        let mag = doFFT(samples);
-
-        let mag_resized = new Array(WIDTH);
-        for (let i=0;i<WIDTH;i++){
-            let t = i / WIDTH * mag.length;
-            let idx = Math.floor(t);
-            mag_resized[i] = mag[idx] || 0;
-        }
-
-        spec_buffer.push(mag_resized);
-        if (spec_buffer.length > SPEC_HISTORY) spec_buffer.shift();
-
-        // ---------------- BANDPASS ----------------
-        let fftData = fft.createComplexArray();
-        fft.realTransform(fftData, samples);
-        fft.completeSpectrum(fftData);
-
-        let fft_freqs = new Array(FFT_SIZE/2);
-        let nyq = SAMPLE_RATE / 2;
-
-        for (let i=0;i<FFT_SIZE/2;i++){
-            fft_freqs[i] = i / (FFT_SIZE/2) * nyq;
-        }
-
-        let f_low = line_left / WINDOW_WIDTH * nyq;
-        let f_high = line_right / WINDOW_WIDTH * nyq;
-
-        for (let i=0;i<FFT_SIZE/2;i++){
-            if (fft_freqs[i] < f_low || fft_freqs[i] > f_high){
-                fftData[i*2] = 0;
-                fftData[i*2+1] = 0;
-            }
-        }
-
-        fft.inverseTransform(out, fftData);
-
-        let bandpassed = [];
-        for (let i=0;i<FFT_SIZE;i++){
-            let v = out[i*2];
-            bandpassed.push(Math.max(-1, Math.min(1, v * (1 + contrast*2))));
-        }
-
-        output_buffer.push(...bandpassed);
-    }
-
-    // ---------------- TV IMAGE ----------------
-    if (frame_buffer.length >= WIDTH*HEIGHT){
-
-        let img = ctx.createImageData(WIDTH, HEIGHT);
-
-        let nyq = SAMPLE_RATE / 2;
-        let f_low = line_left / WINDOW_WIDTH * nyq;
-        let f_high = line_right / WINDOW_WIDTH * nyq;
-
-        let samples = frame_buffer.slice(-WIDTH*HEIGHT);
-
-        for (let i=0;i<WIDTH*HEIGHT;i++){
-            let v = samples[i] || 0;
-
-            v = Math.abs(v) ** 0.6 * brightness;
-
-            let c = Math.min(255, v * 255);
-
-            img.data[i*4+0] = c;
-            img.data[i*4+1] = c;
-            img.data[i*4+2] = c;
-            img.data[i*4+3] = 255;
-        }
-
-        let off = document.createElement("canvas");
-        off.width = WIDTH;
-        off.height = HEIGHT;
-
-        off.getContext("2d").putImageData(img,0,0);
-
-        ctx.drawImage(off, 0, 0, c.width, c.height*0.6);
-    }
-
-    // ---------------- SPECTROGRAM ----------------
-    let img2 = ctx.createImageData(WIDTH, SPEC_HISTORY);
-
-    for (let y=0;y<SPEC_HISTORY;y++){
-        for (let x=0;x<WIDTH;x++){
-            let v = spec_buffer[y][x] || 0;
-            let c2 = v * 255;
-
-            let i = (y*WIDTH + x)*4;
-            img2.data[i] = c2;
-            img2.data[i+1] = c2;
-            img2.data[i+2] = c2;
-            img2.data[i+3] = 255;
-        }
-    }
-
-    let off2 = document.createElement("canvas");
-    off2.width = WIDTH;
-    off2.height = SPEC_HISTORY;
-
-    off2.getContext("2d").putImageData(img2,0,0);
-
-    ctx.drawImage(off2, 0, c.height*0.6, c.width, c.height*0.4);
-
-    // ---------------- LINES ----------------
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 2;
-
-    [line_left, line_middle, line_right].forEach(x=>{
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, c.height);
-        ctx.stroke();
-    });
+  ctx.drawImage(off2, 0, c.height*0.6, c.width, c.height*0.4);
 }
 </script>
 
