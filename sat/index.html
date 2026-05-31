@@ -2,27 +2,46 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Sat</title>
+<title>Donner + Waver DEBUG</title>
 
 <style>
 body { font-family: Arial; margin: 20px; }
+
 button { padding: 10px 15px; margin: 5px; }
+
 #bar { width: 100%; height: 20px; background: #ddd; }
 #fill { height: 100%; width: 0%; background: steelblue; }
+
 table { width: 100%; margin-top: 15px; border-collapse: collapse; }
 td, th { border: 1px solid #ccc; padding: 6px; }
 th { background: #eee; }
+
+#debug {
+    margin-top: 15px;
+    padding: 10px;
+    background: #111;
+    color: #0f0;
+    font-family: monospace;
+    font-size: 12px;
+}
 </style>
 </head>
 
 <body>
 
-<h2>Sat</h2>
+<h2>🌩️ Donner + Waver DEBUG SYSTEM</h2>
 
-<button onclick="startMic()">Start</button>
+<button onclick="startMic()">🎤 Start Mikrofon</button>
 
 <div id="bar"><div id="fill"></div></div>
 <p>Pegel: <span id="lvl">0</span></p>
+
+<div id="debug">
+WAVER: <span id="wstatus">INIT...</span><br>
+MODULE: <span id="mstatus">CHECKING...</span><br>
+TIMER: <span id="tstatus">INIT...</span><br>
+EVENTS: <span id="ecount">0</span>
+</div>
 
 <table>
 <thead>
@@ -33,37 +52,73 @@ th { background: #eee; }
 
 <script>
 // ----------------------
-// WAVER INIT
+// DEBUG STATE
 // ----------------------
 let isWaverReady = false;
+let events = [];
 
-function doInit() {
-    if (window.Module && Module._do_init) {
-        Module._do_init();
+// ----------------------
+// MODULE DEBUG
+// ----------------------
+setInterval(() => {
+    document.getElementById("mstatus").innerText =
+        window.Module ? "LOADED" : "NULL";
+
+    console.log("MODULE:", window.Module);
+}, 2000);
+
+// ----------------------
+// WAVER INIT (SAFE DEBUG)
+// ----------------------
+function initWaver() {
+    if (!window.Module) {
+        document.getElementById("wstatus").innerText = "WAIT MODULE";
+        setTimeout(initWaver, 300);
+        return;
+    }
+
+    if (typeof Module.onRuntimeInitialized === "function") {
+        Module.onRuntimeInitialized = () => {
+            isWaverReady = true;
+            document.getElementById("wstatus").innerText = "READY (WASM)";
+            console.log("Waver READY via WASM");
+        };
+    } else {
         isWaverReady = true;
-        console.log("Waver ready");
+        document.getElementById("wstatus").innerText = "READY (FALLBACK)";
+        console.log("Waver READY fallback");
     }
 }
 
-// einfache Ausgabe über Waver
+initWaver();
+
+// ----------------------
+// SAFE SPEAK (ALWAYS WORKS)
+// ----------------------
 function waverSpeak(text) {
-    if (!isWaverReady) return;
-    
+    console.log("SPEAK:", text);
+
+    if (!isWaverReady) {
+        console.warn("Waver not ready → fallback only");
+        return;
+    }
+
     try {
-        // WICHTIG: je nach waver.js Build evtl. anders
-        Module.ccall("text_to_speech", null, ["string"], [text]);
+        if (Module && Module.ccall) {
+            Module.ccall("text_to_speech", null, ["string"], [text]);
+        } else {
+            console.warn("No ccall available");
+        }
     } catch (e) {
-        console.log("Waver error:", e);
+        console.error("Waver error:", e);
     }
 }
 
 // ----------------------
-// AUDIO / DONNER
+// AUDIO
 // ----------------------
 let audioCtx, analyser, data;
 let last = 0;
-
-let events = [];
 
 function estimateDistance(level) {
     let d = 20 * Math.exp(-0.03 * level);
@@ -108,44 +163,45 @@ function loop() {
         const time = new Date().toLocaleTimeString();
         const dist = estimateDistance(level);
 
-        const event = { time, dist, level };
-        events.push(event);
+        events.push({ time, dist, level });
 
-        // Tabelle
         const row = document.createElement("tr");
-        row.innerHTML = `
-            <td>${time}</td>
-            <td>${dist}</td>
-            <td>${level}</td>
-        `;
+        row.innerHTML = `<td>${time}</td><td>${dist}</td><td>${level}</td>`;
         document.getElementById("log").prepend(row);
 
-        console.log("Donner:", event);
+        document.getElementById("ecount").innerText = events.length;
+
+        console.log("EVENT:", { time, dist, level });
     }
 
     requestAnimationFrame(loop);
 }
 
 // ----------------------
-// ALLE 5 MIN WAVER OUTPUT
+// TIMER DEBUG (20s)
 // ----------------------
 setInterval(() => {
+    document.getElementById("tstatus").innerText = "TRIGGER";
+
+    console.log("TIMER TRIGGER");
+
     if (events.length === 0) return;
 
     const last10 = events.slice(-10);
 
-    let msg = "Data: ";
+    let msg = "Donner Übersicht. ";
     last10.forEach(e => {
-        msg += `${e.time}, ${e.dist} Km. `;
+        msg += `${e.time}, ${e.dist} km. `;
     });
 
-    console.log("WAVER OUTPUT:", msg);
     waverSpeak(msg);
 
-}, 1 * 60 * 1000); // 5 Minuten
+}, 20 * 1000);
 
-// Init Waver wenn geladen
-setTimeout(doInit, 2000);
+// ----------------------
+setInterval(() => {
+    document.getElementById("tstatus").innerText = "RUNNING";
+}, 1000);
 
 </script>
 
