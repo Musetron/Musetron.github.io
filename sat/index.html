@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Sat</title>
+
+<style>
+body { font-family: Arial; margin: 20px; }
+button { padding: 10px 15px; margin: 5px; }
+#bar { width: 100%; height: 20px; background: #ddd; }
+#fill { height: 100%; width: 0%; background: steelblue; }
+table { width: 100%; margin-top: 15px; border-collapse: collapse; }
+td, th { border: 1px solid #ccc; padding: 6px; }
+th { background: #eee; }
+</style>
+</head>
+
+<body>
+
+<h2>Sat</h2>
+
+<button onclick="startMic()">Start</button>
+
+<div id="bar"><div id="fill"></div></div>
+<p>Pegel: <span id="lvl">0</span></p>
+
+<table>
+<thead>
+<tr><th>Zeit</th><th>Entfernung (km)</th><th>Pegel</th></tr>
+</thead>
+<tbody id="log"></tbody>
+</table>
+
+<script>
+// ----------------------
+// WAVER INIT
+// ----------------------
+let isWaverReady = false;
+
+function doInit() {
+    if (window.Module && Module._do_init) {
+        Module._do_init();
+        isWaverReady = true;
+        console.log("Waver ready");
+    }
+}
+
+// einfache Ausgabe über Waver
+function waverSpeak(text) {
+    if (!isWaverReady) return;
+    
+    try {
+        // WICHTIG: je nach waver.js Build evtl. anders
+        Module.ccall("text_to_speech", null, ["string"], [text]);
+    } catch (e) {
+        console.log("Waver error:", e);
+    }
+}
+
+// ----------------------
+// AUDIO / DONNER
+// ----------------------
+let audioCtx, analyser, data;
+let last = 0;
+
+let events = [];
+
+function estimateDistance(level) {
+    let d = 20 * Math.exp(-0.03 * level);
+    return Math.max(0.3, Math.min(25, d)).toFixed(2);
+}
+
+async function startMic() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    audioCtx = new AudioContext();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+
+    const src = audioCtx.createMediaStreamSource(stream);
+    src.connect(analyser);
+
+    data = new Uint8Array(analyser.frequencyBinCount);
+
+    loop();
+}
+
+function loop() {
+    analyser.getByteTimeDomainData(data);
+
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+        let v = (data[i] - 128) / 128;
+        sum += v * v;
+    }
+
+    const rms = Math.sqrt(sum / data.length);
+    const level = Math.min(100, Math.round(rms * 300));
+
+    document.getElementById("fill").style.width = level + "%";
+    document.getElementById("lvl").innerText = level;
+
+    const now = Date.now();
+
+    if (level > 20 && now - last > 800) {
+        last = now;
+
+        const time = new Date().toLocaleTimeString();
+        const dist = estimateDistance(level);
+
+        const event = { time, dist, level };
+        events.push(event);
+
+        // Tabelle
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td>${time}</td>
+            <td>${dist}</td>
+            <td>${level}</td>
+        `;
+        document.getElementById("log").prepend(row);
+
+        console.log("Donner:", event);
+    }
+
+    requestAnimationFrame(loop);
+}
+
+// ----------------------
+// ALLE 5 MIN WAVER OUTPUT
+// ----------------------
+setInterval(() => {
+    if (events.length === 0) return;
+
+    const last10 = events.slice(-10);
+
+    let msg = "Data: ";
+    last10.forEach(e => {
+        msg += `${e.time}, ${e.dist} Km. `;
+    });
+
+    console.log("WAVER OUTPUT:", msg);
+    waverSpeak(msg);
+
+}, 1 * 60 * 1000); // 5 Minuten
+
+// Init Waver wenn geladen
+setTimeout(doInit, 2000);
+
+</script>
+
+<!-- WAVER -->
+<script src="js/waver.js"></script>
+
+</body>
+</html>
