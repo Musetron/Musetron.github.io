@@ -1,196 +1,64 @@
 <!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8" />
-<title>RF Camera Sender v2</title>
-
-<style>
-  body {
-    margin: 0;
-    background: #0b0b0b;
-    color: #00ff88;
-    font-family: monospace;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    gap: 10px;
-  }
-
-  canvas {
-    width: 260px;
-    height: 260px;
-    image-rendering: pixelated;
-    border: 1px solid #00ff88;
-  }
-
-  button {
-    padding: 8px 14px;
-    background: transparent;
-    border: 1px solid #00ff88;
-    color: #00ff88;
-    cursor: pointer;
-  }
-
-  button:hover {
-    background: #00ff88;
-    color: #000;
-  }
-
-  .status { opacity: 0.8; }
-
-  video { display:none; }
-</style>
-</head>
-
-<body>
-
-<canvas id="canvas" width="128" height="128"></canvas>
-<button id="sendBtn">SEND (6s smooth)</button>
-<div class="status" id="status">idle</div>
-
-<video id="video" autoplay></video>
+<html>
+<body style="background:#000;color:#0f0;font-family:monospace;text-align:center;">
+<video id="v" autoplay style="display:none"></video>
+<button id="b">SEND SSTV</button>
+<canvas id="c" width="128" height="128" style="border:1px solid #0f0"></canvas>
 
 <script>
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
+const video = document.getElementById("v");
+const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
-const status = document.getElementById("status");
-const sendBtn = document.getElementById("sendBtn");
 
 let audioCtx;
-let latestFrame = null;
 
-// Kamera
-async function initCam() {
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-  video.srcObject = stream;
+async function cam(){
+  video.srcObject = await navigator.mediaDevices.getUserMedia({video:true});
 }
 
-// Preview
-function previewLoop() {
-  ctx.drawImage(video, 0, 0, 128, 128);
+function getFrame(){
+  ctx.drawImage(video,0,0,128,128);
+  return ctx.getImageData(0,0,128,128).data;
+}
 
-  const img = ctx.getImageData(0, 0, 128, 128);
-  const d = img.data;
+function freqFromGray(g){
+  return 800 + (1 - g/255) * 1600; // 800–2400 Hz
+}
 
-  for (let i = 0; i < d.length; i += 4) {
-    const g = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-    d[i] = d[i+1] = d[i+2] = g;
+function tone(freq, time){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+
+  o.frequency.value = freq;
+  g.gain.value = 0.2;
+
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime + time);
+}
+
+async function send(){
+  audioCtx = new AudioContext();
+
+  const data = getFrame();
+  const pixelTime = 0.002; // schnell (~0.3s/frame pro zeile * 128 ≈ 6s)
+
+  for(let i=0;i<128*128;i++){
+    const p = i*4;
+    const gray = (data[p]+data[p+1]+data[p+2])/3;
+
+    const f = freqFromGray(gray);
+
+    tone(f, pixelTime);
+
+    await new Promise(r=>setTimeout(r,pixelTime*1000));
   }
-
-  ctx.putImageData(img, 0, 0);
-  requestAnimationFrame(previewLoop);
 }
 
-// Snapshot
-function captureFrame() {
-  const img = ctx.getImageData(0, 0, 128, 128).data;
-  latestFrame = new Uint8ClampedArray(img);
-}
-
-// Tone helper
-function tone(freq, dur) {
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-
-  osc.type = "sine";
-  osc.frequency.value = freq;
-  gain.gain.value = 0.2;
-
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-
-  osc.start();
-  osc.stop(audioCtx.currentTime + dur);
-}
-
-// Smooth noise generator (wichtig!)
-function createSmoothNoiseBuffer(duration, frame) {
-  const sampleRate = audioCtx.sampleRate;
-  const length = sampleRate * duration;
-
-  const buffer = audioCtx.createBuffer(1, length, sampleRate);
-  const out = buffer.getChannelData(0);
-
-  const pixels = 128 * 128;
-
-  let currentAmp = 0;
-  let targetAmp = 0;
-
-  let pixelIndex = 0;
-  let samplesPerPixel = Math.floor(length / pixels);
-
-  for (let i = 0; i < length; i++) {
-
-    // Pixel wechseln (langsam!)
-    if (i % samplesPerPixel === 0 && pixelIndex < pixels) {
-      const p = pixelIndex * 4;
-      const gray = (frame[p] + frame[p+1] + frame[p+2]) / 3;
-
-      targetAmp = 1 - (gray / 255); // invertiert: dunkel = stark
-      pixelIndex++;
-    }
-
-    // SMOOTHING (entscheidend)
-    currentAmp += (targetAmp - currentAmp) * 0.02;
-
-    // kontinuierliches Rauschen
-    out[i] = (Math.random() * 2 - 1) * currentAmp;
-  }
-
-  return buffer;
-}
-
-// Send
-function sendFrame() {
-  if (!audioCtx) audioCtx = new AudioContext();
-  if (!latestFrame) return;
-
-  status.textContent = "sending (6s smooth)...";
-
-  // START marker
-  tone(1200, 0.15);
-
-  setTimeout(() => {
-
-    const duration = 6.0; // <<<<<< WICHTIG
-    const buffer = createSmoothNoiseBuffer(duration, latestFrame);
-
-    const src = audioCtx.createBufferSource();
-    src.buffer = buffer;
-    src.connect(audioCtx.destination);
-    src.start();
-
-    setTimeout(() => {
-      tone(600, 0.2);
-      status.textContent = "sent ✔ " + new Date().toLocaleTimeString();
-    }, duration * 1000);
-
-  }, 150);
-}
-
-// Button
-sendBtn.onclick = () => {
-  captureFrame();
-  sendFrame();
+document.getElementById("b").onclick = async ()=>{
+  await cam();
+  send();
 };
-
-// Auto send
-setInterval(() => {
-  captureFrame();
-  sendFrame();
-}, 10 * 60 * 1000);
-
-// init
-initCam().then(() => {
-  video.onloadedmetadata = () => {
-    previewLoop();
-    status.textContent = "running (6s smooth mode)";
-  };
-});
 </script>
-
 </body>
 </html>
