@@ -1,61 +1,58 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<title>Camera Audio Sender</title>
+<meta charset="utf-8" />
+<title>RF Camera Sender v2</title>
 
 <style>
-body{
-    margin:0;
-    background:#000;
-    color:#00ff88;
-    font-family:monospace;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    height:100vh;
-    gap:10px;
-}
+  body {
+    margin: 0;
+    background: #0b0b0b;
+    color: #00ff88;
+    font-family: monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 10px;
+  }
 
-canvas{
-    width:260px;
-    height:260px;
-    image-rendering:pixelated;
-    border:1px solid #00ff88;
-}
+  canvas {
+    width: 260px;
+    height: 260px;
+    image-rendering: pixelated;
+    border: 1px solid #00ff88;
+  }
 
-button{
-    padding:8px 14px;
-    background:transparent;
-    border:1px solid #00ff88;
-    color:#00ff88;
-    cursor:pointer;
-}
+  button {
+    padding: 8px 14px;
+    background: transparent;
+    border: 1px solid #00ff88;
+    color: #00ff88;
+    cursor: pointer;
+  }
 
-button:hover{
-    background:#00ff88;
-    color:#000;
-}
+  button:hover {
+    background: #00ff88;
+    color: #000;
+  }
 
-video{
-    display:none;
-}
+  .status { opacity: 0.8; }
+
+  video { display:none; }
 </style>
 </head>
 
 <body>
 
 <canvas id="canvas" width="128" height="128"></canvas>
+<button id="sendBtn">SEND (6s smooth)</button>
+<div class="status" id="status">idle</div>
 
-<button id="sendBtn">SEND NOW</button>
-
-<div id="status">idle</div>
-
-<video id="video" autoplay playsinline></video>
+<video id="video" autoplay></video>
 
 <script>
-
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -63,165 +60,136 @@ const status = document.getElementById("status");
 const sendBtn = document.getElementById("sendBtn");
 
 let audioCtx;
-let grayFrame = null;
+let latestFrame = null;
 
-async function initCam()
-{
-    const stream =
-        await navigator.mediaDevices.getUserMedia({
-            video:true
-        });
-
-    video.srcObject = stream;
+// Kamera
+async function initCam() {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
 }
 
-function previewLoop()
-{
-    ctx.drawImage(video,0,0,128,128);
+// Preview
+function previewLoop() {
+  ctx.drawImage(video, 0, 0, 128, 128);
 
-    const img = ctx.getImageData(0,0,128,128);
-    const d = img.data;
+  const img = ctx.getImageData(0, 0, 128, 128);
+  const d = img.data;
 
-    for(let i=0;i<d.length;i+=4)
-    {
-        const g =
-            0.299*d[i] +
-            0.587*d[i+1] +
-            0.114*d[i+2];
+  for (let i = 0; i < d.length; i += 4) {
+    const g = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+    d[i] = d[i+1] = d[i+2] = g;
+  }
 
-        d[i]=g;
-        d[i+1]=g;
-        d[i+2]=g;
+  ctx.putImageData(img, 0, 0);
+  requestAnimationFrame(previewLoop);
+}
+
+// Snapshot
+function captureFrame() {
+  const img = ctx.getImageData(0, 0, 128, 128).data;
+  latestFrame = new Uint8ClampedArray(img);
+}
+
+// Tone helper
+function tone(freq, dur) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+
+  osc.type = "sine";
+  osc.frequency.value = freq;
+  gain.gain.value = 0.2;
+
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur);
+}
+
+// Smooth noise generator (wichtig!)
+function createSmoothNoiseBuffer(duration, frame) {
+  const sampleRate = audioCtx.sampleRate;
+  const length = sampleRate * duration;
+
+  const buffer = audioCtx.createBuffer(1, length, sampleRate);
+  const out = buffer.getChannelData(0);
+
+  const pixels = 128 * 128;
+
+  let currentAmp = 0;
+  let targetAmp = 0;
+
+  let pixelIndex = 0;
+  let samplesPerPixel = Math.floor(length / pixels);
+
+  for (let i = 0; i < length; i++) {
+
+    // Pixel wechseln (langsam!)
+    if (i % samplesPerPixel === 0 && pixelIndex < pixels) {
+      const p = pixelIndex * 4;
+      const gray = (frame[p] + frame[p+1] + frame[p+2]) / 3;
+
+      targetAmp = 1 - (gray / 255); // invertiert: dunkel = stark
+      pixelIndex++;
     }
 
-    ctx.putImageData(img,0,0);
+    // SMOOTHING (entscheidend)
+    currentAmp += (targetAmp - currentAmp) * 0.02;
 
-    requestAnimationFrame(previewLoop);
+    // kontinuierliches Rauschen
+    out[i] = (Math.random() * 2 - 1) * currentAmp;
+  }
+
+  return buffer;
 }
 
-function captureFrame()
-{
-    const img =
-        ctx.getImageData(0,0,128,128).data;
+// Send
+function sendFrame() {
+  if (!audioCtx) audioCtx = new AudioContext();
+  if (!latestFrame) return;
 
-    const gray =
-        new Uint8Array(128*128);
+  status.textContent = "sending (6s smooth)...";
 
-    let p = 0;
+  // START marker
+  tone(1200, 0.15);
 
-    for(let i=0;i<img.length;i+=4)
-    {
-        gray[p++] = img[i];
-    }
+  setTimeout(() => {
 
-    grayFrame = gray;
+    const duration = 6.0; // <<<<<< WICHTIG
+    const buffer = createSmoothNoiseBuffer(duration, latestFrame);
+
+    const src = audioCtx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(audioCtx.destination);
+    src.start();
+
+    setTimeout(() => {
+      tone(600, 0.2);
+      status.textContent = "sent ✔ " + new Date().toLocaleTimeString();
+    }, duration * 1000);
+
+  }, 150);
 }
 
-function playTone(freq,duration,startTime)
-{
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.value = freq;
-
-    gain.gain.value = 0.15;
-
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-
-    osc.start(startTime);
-    osc.stop(startTime + duration);
-}
-
-function sendFrame()
-{
-    if(!grayFrame) return;
-
-    if(!audioCtx)
-    {
-        audioCtx = new AudioContext();
-    }
-
-    status.textContent = "sending...";
-
-    const now = audioCtx.currentTime + 0.1;
-
-    //
-    // PREAMBLE
-    //
-    playTone(1900,0.5,now);
-
-    //
-    // START MARKER
-    //
-    playTone(1200,0.2,now + 0.55);
-
-    //
-    // PIXELS
-    //
-    const pixelDuration = 0.0015;
-
-    let t = now + 0.8;
-
-    for(let i=0;i<grayFrame.length;i++)
-    {
-        const gray = grayFrame[i];
-
-        const freq =
-            1500 +
-            (gray/255) * 800;
-
-        playTone(
-            freq,
-            pixelDuration,
-            t
-        );
-
-        t += pixelDuration;
-    }
-
-    //
-    // END MARKER
-    //
-    playTone(
-        900,
-        0.3,
-        t + 0.1
-    );
-
-    const totalTime =
-        (t + 0.5 - now) * 1000;
-
-    setTimeout(()=>{
-        status.textContent =
-            "sent ✔ " +
-            new Date().toLocaleTimeString();
-    },totalTime);
-}
-
-sendBtn.onclick = () =>
-{
-    captureFrame();
-    sendFrame();
+// Button
+sendBtn.onclick = () => {
+  captureFrame();
+  sendFrame();
 };
 
-setInterval(()=>
-{
-    captureFrame();
-    sendFrame();
-},10*60*1000);
+// Auto send
+setInterval(() => {
+  captureFrame();
+  sendFrame();
+}, 10 * 60 * 1000);
 
-initCam().then(()=>
-{
-    video.onloadedmetadata = () =>
-    {
-        previewLoop();
-        status.textContent =
-            "running (auto + manual)";
-    };
+// init
+initCam().then(() => {
+  video.onloadedmetadata = () => {
+    previewLoop();
+    status.textContent = "running (6s smooth mode)";
+  };
 });
-
 </script>
 
 </body>
