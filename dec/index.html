@@ -2,43 +2,44 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Camera Audio Encoder</title>
+<title>FM Image Synth</title>
 <style>
-  body { background:#111; color:#0f0; font-family:monospace; }
+  body { background:#0a0a0a; color:#0f0; font-family:monospace; }
+  video { width: 240px; display:block; }
   canvas { display:none; }
-  video { width: 320px; }
 </style>
 </head>
 <body>
 
-<h3>Camera → Audio Encoder (128x128 / 120 px/min)</h3>
+<h3>Bild → FM Synth (128×128)</h3>
+
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas" width="128" height="128"></canvas>
 
 <script>
+const WIDTH = 128;
+const HEIGHT = 128;
+
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
 let audioCtx;
-let noiseNode;
-let gainNode;
-
-const WIDTH = 128;
-const HEIGHT = 128;
-
-// 120 Pixel pro Minute = 500ms pro Pixel
-const PIXEL_INTERVAL_MS = 500;
+let carrier;
+let modulator;
+let modGain;
+let masterGain;
 
 let pixels = [];
 let index = 0;
 
-// Kamera starten
+// ---------------- CAMERA ----------------
 async function startCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
 }
 
+// ---------------- IMAGE CAPTURE ----------------
 function captureFrame() {
   ctx.drawImage(video, 0, 0, WIDTH, HEIGHT);
   const img = ctx.getImageData(0, 0, WIDTH, HEIGHT).data;
@@ -47,73 +48,84 @@ function captureFrame() {
 
   for (let i = 0; i < img.length; i += 4) {
     const r = img[i];
-    const g = img[i + 1];
-    const b = img[i + 2];
+    const g = img[i+1];
+    const b = img[i+2];
 
-    // grayscale
     const gray = (0.299*r + 0.587*g + 0.114*b) / 255;
-
     pixels.push(gray);
   }
 
   index = 0;
 }
 
-// Audio Setup
+// ---------------- AUDIO SETUP (FM) ----------------
 function startAudio() {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-  gainNode = audioCtx.createGain();
-  gainNode.gain.value = 0.5;
+  // Carrier (hörbarer Ton)
+  carrier = audioCtx.createOscillator();
+  carrier.type = "sine";
 
-  const bufferSize = 4096;
+  // Modulator (FM)
+  modulator = audioCtx.createOscillator();
+  modulator.type = "sine";
 
-  noiseNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+  modGain = audioCtx.createGain();
+  masterGain = audioCtx.createGain();
 
-  noiseNode.onaudioprocess = function(e) {
-    const output = e.outputBuffer.getChannelData(0);
+  masterGain.gain.value = 0.4;
 
-    for (let i = 0; i < output.length; i++) {
-      let val = 0;
+  // Routing:
+  modulator.connect(modGain);
+  modGain.connect(carrier.frequency);
 
-      if (pixels.length > 0) {
-        const p = pixels[index % pixels.length];
+  carrier.connect(masterGain);
+  masterGain.connect(audioCtx.destination);
 
-        // inverse mapping:
-        // hell -> leise, dunkel -> laut
-        const amplitude = (1 - p);
+  carrier.start();
+  modulator.start();
 
-        // noise
-        val = (Math.random() * 2 - 1) * amplitude;
-
-        index++;
-      }
-
-      output[i] = val;
-    }
-  };
-
-  noiseNode.connect(gainNode);
-  gainNode.connect(audioCtx.destination);
+  animateSound();
 }
 
-// Loop: jede Minute neues Bild
-function startCaptureLoop() {
+// ---------------- IMAGE → FM MAPPING ----------------
+function animateSound() {
+  const pixelRate = 120 / 60; // 120 px per minute → 2 px/sec
+
+  setInterval(() => {
+
+    if (!pixels.length) return;
+
+    const p = pixels[index % pixels.length];
+
+    // BASISFREQUENZ (hell = hoch, dunkel = tief)
+    const baseFreq = 80 + (p * 900); // 80–980 Hz
+
+    // MODULATIONSTIEFE (dunkel = stärker)
+    const modDepth = (1 - p) * 600;
+
+    carrier.frequency.setValueAtTime(baseFreq, audioCtx.currentTime);
+    modGain.gain.setValueAtTime(modDepth, audioCtx.currentTime);
+
+    // Modulator langsam bewegen → Bildstruktur hörbar machen
+    modulator.frequency.setValueAtTime(2 + (p * 20), audioCtx.currentTime);
+
+    index++;
+
+  }, 500); // 120 Pixel/min
+}
+
+// ---------------- LOOP ----------------
+function startLoop() {
   captureFrame();
   setInterval(captureFrame, 60000);
 }
 
-// optional: "scan" speed visual timing (informativ)
-function logScanSpeed() {
-  console.log("Scanrate: 120 Pixel / Minute (~1 Pixel / 500ms)");
-}
-
-// INIT
+// ---------------- INIT ----------------
 async function init() {
   await startCamera();
   startAudio();
-  startCaptureLoop();
-  logScanSpeed();
+  startLoop();
 }
 
 init();
