@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Noise Waterfall Decoder</title>
+
+<style>
+  body {
+    margin: 0;
+    background: #000;
+    color: #00ff88;
+    font-family: monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 10px;
+  }
+
+  canvas {
+    border: 1px solid #00ff88;
+    image-rendering: pixelated;
+  }
+
+  button {
+    padding: 8px 14px;
+    background: transparent;
+    border: 1px solid #00ff88;
+    color: #00ff88;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: #00ff88;
+    color: #000;
+  }
+
+  .status {
+    opacity: 0.8;
+  }
+</style>
+</head>
+
+<body>
+
+<canvas id="waterfall" width="512" height="256"></canvas>
+<button id="start">START DECODER</button>
+<div class="status" id="status">idle</div>
+
+<script>
+const canvas = document.getElementById("waterfall");
+const ctx = canvas.getContext("2d");
+
+const status = document.getElementById("status");
+const btn = document.getElementById("start");
+
+let audioCtx;
+let analyser;
+let dataArray;
+
+const WIDTH = canvas.width;
+const HEIGHT = canvas.height;
+
+function setupAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  analyser = audioCtx.createAnalyser();
+
+  // WICHTIG für dein Noise-System:
+  analyser.fftSize = 4096;
+  analyser.smoothingTimeConstant = 0.2;
+
+  dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+  return navigator.mediaDevices.getUserMedia({ audio: true });
+}
+
+// Wasserfall zeichnen
+function draw() {
+  requestAnimationFrame(draw);
+
+  analyser.getByteFrequencyData(dataArray);
+
+  // scroll down (klassischer waterfall)
+  const imageData = ctx.getImageData(0, 0, WIDTH, HEIGHT);
+  ctx.putImageData(imageData, 0, 1);
+
+  // neue Zeile oben zeichnen
+  for (let x = 0; x < WIDTH; x++) {
+
+    const index = Math.floor(x / WIDTH * dataArray.length);
+
+    const v = dataArray[index];
+
+    // Kontrastverstärkung (sehr wichtig für dein Signal)
+    const intensity = Math.min(255, v * 2.2);
+
+    ctx.fillStyle = `rgb(0, ${intensity}, ${intensity * 0.6})`;
+    ctx.fillRect(WIDTH - x, 0, 1, 1);
+  }
+}
+
+// Start
+btn.onclick = async () => {
+  status.textContent = "starting...";
+
+  const stream = await setupAudio();
+  const source = audioCtx.createMediaStreamSource(stream);
+
+  source.connect(analyser);
+
+  status.textContent = "decoding live noise...";
+
+  draw();
+};
+</script>
+
+</body>
+</html>
