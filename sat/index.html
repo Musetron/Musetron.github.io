@@ -8,64 +8,59 @@
 
 <style>
 body{
-    font-family: Arial, sans-serif;
-    font-size: 14px;
-    margin: 20px;
-    background: #ffffff;
-    color: #222;
+    font-family:Arial,sans-serif;
+    font-size:14px;
+    margin:20px;
+    background:#fff;
+    color:#222;
 }
 
 h2{
-    margin: 0 0 15px 0;
-    font-size: 20px;
-    font-weight: 600;
+    margin:0 0 15px 0;
 }
 
 .toolbar{
-    margin-bottom: 15px;
+    margin-bottom:15px;
 }
 
 button{
-    width: 160px;
-    padding: 8px;
-    margin-right: 6px;
-    border: 1px solid #bfbfbf;
-    background: #f3f3f3;
-    cursor: pointer;
-    font-size: 13px;
+    width:240px;
+    padding:8px;
+    margin:4px;
+    border:1px solid #bfbfbf;
+    background:#f3f3f3;
+    cursor:pointer;
 }
 
 button:hover{
-    background: #e9e9e9;
+    background:#e9e9e9;
 }
 
 table{
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
 }
 
-th,
-td{
-    border: 1px solid #cfcfcf;
-    padding: 6px 8px;
-    text-align: left;
+th,td{
+    border:1px solid #ccc;
+    padding:6px 8px;
+    text-align:left;
 }
 
 th{
-    background: #efefef;
-    font-weight: 600;
+    background:#efefef;
 }
 
 .status-table{
-    width: 500px;
-    margin-bottom: 15px;
+    width:500px;
+    margin-bottom:15px;
 }
 
 .status-table td:first-child{
-    width: 150px;
-    background: #f7f7f7;
-    font-weight: 600;
+    width:150px;
+    background:#f7f7f7;
+    font-weight:bold;
 }
 </style>
 </head>
@@ -76,13 +71,13 @@ th{
 
 <div class="toolbar">
     <button id="startBtn">Satellit Einschalten</button>
-    <button id="testBtn">Test Senden</button>
+    <button id="playCsvBtn">CSV Als RAW Abspielen</button>
 </div>
 
 <table class="status-table">
 <tr>
     <td>Protocol</td>
-    <td id="gstate">WAIT</td>
+    <td>CSV RAW AUDIO</td>
 </tr>
 <tr>
     <td>Audio</td>
@@ -113,148 +108,74 @@ th{
 <tbody id="log"></tbody>
 </table>
 
-<script src="js/ggwave.js"></script>
-
 <script>
 
 window.AudioContext =
 window.AudioContext ||
 window.webkitAudioContext;
 
-let ggwave = null;
-let context = null;
-let parameters = null;
-let instance = null;
+const audioCtx = new AudioContext();
 
 let analyser = null;
 let micSource = null;
 
 let thunderEvents = [];
 let lastDetection = 0;
-
-function convertTypedArray(src, type){
-
-    const buffer =
-        new ArrayBuffer(src.byteLength);
-
-    new src.constructor(buffer).set(src);
-
-    return new type(buffer);
-}
-
-async function initGGWave(){
-
-    if(instance) return;
-
-    ggwave = await ggwave_factory();
-
-    context = new AudioContext({
-        sampleRate:48000
-    });
-
-    parameters =
-        ggwave.getDefaultParameters();
-
-    parameters.sampleRateInp =
-        context.sampleRate;
-
-    parameters.sampleRateOut =
-        context.sampleRate;
-
-    instance =
-        ggwave.init(parameters);
-
-    document.getElementById("gstate")
-        .textContent = "READY";
-
-    console.log("Protocol READY");
-}
-
-async function sendGGWave(text){
-
-    await initGGWave();
-
-    if(context.state !== "running"){
-        await context.resume();
-    }
-
-    const waveform =
-    ggwave.encode(
-        instance,
-        text,
-        ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_NORMAL,
-        10
-    );
-
-    const buf =
-        convertTypedArray(
-            waveform,
-            Float32Array
-        );
-
-    const buffer =
-        context.createBuffer(
-            1,
-            buf.length,
-            context.sampleRate
-        );
-
-    buffer.getChannelData(0).set(buf);
-
-    const source =
-        context.createBufferSource();
-
-    source.buffer = buffer;
-    source.connect(context.destination);
-
-    source.start();
-
-    document.getElementById("lasttx")
-        .textContent =
-        new Date().toLocaleTimeString();
-
-    console.log("TX:", text);
-}
+let autoSenderStarted = false;
 
 async function startMic(){
 
-    await initGGWave();
-
-    if(context.state !== "running"){
-        await context.resume();
+    if(audioCtx.state !== "running"){
+        await audioCtx.resume();
     }
 
     const stream =
-        await navigator.mediaDevices.getUserMedia({
-            audio:{
-                echoCancellation:false,
-                noiseSuppression:false,
-                autoGainControl:false
-            }
-        });
+    await navigator.mediaDevices.getUserMedia({
+        audio:{
+            echoCancellation:false,
+            noiseSuppression:false,
+            autoGainControl:false
+        }
+    });
 
     micSource =
-        context.createMediaStreamSource(stream);
+    audioCtx.createMediaStreamSource(stream);
 
     analyser =
-        context.createAnalyser();
+    audioCtx.createAnalyser();
 
     analyser.fftSize = 2048;
 
     micSource.connect(analyser);
 
-    document.getElementById("astate")
-        .textContent = "OK";
+    document
+    .getElementById("astate")
+    .textContent = "OK";
 
     monitor();
+
+    if(!autoSenderStarted){
+
+        autoSenderStarted = true;
+
+        setInterval(() => {
+
+            if(thunderEvents.length === 0){
+                return;
+            }
+
+            playCSVasRAW();
+
+        }, 60000);
+    }
 }
 
 function monitor(){
 
     const data =
-        new Uint8Array(
-            analyser.frequencyBinCount
-        );
+    new Uint8Array(
+        analyser.frequencyBinCount
+    );
 
     function loop(){
 
@@ -265,24 +186,23 @@ function monitor(){
         for(let i=0;i<data.length;i++){
 
             const v =
-                (data[i]-128)/128;
+            (data[i]-128)/128;
 
             sum += v*v;
         }
 
         const rms =
-            Math.sqrt(
-                sum/data.length
-            );
+        Math.sqrt(sum/data.length);
 
         const level =
-            Math.min(
-                100,
-                Math.round(rms*300)
-            );
+        Math.min(
+            100,
+            Math.round(rms*300)
+        );
 
-        document.getElementById("level")
-            .textContent = level;
+        document
+        .getElementById("level")
+        .textContent = level;
 
         const now = Date.now();
 
@@ -294,14 +214,14 @@ function monitor(){
             lastDetection = now;
 
             const time =
-                new Date()
-                .toLocaleTimeString();
+            new Date()
+            .toLocaleTimeString();
 
             const distance =
-                (
-                    0.3 +
-                    (100-level)*0.25
-                ).toFixed(2);
+            (
+                0.3 +
+                (100-level)*0.25
+            ).toFixed(2);
 
             thunderEvents.push({
                 time,
@@ -310,7 +230,7 @@ function monitor(){
             });
 
             const row =
-                document.createElement("tr");
+            document.createElement("tr");
 
             row.innerHTML =
                 "<td>"+time+"</td>" +
@@ -318,13 +238,13 @@ function monitor(){
                 "<td>"+level+"</td>";
 
             document
-                .getElementById("log")
-                .prepend(row);
+            .getElementById("log")
+            .prepend(row);
 
             document
-                .getElementById("events")
-                .textContent =
-                thunderEvents.length;
+            .getElementById("events")
+            .textContent =
+            thunderEvents.length;
         }
 
         requestAnimationFrame(loop);
@@ -333,31 +253,65 @@ function monitor(){
     loop();
 }
 
-setInterval(async () => {
+async function playCSVasRAW(){
 
-    if (thunderEvents.length === 0) {
-        return;
+    if(audioCtx.state !== "running"){
+        await audioCtx.resume();
     }
 
-    let msg =
-        "DONNERBERICHT\n";
+    let csv =
+    "Zeit,Kilometer,Pegel\n";
 
-    for (const e of thunderEvents) {
+    for(const e of thunderEvents){
 
-        msg +=
-            e.time +
-            "|" +
-            e.distance +
-            "km" +
-            "\n";
+        csv +=
+            e.time + "," +
+            e.distance + "," +
+            e.level + "\n";
     }
 
-    console.log("SENDE:");
-    console.log(msg);
+    const encoder =
+    new TextEncoder();
 
-    await sendGGWave(msg);
+    const bytes =
+    encoder.encode(csv);
 
-}, 60000);
+    const buffer =
+    audioCtx.createBuffer(
+        1,
+        bytes.length,
+        44100
+    );
+
+    const channel =
+    buffer.getChannelData(0);
+
+    for(let i=0;i<bytes.length;i++){
+
+        channel[i] =
+        (bytes[i]-128)/128;
+    }
+
+    const source =
+    audioCtx.createBufferSource();
+
+    source.buffer = buffer;
+
+    source.connect(
+        audioCtx.destination
+    );
+
+    source.start();
+
+    document
+    .getElementById("lasttx")
+    .textContent =
+    new Date()
+    .toLocaleTimeString();
+
+    console.log("CSV RAW SEND");
+    console.log(csv);
+}
 
 document
 .getElementById("startBtn")
@@ -367,16 +321,10 @@ document
 );
 
 document
-.getElementById("testBtn")
+.getElementById("playCsvBtn")
 .addEventListener(
     "click",
-    async ()=>{
-
-        await sendGGWave(
-            "Test Nachricht."
-        );
-
-    }
+    playCSVasRAW
 );
 
 </script>
