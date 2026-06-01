@@ -1,109 +1,238 @@
 <!doctype html>
-<html>
+<html lang="de">
 <head>
 <meta charset="utf-8">
-<title>Audio Waterfall</title>
+<title>RF Camera Decoder</title>
 
 <style>
 body{
-    background:#000;
+    margin:0;
+    background:#0b0b0b;
     color:#00ff88;
     font-family:monospace;
-    text-align:center;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+    gap:10px;
 }
 
 canvas{
-    width:512px;
-    height:512px;
-    border:1px solid #00ff88;
+    width:256px;
+    height:256px;
     image-rendering:pixelated;
+    border:1px solid #00ff88;
+}
+
+.status{
+    opacity:.8;
 }
 </style>
 </head>
 <body>
 
-<h3>Audio → Pixel Waterfall</h3>
-
-<canvas id="c" width="256" height="512"></canvas>
-<br>
-<button id="start">START</button>
+<canvas id="canvas" width="128" height="128"></canvas>
+<div id="status" class="status">waiting for signal...</div>
 
 <script>
 
-const canvas = document.getElementById("c");
+const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+const status = document.getElementById("status");
 
+const WIDTH = 128;
+const HEIGHT = 128;
+
+const START_FREQ = 1200;
+const START_THRESHOLD = 120;
+
+const FRAME_DURATION = 1.6;
+
+let audioCtx;
 let analyser;
-let samples;
+let freqData;
 
-async function start() {
+let capturing = false;
+let frameSamples = [];
+
+async function init() {
 
     const stream =
         await navigator.mediaDevices.getUserMedia({
             audio:true
         });
 
-    const audioCtx = new AudioContext();
+    audioCtx = new AudioContext();
 
     const source =
         audioCtx.createMediaStreamSource(stream);
 
     analyser = audioCtx.createAnalyser();
 
-    analyser.fftSize = 512;
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0;
 
     source.connect(analyser);
 
-    samples =
-        new Uint8Array(analyser.fftSize);
+    freqData =
+        new Uint8Array(analyser.frequencyBinCount);
 
-    draw();
+    listen();
 }
 
-function draw() {
+function listen() {
 
-    requestAnimationFrame(draw);
+    requestAnimationFrame(listen);
 
-    analyser.getByteTimeDomainData(samples);
+    if(capturing) return;
 
-    ctx.drawImage(
-        canvas,
-        0,1,
-        canvas.width,
-        canvas.height-1,
-        0,0,
-        canvas.width,
-        canvas.height-1
-    );
+    analyser.getByteFrequencyData(freqData);
 
-    const y = canvas.height - 1;
+    const bin =
+        Math.round(
+            START_FREQ /
+            (audioCtx.sampleRate / analyser.fftSize)
+        );
 
-    for(let x=0;x<canvas.width;x++) {
+    const level = freqData[bin] || 0;
 
-        const idx =
-            Math.floor(
-                x * samples.length / canvas.width
-            );
+    if(level > START_THRESHOLD){
 
-        const s = samples[idx];
+        capturing = true;
 
-        const amp =
-            Math.abs(s - 128) / 128;
+        status.textContent =
+            "start detected";
 
-        const gray =
-            Math.floor(
-                255 - amp * 255
-            );
-
-        ctx.fillStyle =
-            `rgb(${gray},${gray},${gray})`;
-
-        ctx.fillRect(x,y,1,1);
+        captureFrame();
     }
 }
 
-document.getElementById("start")
-.onclick = start;
+function captureFrame(){
+
+    const processor =
+        audioCtx.createScriptProcessor(
+            4096,
+            1,
+            1
+        );
+
+    frameSamples = [];
+
+    const source =
+        audioCtx.createMediaStreamSource(
+            document.querySelector("audioStream") ||
+            window.streamRef
+        );
+
+    processor.onaudioprocess = e => {
+
+        const data =
+            e.inputBuffer.getChannelData(0);
+
+        frameSamples.push(
+            new Float32Array(data)
+        );
+    };
+
+    navigator.mediaDevices
+        .getUserMedia({audio:true})
+        .then(stream => {
+
+            const mic =
+                audioCtx.createMediaStreamSource(stream);
+
+            mic.connect(processor);
+            processor.connect(audioCtx.destination);
+
+            setTimeout(() => {
+
+                processor.disconnect();
+
+                decode(frameSamples);
+
+                capturing = false;
+
+                status.textContent =
+                    "waiting for signal...";
+
+            }, FRAME_DURATION * 1000);
+
+        });
+}
+
+function decode(chunks){
+
+    let total = 0;
+
+    for(const c of chunks)
+        total += c.length;
+
+    const samples =
+        new Float32Array(total);
+
+    let pos = 0;
+
+    for(const c of chunks){
+
+        samples.set(c,pos);
+
+        pos += c.length;
+    }
+
+    const pixels = WIDTH * HEIGHT;
+
+    const step =
+        Math.floor(samples.length / pixels);
+
+    const img =
+        ctx.createImageData(
+            WIDTH,
+            HEIGHT
+        );
+
+    for(let i=0;i<pixels;i++){
+
+        let sum = 0;
+
+        const start = i * step;
+        const end = start + step;
+
+        for(let s=start;s<end;s++){
+
+            sum += Math.abs(samples[s]);
+        }
+
+        const avg = sum / step;
+
+        let gray =
+            255 -
+            Math.min(
+                255,
+                avg * 1800
+            );
+
+        gray = Math.max(
+            0,
+            Math.min(255, gray)
+        );
+
+        const p = i * 4;
+
+        img.data[p]   = gray;
+        img.data[p+1] = gray;
+        img.data[p+2] = gray;
+        img.data[p+3] = 255;
+    }
+
+    ctx.putImageData(img,0,0);
+
+    status.textContent =
+        "frame received " +
+        new Date().toLocaleTimeString();
+}
+
+init();
 
 </script>
 
