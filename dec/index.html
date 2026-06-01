@@ -1,136 +1,66 @@
 <!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8" />
-<title>Noise Raster Decoder FIX</title>
-
-<style>
-  body {
-    margin: 0;
-    background: #000;
-    color: #00ff88;
-    font-family: monospace;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    gap: 10px;
-  }
-
-  canvas {
-    width: 512px;
-    height: 512px;
-    border: 1px solid #00ff88;
-    image-rendering: pixelated;
-  }
-
-  button {
-    padding: 8px 14px;
-    background: transparent;
-    border: 1px solid #00ff88;
-    color: #00ff88;
-  }
-
-  .status { opacity: 0.8; }
-</style>
-</head>
-
-<body>
-
-<canvas id="c" width="128" height="128"></canvas>
-<button id="start">START</button>
-<div class="status" id="status">idle</div>
+<html>
+<body style="background:#000;color:#0f0;font-family:monospace;text-align:center;">
+<button id="start">START RX</button>
+<canvas id="out" width="128" height="128" style="border:1px solid #0f0"></canvas>
 
 <script>
-const canvas = document.getElementById("c");
+let audioCtx, analyser, data, src;
+const canvas = document.getElementById("out");
 const ctx = canvas.getContext("2d");
 
-const W = 128;
-const H = 128;
-const duration = 6.0;
+let img = ctx.createImageData(128,128);
 
-let audioCtx, analyser, timeData;
-
-let img = ctx.createImageData(W, H);
-
-let startTime;
-
-// AUDIO SETUP
-async function initAudio() {
+async function start(){
   audioCtx = new AudioContext();
 
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
-  analyser.smoothingTimeConstant = 0.0;
+  data = new Uint8Array(analyser.frequencyBinCount);
 
-  timeData = new Uint8Array(analyser.fftSize);
-
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const src = audioCtx.createMediaStreamSource(stream);
+  const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  src = audioCtx.createMediaStreamSource(stream);
   src.connect(analyser);
-}
 
-// 🔥 WICHTIG: echte Energie (nicht Peak!)
-function getEnergy() {
-  analyser.getByteTimeDomainData(timeData);
+  let i = 0;
 
-  let sum = 0;
+  function loop(){
+    requestAnimationFrame(loop);
 
-  for (let i = 0; i < timeData.length; i++) {
-    let v = (timeData[i] - 128) / 128;
-    sum += v * v;
+    analyser.getByteFrequencyData(data);
+
+    // finde Peak frequency bin
+    let max = 0, idx = 0;
+    for(let j=0;j<data.length;j++){
+      if(data[j] > max){
+        max = data[j];
+        idx = j;
+      }
+    }
+
+    // freq → grayscale
+    let gray = 255 - (idx / data.length) * 255;
+
+    let x = i % 128;
+    let y = Math.floor(i / 128);
+
+    let p = (y*128 + x)*4;
+
+    img.data[p] = gray;
+    img.data[p+1] = gray;
+    img.data[p+2] = gray;
+    img.data[p+3] = 255;
+
+    ctx.putImageData(img,0,0);
+
+    i++;
+    if(i > 128*128) i = 0;
   }
 
-  return sum / timeData.length; // 0..~1
+  loop();
 }
 
-// smoothing (entscheidend!)
-let smooth = 0;
-
-function draw() {
-  requestAnimationFrame(draw);
-
-  let t = (performance.now() - startTime) / 1000;
-  if (t > duration) return;
-
-  const total = W * H;
-  const p = Math.floor((t / duration) * total);
-
-  const x = p % W;
-  const y = Math.floor(p / W);
-
-  let energy = getEnergy();
-
-  // 🔥 extrem wichtig: glätten
-  smooth += (energy - smooth) * 0.08;
-
-  // invert: viel Energie = schwarz
-  let val = 255 - Math.floor(smooth * 600);
-
-  val = Math.max(0, Math.min(255, val));
-
-  let i = (y * W + x) * 4;
-
-  img.data[i] = val;
-  img.data[i+1] = val;
-  img.data[i+2] = val;
-  img.data[i+3] = 255;
-
-  ctx.putImageData(img, 0, 0);
-}
-
-document.getElementById("start").onclick = async () => {
-  await initAudio();
-
-  startTime = performance.now();
-
-  document.getElementById("status").textContent =
-    "decoding noise stream...";
-
-  draw();
-};
+document.getElementById("start").onclick = start;
 </script>
-
 </body>
 </html>
