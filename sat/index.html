@@ -1,212 +1,127 @@
-<!DOCTYPE html>
-<html lang="de">
+<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Donner + Waver DEBUG</title>
+<meta charset="utf-8">
+<title>RF Camera Decoder</title>
 
 <style>
-body { font-family: Arial; margin: 20px; }
+body{
+    background:#000;
+    color:#0f0;
+    font-family:monospace;
+    text-align:center;
+}
 
-button { padding: 10px 15px; margin: 5px; }
-
-#bar { width: 100%; height: 20px; background: #ddd; }
-#fill { height: 100%; width: 0%; background: steelblue; }
-
-table { width: 100%; margin-top: 15px; border-collapse: collapse; }
-td, th { border: 1px solid #ccc; padding: 6px; }
-th { background: #eee; }
-
-#debug {
-    margin-top: 15px;
-    padding: 10px;
-    background: #111;
-    color: #0f0;
-    font-family: monospace;
-    font-size: 12px;
+canvas{
+    width:256px;
+    height:256px;
+    image-rendering:pixelated;
+    border:1px solid #0f0;
 }
 </style>
 </head>
-
 <body>
 
-<h2>🌩️ Donner + Waver DEBUG SYSTEM</h2>
+<h3>RF Decoder</h3>
 
-<button onclick="startMic()">🎤 Start Mikrofon</button>
+<canvas id="canvas" width="128" height="128"></canvas>
+<br>
+<button id="listen">LISTEN</button>
 
-<div id="bar"><div id="fill"></div></div>
-<p>Pegel: <span id="lvl">0</span></p>
-
-<div id="debug">
-WAVER: <span id="wstatus">INIT...</span><br>
-MODULE: <span id="mstatus">CHECKING...</span><br>
-TIMER: <span id="tstatus">INIT...</span><br>
-EVENTS: <span id="ecount">0</span>
-</div>
-
-<table>
-<thead>
-<tr><th>Zeit</th><th>Entfernung (km)</th><th>Pegel</th></tr>
-</thead>
-<tbody id="log"></tbody>
-</table>
+<div id="status">idle</div>
 
 <script>
-// ----------------------
-// DEBUG STATE
-// ----------------------
-let isWaverReady = false;
-let events = [];
 
-// ----------------------
-// MODULE DEBUG
-// ----------------------
-setInterval(() => {
-    document.getElementById("mstatus").innerText =
-        window.Module ? "LOADED" : "NULL";
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const status = document.getElementById("status");
 
-    console.log("MODULE:", window.Module);
-}, 2000);
+let audioCtx;
+let recorder;
+let chunks = [];
 
-// ----------------------
-// WAVER INIT (SAFE DEBUG)
-// ----------------------
-function initWaver() {
-    if (!window.Module) {
-        document.getElementById("wstatus").innerText = "WAIT MODULE";
-        setTimeout(initWaver, 300);
-        return;
-    }
+async function startListening(){
 
-    if (typeof Module.onRuntimeInitialized === "function") {
-        Module.onRuntimeInitialized = () => {
-            isWaverReady = true;
-            document.getElementById("wstatus").innerText = "READY (WASM)";
-            console.log("Waver READY via WASM");
-        };
-    } else {
-        isWaverReady = true;
-        document.getElementById("wstatus").innerText = "READY (FALLBACK)";
-        console.log("Waver READY fallback");
-    }
-}
-
-initWaver();
-
-// ----------------------
-// SAFE SPEAK (ALWAYS WORKS)
-// ----------------------
-function waverSpeak(text) {
-    console.log("SPEAK:", text);
-
-    if (!isWaverReady) {
-        console.warn("Waver not ready → fallback only");
-        return;
-    }
-
-    try {
-        if (Module && Module.ccall) {
-            Module.ccall("text_to_speech", null, ["string"], [text]);
-        } else {
-            console.warn("No ccall available");
-        }
-    } catch (e) {
-        console.error("Waver error:", e);
-    }
-}
-
-// ----------------------
-// AUDIO
-// ----------------------
-let audioCtx, analyser, data;
-let last = 0;
-
-function estimateDistance(level) {
-    let d = 20 * Math.exp(-0.03 * level);
-    return Math.max(0.3, Math.min(25, d)).toFixed(2);
-}
-
-async function startMic() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream =
+        await navigator.mediaDevices.getUserMedia({audio:true});
 
     audioCtx = new AudioContext();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
 
-    const src = audioCtx.createMediaStreamSource(stream);
-    src.connect(analyser);
+    recorder = new MediaRecorder(stream);
 
-    data = new Uint8Array(analyser.frequencyBinCount);
+    chunks = [];
 
-    loop();
+    recorder.ondataavailable = e => chunks.push(e.data);
+
+    recorder.onstop = async () => {
+
+        const blob = new Blob(chunks);
+
+        const arr = await blob.arrayBuffer();
+
+        const audioBuffer =
+            await audioCtx.decodeAudioData(arr);
+
+        decodeFrame(audioBuffer);
+    };
+
+    status.textContent = "recording...";
+
+    recorder.start();
+
+    setTimeout(()=>{
+        recorder.stop();
+        status.textContent = "decoding...";
+    }, 2000);
 }
 
-function loop() {
-    analyser.getByteTimeDomainData(data);
+function decodeFrame(buffer){
 
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-        let v = (data[i] - 128) / 128;
-        sum += v * v;
+    const data = buffer.getChannelData(0);
+
+    const img =
+        ctx.createImageData(128,128);
+
+    const pixels = 128*128;
+
+    const step =
+        Math.floor(data.length / pixels);
+
+    for(let i=0;i<pixels;i++){
+
+        let sum = 0;
+
+        const start = i*step;
+        const end = start+step;
+
+        for(let j=start;j<end;j++){
+            sum += Math.abs(data[j]);
+        }
+
+        const avg = sum/step;
+
+        let gray = 255 - Math.min(
+            255,
+            avg*1500
+        );
+
+        const p = i*4;
+
+        img.data[p]   = gray;
+        img.data[p+1] = gray;
+        img.data[p+2] = gray;
+        img.data[p+3] = 255;
     }
 
-    const rms = Math.sqrt(sum / data.length);
-    const level = Math.min(100, Math.round(rms * 300));
+    ctx.putImageData(img,0,0);
 
-    document.getElementById("fill").style.width = level + "%";
-    document.getElementById("lvl").innerText = level;
-
-    const now = Date.now();
-
-    if (level > 20 && now - last > 800) {
-        last = now;
-
-        const time = new Date().toLocaleTimeString();
-        const dist = estimateDistance(level);
-
-        events.push({ time, dist, level });
-
-        const row = document.createElement("tr");
-        row.innerHTML = `<td>${time}</td><td>${dist}</td><td>${level}</td>`;
-        document.getElementById("log").prepend(row);
-
-        document.getElementById("ecount").innerText = events.length;
-
-        console.log("EVENT:", { time, dist, level });
-    }
-
-    requestAnimationFrame(loop);
+    status.textContent = "frame decoded";
 }
 
-// ----------------------
-// TIMER DEBUG (20s)
-// ----------------------
-setInterval(() => {
-    document.getElementById("tstatus").innerText = "TRIGGER";
-
-    console.log("TIMER TRIGGER");
-
-    if (events.length === 0) return;
-
-    const last10 = events.slice(-10);
-
-    let msg = "Donner Übersicht. ";
-    last10.forEach(e => {
-        msg += `${e.time}, ${e.dist} km. `;
-    });
-
-    waverSpeak(msg);
-
-}, 20 * 1000);
-
-// ----------------------
-setInterval(() => {
-    document.getElementById("tstatus").innerText = "RUNNING";
-}, 1000);
+document.getElementById("listen")
+.onclick = startListening;
 
 </script>
-
-<!-- WAVER -->
-<script src="js/waver.js"></script>
 
 </body>
 </html>
