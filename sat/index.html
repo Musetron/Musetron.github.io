@@ -1,26 +1,32 @@
-<!DOCTYPE html><html lang="de"><head>
+<!DOCTYPE html>
+<html lang="de">
+<head>
 <meta charset="UTF-8">
-<title>Donner + GGWave Monitor</title><style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
+<title>Donner Monitor + GGWave Sender</title>
+
+<style>
 body{
-    font-family:Arial;
+    font-family:Arial,sans-serif;
     margin:20px;
 }
 
 button{
-    padding:10px;
-    margin:5px;
+    padding:10px 15px;
+    margin-right:10px;
 }
 
 #bar{
     width:100%;
-    height:25px;
+    height:24px;
     background:#ddd;
+    margin-top:10px;
 }
 
 #fill{
-    width:0%;
     height:100%;
+    width:0%;
     background:steelblue;
 }
 
@@ -30,7 +36,7 @@ table{
     margin-top:15px;
 }
 
-td,th{
+th,td{
     border:1px solid #ccc;
     padding:6px;
 }
@@ -46,57 +52,60 @@ th{
     color:#0f0;
     font-family:monospace;
 }
+</style>
+</head>
 
-textarea{
-    width:100%;
-    height:100px;
-}
+<body>
 
-</style></head><body><h2>🌩 Donner + GGWave Monitor</h2><button id="startBtn">🎤 Mikrofon starten</button>
+<h2>🌩 Donner Monitor + GGWave</h2>
+
+<button id="startBtn">🎤 Mikrofon starten</button>
 <button id="testBtn">📡 Test senden</button>
 
 <div id="bar">
 <div id="fill"></div>
-</div><p>
-Pegel:
-<span id="level">0</span>
-</p><div id="debug">GGWAVE:
-<span id="gstate">WAIT</span>
+</div>
 
-<br>AUDIO:
-<span id="astate">WAIT</span>
+<p>Pegel: <span id="level">0</span></p>
 
-<br>EVENTS:
-<span id="events">0</span>
+<div id="debug">
+GGWAVE: <span id="gstate">WAIT</span><br>
+AUDIO: <span id="astate">WAIT</span><br>
+EVENTS: <span id="events">0</span><br>
+LAST TX: <span id="lasttx">---</span>
+</div>
 
-<br>RX:
-<span id="rxstate">---</span>
-
-</div><h3>Empfangene Nachricht</h3><textarea id="rxData" readonly></textarea><h3>Donner-Ereignisse</h3><table><thead>
+<table>
+<thead>
 <tr>
 <th>Zeit</th>
-<th>Entfernung km</th>
+<th>Entfernung (km)</th>
 <th>Pegel</th>
 </tr>
-</thead><tbody id="log"></tbody></table><script src="js/ggwave.js"></script><script>
+</thead>
+<tbody id="log"></tbody>
+</table>
+
+<script src="js/ggwave.js"></script>
+
+<script>
 
 window.AudioContext =
 window.AudioContext ||
 window.webkitAudioContext;
 
-let context = null;
 let ggwave = null;
+let context = null;
 let parameters = null;
 let instance = null;
 
 let analyser = null;
-let mediaStream = null;
-let recorder = null;
+let micSource = null;
 
-let lastEvent = 0;
 let thunderEvents = [];
+let lastDetection = 0;
 
-function convertTypedArray(src, type) {
+function convertTypedArray(src,type){
 
     const buffer =
         new ArrayBuffer(src.byteLength);
@@ -106,9 +115,9 @@ function convertTypedArray(src, type) {
     return new type(buffer);
 }
 
-async function initGGWave() {
+async function initGGWave(){
 
-    if (ggwave) return;
+    if(instance) return;
 
     ggwave = await ggwave_factory();
 
@@ -129,14 +138,18 @@ async function initGGWave() {
         ggwave.init(parameters);
 
     document.getElementById("gstate")
-        .innerText = "READY";
+        .textContent = "READY";
 
     console.log("GGWAVE READY");
 }
 
-function sendMessage(text){
+async function sendGGWave(text){
 
-    if(!instance) return;
+    await initGGWave();
+
+    if(context.state !== "running"){
+        await context.resume();
+    }
 
     const waveform =
         ggwave.encode(
@@ -152,47 +165,50 @@ function sendMessage(text){
             Float32Array
         );
 
-    const audioBuffer =
+    const buffer =
         context.createBuffer(
             1,
             buf.length,
             context.sampleRate
         );
 
-    audioBuffer
-        .getChannelData(0)
-        .set(buf);
+    buffer.getChannelData(0).set(buf);
 
     const source =
         context.createBufferSource();
 
-    source.buffer = audioBuffer;
+    source.buffer = buffer;
     source.connect(context.destination);
-    source.start(0);
 
-    console.log("TX:",text);
+    source.start();
+
+    document.getElementById("lasttx")
+        .textContent =
+        new Date().toLocaleTimeString();
+
+    console.log("TX:", text);
 }
 
 async function startMic(){
 
     await initGGWave();
 
+    if(context.state !== "running"){
+        await context.resume();
+    }
+
     const stream =
-        await navigator
-        .mediaDevices
-        .getUserMedia({
+        await navigator.mediaDevices.getUserMedia({
 
             audio:{
-
                 echoCancellation:false,
                 noiseSuppression:false,
                 autoGainControl:false
-
             }
 
         });
 
-    mediaStream =
+    micSource =
         context.createMediaStreamSource(stream);
 
     analyser =
@@ -200,161 +216,118 @@ async function startMic(){
 
     analyser.fftSize = 2048;
 
-    mediaStream.connect(analyser);
+    micSource.connect(analyser);
 
     document.getElementById("astate")
-        .innerText = "OK";
+        .textContent = "OK";
 
-    const bufferSize = 1024;
-
-    recorder =
-        context.createScriptProcessor(
-            bufferSize,
-            1,
-            1
-        );
-
-    recorder.onaudioprocess =
-        function(e){
-
-            const source =
-                e.inputBuffer;
-
-            const decoded =
-                ggwave.decode(
-                    instance,
-                    convertTypedArray(
-                        new Float32Array(
-                            source.getChannelData(0)
-                        ),
-                        Int8Array
-                    )
-                );
-
-            if(decoded && decoded.length > 0){
-
-                const msg =
-                    new TextDecoder("utf-8")
-                    .decode(decoded);
-
-                document
-                    .getElementById("rxData")
-                    .value = msg;
-
-                document
-                    .getElementById("rxstate")
-                    .innerText = "MESSAGE";
-            }
-        };
-
-    mediaStream.connect(recorder);
-    recorder.connect(context.destination);
-
-    loop();
+    monitor();
 }
 
-function loop(){
+function monitor(){
 
     const data =
         new Uint8Array(
             analyser.frequencyBinCount
         );
 
-    analyser.getByteTimeDomainData(data);
+    function loop(){
 
-    let sum = 0;
+        analyser.getByteTimeDomainData(data);
 
-    for(let i=0;i<data.length;i++){
+        let sum = 0;
 
-        const v =
-            (data[i]-128)/128;
+        for(let i=0;i<data.length;i++){
 
-        sum += v*v;
+            const v =
+                (data[i]-128)/128;
+
+            sum += v*v;
+        }
+
+        const rms =
+            Math.sqrt(
+                sum/data.length
+            );
+
+        const level =
+            Math.min(
+                100,
+                Math.round(rms*300)
+            );
+
+        document.getElementById("fill")
+            .style.width =
+            level + "%";
+
+        document.getElementById("level")
+            .textContent =
+            level;
+
+        const now = Date.now();
+
+        if(
+            level > 20 &&
+            now-lastDetection > 1000
+        ){
+
+            lastDetection = now;
+
+            const time =
+                new Date()
+                .toLocaleTimeString();
+
+            const distance =
+                (
+                    0.3 +
+                    (100-level)*0.25
+                ).toFixed(2);
+
+            thunderEvents.push({
+                time,
+                level,
+                distance
+            });
+
+            const row =
+                document.createElement("tr");
+
+            row.innerHTML =
+                "<td>"+time+"</td>" +
+                "<td>"+distance+"</td>" +
+                "<td>"+level+"</td>";
+
+            document
+                .getElementById("log")
+                .prepend(row);
+
+            document
+                .getElementById("events")
+                .textContent =
+                thunderEvents.length;
+        }
+
+        requestAnimationFrame(loop);
     }
 
-    const rms =
-        Math.sqrt(sum/data.length);
-
-    const level =
-        Math.min(
-            100,
-            Math.round(rms*300)
-        );
-
-    document
-        .getElementById("fill")
-        .style.width =
-        level + "%";
-
-    document
-        .getElementById("level")
-        .innerText =
-        level;
-
-    const now = Date.now();
-
-    if(
-        level > 20 &&
-        now-lastEvent > 1000
-    ){
-
-        lastEvent = now;
-
-        const time =
-            new Date()
-            .toLocaleTimeString();
-
-        const distance =
-            (
-                0.3 +
-                (100-level)*0.25
-            ).toFixed(2);
-
-        thunderEvents.push({
-
-            time,
-            distance,
-            level
-
-        });
-
-        const row =
-            document.createElement("tr");
-
-        row.innerHTML =
-            "<td>"+time+"</td>" +
-            "<td>"+distance+"</td>" +
-            "<td>"+level+"</td>";
-
-        document
-            .getElementById("log")
-            .prepend(row);
-
-        document
-            .getElementById("events")
-            .innerText =
-            thunderEvents.length;
-    }
-
-    requestAnimationFrame(loop);
+    loop();
 }
 
-setInterval(()=>{
+setInterval(async ()=>{
 
     if(
-        !instance ||
-        thunderEvents.length===0
+        thunderEvents.length === 0
     ){
         return;
     }
 
-    const last10 =
+    const latest =
         thunderEvents.slice(-10);
 
     let msg =
-        "Donner Bericht. ";
+        "Donnerbericht. ";
 
-    for(const e of last10){
+    for(const e of latest){
 
         msg +=
             e.time +
@@ -363,7 +336,7 @@ setInterval(()=>{
             " Kilometer. ";
     }
 
-    sendMessage(msg);
+    await sendGGWave(msg);
 
 },20000);
 
@@ -378,10 +351,16 @@ document
 .getElementById("testBtn")
 .addEventListener(
     "click",
-    ()=>sendMessage(
-        "Test Nachricht von GGWave"
-    )
+    async ()=>{
+
+        await sendGGWave(
+            "Test Nachricht GGWave"
+        );
+
+    }
 );
 
-</script></body>
+</script>
+
+</body>
 </html>
