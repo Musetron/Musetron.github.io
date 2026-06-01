@@ -81,7 +81,7 @@ th{
 
 <table class="status-table">
 <tr>
-    <td>GGWave</td>
+    <td>Protocol</td>
     <td id="gstate">WAIT</td>
 </tr>
 <tr>
@@ -179,12 +179,12 @@ async function sendGGWave(text){
     }
 
     const waveform =
-        ggwave.encode(
-            instance,
-            text,
-            ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_FAST,
-            10
-        );
+    ggwave.encode(
+        instance,
+        text,
+        ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_NORMAL,
+        10
+    );
 
     const buf =
         convertTypedArray(
@@ -333,30 +333,32 @@ function monitor(){
     loop();
 }
 
-setInterval(async ()=>{
+setInterval(async () => {
 
-    if(thunderEvents.length === 0){
+    if (thunderEvents.length === 0) {
         return;
     }
 
-    const latest =
-        thunderEvents.slice(-10);
-
     let msg =
-        "Donnerbericht. ";
+        "DONNERBERICHT\n";
 
-    for(const e of latest){
+    for (const e of thunderEvents) {
 
         msg +=
             e.time +
-            ", " +
+            " | " +
             e.distance +
-            " Kilometer. ";
+            " km | " +
+            e.level +
+            "\n";
     }
+
+    console.log("SENDE:");
+    console.log(msg);
 
     await sendGGWave(msg);
 
-}, 20000);
+}, 60000);
 
 document
 .getElementById("startBtn")
