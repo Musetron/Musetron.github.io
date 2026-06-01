@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8" />
-<title>Noise Raster Decoder</title>
+<title>Noise Raster Decoder FIX</title>
 
 <style>
   body {
@@ -30,7 +30,6 @@
     background: transparent;
     border: 1px solid #00ff88;
     color: #00ff88;
-    cursor: pointer;
   }
 
   .status { opacity: 0.8; }
@@ -39,102 +38,95 @@
 
 <body>
 
-<canvas id="screen" width="128" height="128"></canvas>
-<button id="start">START DECODE</button>
+<canvas id="c" width="128" height="128"></canvas>
+<button id="start">START</button>
 <div class="status" id="status">idle</div>
 
 <script>
-const canvas = document.getElementById("screen");
+const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
-const status = document.getElementById("status");
-
-let audioCtx;
-let analyser;
-let dataArray;
-
-const WIDTH = 128;
-const HEIGHT = 128;
-
-let startTime;
+const W = 128;
+const H = 128;
 const duration = 6.0;
 
-// Frame buffer
-const img = ctx.createImageData(WIDTH, HEIGHT);
+let audioCtx, analyser, timeData;
+
+let img = ctx.createImageData(W, H);
+
+let startTime;
 
 // AUDIO SETUP
-async function setupAudio() {
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+async function initAudio() {
+  audioCtx = new AudioContext();
 
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.0;
 
-  dataArray = new Uint8Array(analyser.frequencyBinCount);
+  timeData = new Uint8Array(analyser.fftSize);
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const source = audioCtx.createMediaStreamSource(stream);
-
-  source.connect(analyser);
+  const src = audioCtx.createMediaStreamSource(stream);
+  src.connect(analyser);
 }
 
-// MAP AUDIO → AMPLITUDE (einfacher RMS Ansatz)
-function getAmplitude() {
-  analyser.getByteTimeDomainData(dataArray);
+// 🔥 WICHTIG: echte Energie (nicht Peak!)
+function getEnergy() {
+  analyser.getByteTimeDomainData(timeData);
 
   let sum = 0;
-  for (let i = 0; i < dataArray.length; i++) {
-    let v = (dataArray[i] - 128) / 128;
+
+  for (let i = 0; i < timeData.length; i++) {
+    let v = (timeData[i] - 128) / 128;
     sum += v * v;
   }
 
-  return Math.sqrt(sum / dataArray.length);
+  return sum / timeData.length; // 0..~1
 }
 
-// DRAW LOOP
+// smoothing (entscheidend!)
+let smooth = 0;
+
 function draw() {
   requestAnimationFrame(draw);
 
-  const now = (performance.now() - startTime) / 1000;
+  let t = (performance.now() - startTime) / 1000;
+  if (t > duration) return;
 
-  if (now > duration) {
-    status.textContent = "frame complete";
-    return;
-  }
+  const total = W * H;
+  const p = Math.floor((t / duration) * total);
 
-  const progress = now / duration;
+  const x = p % W;
+  const y = Math.floor(p / W);
 
-  const totalPixels = WIDTH * HEIGHT;
-  const pixelIndex = Math.floor(progress * totalPixels);
+  let energy = getEnergy();
 
-  const x = pixelIndex % WIDTH;
-  const y = Math.floor(pixelIndex / WIDTH);
+  // 🔥 extrem wichtig: glätten
+  smooth += (energy - smooth) * 0.08;
 
-  const amp = getAmplitude();
+  // invert: viel Energie = schwarz
+  let val = 255 - Math.floor(smooth * 600);
 
-  // invert (wie im Sender: dunkel = stark)
-  const intensity = Math.max(0, Math.min(255, (1 - amp) * 255));
+  val = Math.max(0, Math.min(255, val));
 
-  const i = (y * WIDTH + x) * 4;
+  let i = (y * W + x) * 4;
 
-  // schreiben
-  img.data[i] = intensity;
-  img.data[i+1] = intensity;
-  img.data[i+2] = intensity;
+  img.data[i] = val;
+  img.data[i+1] = val;
+  img.data[i+2] = val;
   img.data[i+3] = 255;
 
   ctx.putImageData(img, 0, 0);
 }
 
-// START
 document.getElementById("start").onclick = async () => {
-  status.textContent = "starting...";
-
-  await setupAudio();
+  await initAudio();
 
   startTime = performance.now();
 
-  status.textContent = "decoding stream...";
+  document.getElementById("status").textContent =
+    "decoding noise stream...";
 
   draw();
 };
