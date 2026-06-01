@@ -356,13 +356,26 @@ setInterval(async ()=>{
 
     await sendGGWave(msg);
 
-}, 60000);
+}, 20000);
 
 document
 .getElementById("startBtn")
 .addEventListener(
     "click",
     startMic
+);
+
+document
+.getElementById("testBtn")
+.addEventListener(
+    "click",
+    async ()=>{
+
+        await sendGGWave(
+            "Test Nachricht GGWave"
+        );
+
+    }
 );
 
 </script>
