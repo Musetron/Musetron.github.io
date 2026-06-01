@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>RF Waterfall</title>
+<title>Audio Waterfall</title>
 
 <style>
 body{
-    background:black;
+    background:#000;
     color:#00ff88;
     font-family:monospace;
     text-align:center;
@@ -22,78 +22,81 @@ canvas{
 </head>
 <body>
 
-<h3>RF Waterfall Decoder</h3>
+<h3>Audio → Pixel Waterfall</h3>
 
-<canvas id="wf" width="256" height="512"></canvas>
+<canvas id="c" width="256" height="512"></canvas>
 <br>
 <button id="start">START</button>
 
 <script>
 
-const canvas = document.getElementById("wf");
+const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
 let analyser;
-let freqData;
+let samples;
 
-async function start(){
+async function start() {
 
     const stream =
         await navigator.mediaDevices.getUserMedia({
             audio:true
         });
 
-    const audioCtx =
-        new AudioContext();
+    const audioCtx = new AudioContext();
 
     const source =
         audioCtx.createMediaStreamSource(stream);
 
-    analyser =
-        audioCtx.createAnalyser();
+    analyser = audioCtx.createAnalyser();
 
     analyser.fftSize = 512;
 
     source.connect(analyser);
 
-    freqData =
-        new Uint8Array(
-            analyser.frequencyBinCount
-        );
+    samples =
+        new Uint8Array(analyser.fftSize);
 
     draw();
 }
 
-function draw(){
+function draw() {
 
     requestAnimationFrame(draw);
 
-    analyser.getByteFrequencyData(freqData);
+    analyser.getByteTimeDomainData(samples);
 
     ctx.drawImage(
         canvas,
-        0,
-        1,
+        0,1,
         canvas.width,
-        canvas.height - 1,
-        0,
-        0,
+        canvas.height-1,
+        0,0,
         canvas.width,
-        canvas.height - 1
+        canvas.height-1
     );
 
     const y = canvas.height - 1;
 
-    for(let x=0;x<canvas.width;x++){
+    for(let x=0;x<canvas.width;x++) {
 
-        const i = Math.floor(
-            x * freqData.length / canvas.width
-        );
+        const idx =
+            Math.floor(
+                x * samples.length / canvas.width
+            );
 
-        const v = freqData[i];
+        const s = samples[idx];
+
+        const amp =
+            Math.abs(s - 128) / 128;
+
+        const gray =
+            Math.floor(
+                255 - amp * 255
+            );
 
         ctx.fillStyle =
-            `rgb(${v},${v},${v})`;
+            `rgb(${gray},${gray},${gray})`;
 
         ctx.fillRect(x,y,1,1);
     }
