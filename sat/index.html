@@ -2,124 +2,105 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>RF Camera Decoder</title>
+<title>RF Waterfall</title>
 
 <style>
 body{
-    background:#000;
-    color:#0f0;
+    background:black;
+    color:#00ff88;
     font-family:monospace;
     text-align:center;
 }
 
 canvas{
-    width:256px;
-    height:256px;
+    width:512px;
+    height:512px;
+    border:1px solid #00ff88;
     image-rendering:pixelated;
-    border:1px solid #0f0;
 }
 </style>
 </head>
 <body>
 
-<h3>RF Decoder</h3>
+<h3>RF Waterfall Decoder</h3>
 
-<canvas id="canvas" width="128" height="128"></canvas>
+<canvas id="wf" width="256" height="512"></canvas>
 <br>
-<button id="listen">LISTEN</button>
-
-<div id="status">idle</div>
+<button id="start">START</button>
 
 <script>
 
-const canvas = document.getElementById("canvas");
+const canvas = document.getElementById("wf");
 const ctx = canvas.getContext("2d");
-const status = document.getElementById("status");
 
-let audioCtx;
-let recorder;
-let chunks = [];
+let analyser;
+let freqData;
 
-async function startListening(){
+async function start(){
 
     const stream =
-        await navigator.mediaDevices.getUserMedia({audio:true});
+        await navigator.mediaDevices.getUserMedia({
+            audio:true
+        });
 
-    audioCtx = new AudioContext();
+    const audioCtx =
+        new AudioContext();
 
-    recorder = new MediaRecorder(stream);
+    const source =
+        audioCtx.createMediaStreamSource(stream);
 
-    chunks = [];
+    analyser =
+        audioCtx.createAnalyser();
 
-    recorder.ondataavailable = e => chunks.push(e.data);
+    analyser.fftSize = 512;
 
-    recorder.onstop = async () => {
+    source.connect(analyser);
 
-        const blob = new Blob(chunks);
-
-        const arr = await blob.arrayBuffer();
-
-        const audioBuffer =
-            await audioCtx.decodeAudioData(arr);
-
-        decodeFrame(audioBuffer);
-    };
-
-    status.textContent = "recording...";
-
-    recorder.start();
-
-    setTimeout(()=>{
-        recorder.stop();
-        status.textContent = "decoding...";
-    }, 2000);
-}
-
-function decodeFrame(buffer){
-
-    const data = buffer.getChannelData(0);
-
-    const img =
-        ctx.createImageData(128,128);
-
-    const pixels = 128*128;
-
-    const step =
-        Math.floor(data.length / pixels);
-
-    for(let i=0;i<pixels;i++){
-
-        let sum = 0;
-
-        const start = i*step;
-        const end = start+step;
-
-        for(let j=start;j<end;j++){
-            sum += Math.abs(data[j]);
-        }
-
-        const avg = sum/step;
-
-        let gray = 255 - Math.min(
-            255,
-            avg*1500
+    freqData =
+        new Uint8Array(
+            analyser.frequencyBinCount
         );
 
-        const p = i*4;
-
-        img.data[p]   = gray;
-        img.data[p+1] = gray;
-        img.data[p+2] = gray;
-        img.data[p+3] = 255;
-    }
-
-    ctx.putImageData(img,0,0);
-
-    status.textContent = "frame decoded";
+    draw();
 }
 
-document.getElementById("listen")
-.onclick = startListening;
+function draw(){
+
+    requestAnimationFrame(draw);
+
+    analyser.getByteFrequencyData(freqData);
+
+    ctx.drawImage(
+        canvas,
+        0,
+        1,
+        canvas.width,
+        canvas.height - 1,
+        0,
+        0,
+        canvas.width,
+        canvas.height - 1
+    );
+
+    const y = canvas.height - 1;
+
+    for(let x=0;x<canvas.width;x++){
+
+        const i = Math.floor(
+            x * freqData.length / canvas.width
+        );
+
+        const v = freqData[i];
+
+        ctx.fillStyle =
+            `rgb(${v},${v},${v})`;
+
+        ctx.fillRect(x,y,1,1);
+    }
+}
+
+document.getElementById("start")
+.onclick = start;
 
 </script>
 
