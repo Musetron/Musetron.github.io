@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Donner Monitor</title>
+<title>Donner Satellit</title>
 
 <style>
 body{
@@ -72,11 +72,11 @@ th{
 
 <body>
 
-<h2>Donner Monitor</h2>
+<h2>Donner Satellit</h2>
 
 <div class="toolbar">
-    <button id="startBtn">Mikrofon starten</button>
-    <button id="testBtn">Send Now</button>
+    <button id="startBtn">Satellit Einschalten</button>
+    <button id="testBtn">Test Senden</button>
 </div>
 
 <table class="status-table">
@@ -106,7 +106,7 @@ th{
 <thead>
 <tr>
 <th>Zeit</th>
-<th>Entfernung (km)</th>
+<th>Kilometer</th>
 <th>Pegel</th>
 </tr>
 </thead>
@@ -167,7 +167,7 @@ async function initGGWave(){
     document.getElementById("gstate")
         .textContent = "READY";
 
-    console.log("GGWAVE READY");
+    console.log("Protocol READY");
 }
 
 async function sendGGWave(text){
