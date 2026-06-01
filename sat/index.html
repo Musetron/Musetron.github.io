@@ -1,64 +1,210 @@
-<!doctype html>
-<html>
-<body style="background:#000;color:#0f0;font-family:monospace;text-align:center;">
-<video id="v" autoplay style="display:none"></video>
-<button id="b">SEND SSTV</button>
-<canvas id="c" width="128" height="128" style="border:1px solid #0f0"></canvas>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Donner + ggwave FIXED</title>
+
+<style>
+body { font-family: Arial; margin: 20px; }
+
+#bar { width: 100%; height: 20px; background: #ddd; }
+#fill { height: 100%; width: 0%; background: steelblue; }
+
+table { width: 100%; margin-top: 15px; border-collapse: collapse; }
+td, th { border: 1px solid #ccc; padding: 6px; }
+th { background: #eee; }
+
+#debug {
+    margin-top: 15px;
+    padding: 10px;
+    background: #111;
+    color: #0f0;
+    font-family: monospace;
+    font-size: 12px;
+}
+button { padding: 10px; margin: 5px; }
+</style>
+</head>
+
+<body>
+
+<h2>🌩️ Donner + GGWAVE FIXED SYSTEM</h2>
+
+<button onclick="startMic()">🎤 Mikro starten</button>
+
+<div id="bar"><div id="fill"></div></div>
+<p>Pegel: <span id="lvl">0</span></p>
+
+<div id="debug">
+GGWAVE: <span id="gstatus">WAIT</span><br>
+AUDIO: <span id="astatus">WAIT</span><br>
+EVENTS: <span id="ecount">0</span>
+</div>
+
+<table>
+<thead>
+<tr><th>Zeit</th><th>Entfernung (km)</th><th>Pegel</th></tr>
+</thead>
+<tbody id="log"></tbody>
+</table>
 
 <script>
-const video = document.getElementById("v");
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
+// ----------------------
+// STATE
+// ----------------------
+let context = null;
+let recorder = null;
+let mediaStream = null;
 
-let audioCtx;
+let ggwave = null;
+let instance = null;
 
-async function cam(){
-  video.srcObject = await navigator.mediaDevices.getUserMedia({video:true});
+let audioCtx = null;
+let analyser = null;
+let data = null;
+
+let events = [];
+let last = 0;
+
+// ----------------------
+// INIT GGWAVE (REAL)
+// ----------------------
+ggwave_factory().then(obj => {
+    ggwave = obj;
+
+    context = new AudioContext({ sampleRate: 48000 });
+
+    const params = ggwave.getDefaultParameters();
+    params.sampleRateInp = context.sampleRate;
+    params.sampleRateOut = context.sampleRate;
+
+    instance = ggwave.init(params);
+
+    document.getElementById("gstatus").innerText = "READY";
+    console.log("ggwave ready");
+});
+
+// ----------------------
+// SPEAK (REAL ENCODE → AUDIO)
+// ----------------------
+function waverSpeak(text) {
+    if (!ggwave || !context || !instance) {
+        console.log("ggwave not ready");
+        return;
+    }
+
+    console.log("SPEAK:", text);
+
+    const waveform = ggwave.encode(
+        instance,
+        text,
+        ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_FAST,
+        10
+    );
+
+    const buf = new Float32Array(waveform);
+
+    const buffer = context.createBuffer(1, buf.length, context.sampleRate);
+    buffer.getChannelData(0).set(buf);
+
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.start(0);
 }
 
-function getFrame(){
-  ctx.drawImage(video,0,0,128,128);
-  return ctx.getImageData(0,0,128,128).data;
+// ----------------------
+// MICROPHONE
+// ----------------------
+async function startMic() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            }
+        });
+
+        audioCtx = new AudioContext();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+
+        const src = audioCtx.createMediaStreamSource(stream);
+        src.connect(analyser);
+
+        data = new Uint8Array(analyser.frequencyBinCount);
+
+        document.getElementById("astatus").innerText = "OK";
+
+        loop();
+
+    } catch (e) {
+        document.getElementById("astatus").innerText = "BLOCKED";
+        console.error("Mic error:", e);
+        alert("Mikrofon blockiert!");
+    }
 }
 
-function freqFromGray(g){
-  return 800 + (1 - g/255) * 1600; // 800–2400 Hz
+// ----------------------
+// AUDIO LOOP
+// ----------------------
+function loop() {
+    analyser.getByteTimeDomainData(data);
+
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+        let v = (data[i] - 128) / 128;
+        sum += v * v;
+    }
+
+    const rms = Math.sqrt(sum / data.length);
+    const level = Math.min(100, Math.round(rms * 300));
+
+    document.getElementById("fill").style.width = level + "%";
+    document.getElementById("lvl").innerText = level;
+
+    const now = Date.now();
+
+    if (level > 20 && now - last > 800) {
+        last = now;
+
+        const time = new Date().toLocaleTimeString();
+        const dist = Math.max(0.3, Math.min(25, 20 * Math.exp(-0.03 * level))).toFixed(2);
+
+        events.push({ time, dist, level });
+
+        const row = document.createElement("tr");
+        row.innerHTML = `<td>${time}</td><td>${dist}</td><td>${level}</td>`;
+        document.getElementById("log").prepend(row);
+
+        document.getElementById("ecount").innerText = events.length;
+    }
+
+    requestAnimationFrame(loop);
 }
 
-function tone(freq, time){
-  const o = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
+// ----------------------
+// 20s BROADCAST
+// ----------------------
+setInterval(() => {
+    if (events.length === 0) return;
 
-  o.frequency.value = freq;
-  g.gain.value = 0.2;
+    const last10 = events.slice(-10);
 
-  o.connect(g); g.connect(audioCtx.destination);
-  o.start();
-  o.stop(audioCtx.currentTime + time);
-}
+    let msg = "Donner Übersicht. ";
+    last10.forEach(e => {
+        msg += `${e.time}, ${e.dist} Kilometer. `;
+    });
 
-async function send(){
-  audioCtx = new AudioContext();
+    waverSpeak(msg);
 
-  const data = getFrame();
-  const pixelTime = 0.002; // schnell (~0.3s/frame pro zeile * 128 ≈ 6s)
+}, 20 * 1000);
 
-  for(let i=0;i<128*128;i++){
-    const p = i*4;
-    const gray = (data[p]+data[p+1]+data[p+2])/3;
-
-    const f = freqFromGray(gray);
-
-    tone(f, pixelTime);
-
-    await new Promise(r=>setTimeout(r,pixelTime*1000));
-  }
-}
-
-document.getElementById("b").onclick = async ()=>{
-  await cam();
-  send();
-};
 </script>
+
+<!-- GGWAVE -->
+<script src="js/ggwave.js"></script>
+
 </body>
 </html>
