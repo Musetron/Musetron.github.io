@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Donner + ggwave FIXED</title>
+<title>Donner + GGWAVE FINAL</title>
 
 <style>
 body { font-family: Arial; margin: 20px; }
@@ -28,7 +28,7 @@ button { padding: 10px; margin: 5px; }
 
 <body>
 
-<h2>🌩️ Donner + GGWAVE FIXED SYSTEM</h2>
+<h2>🌩️ Donner + GGWAVE FINAL</h2>
 
 <button onclick="startMic()">🎤 Mikro starten</button>
 
@@ -52,12 +52,9 @@ EVENTS: <span id="ecount">0</span>
 // ----------------------
 // STATE
 // ----------------------
-let context = null;
-let recorder = null;
-let mediaStream = null;
-
 let ggwave = null;
 let instance = null;
+let context = null;
 
 let audioCtx = null;
 let analyser = null;
@@ -67,7 +64,7 @@ let events = [];
 let last = 0;
 
 // ----------------------
-// INIT GGWAVE (REAL)
+// GGWAVE INIT (CORRECT)
 // ----------------------
 ggwave_factory().then(obj => {
     ggwave = obj;
@@ -81,15 +78,16 @@ ggwave_factory().then(obj => {
     instance = ggwave.init(params);
 
     document.getElementById("gstatus").innerText = "READY";
-    console.log("ggwave ready");
+
+    console.log("GGWAVE READY", { ggwave, instance });
 });
 
 // ----------------------
-// SPEAK (REAL ENCODE → AUDIO)
+// SAFE SPEAK (REAL GGWAVE)
 // ----------------------
 function waverSpeak(text) {
-    if (!ggwave || !context || !instance) {
-        console.log("ggwave not ready");
+    if (!ggwave || !instance || !context) {
+        console.warn("GGWAVE NOT READY");
         return;
     }
 
@@ -110,7 +108,7 @@ function waverSpeak(text) {
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.connect(context.destination);
-    source.start(0);
+    source.start();
 }
 
 // ----------------------
@@ -141,8 +139,8 @@ async function startMic() {
 
     } catch (e) {
         document.getElementById("astatus").innerText = "BLOCKED";
-        console.error("Mic error:", e);
         alert("Mikrofon blockiert!");
+        console.error(e);
     }
 }
 
@@ -193,13 +191,13 @@ setInterval(() => {
     const last10 = events.slice(-10);
 
     let msg = "Donner Übersicht. ";
-    last10.forEach(e => {
+    for (const e of last10) {
         msg += `${e.time}, ${e.dist} Kilometer. `;
-    });
+    }
 
     waverSpeak(msg);
 
-}, 20 * 1000);
+}, 20000);
 
 </script>
 
