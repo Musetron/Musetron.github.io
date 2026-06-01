@@ -24,7 +24,7 @@ h2{
 }
 
 button{
-    width:240px;
+    width:260px;
     padding:8px;
     margin:4px;
     border:1px solid #bfbfbf;
@@ -114,7 +114,8 @@ window.AudioContext =
 window.AudioContext ||
 window.webkitAudioContext;
 
-const audioCtx = new AudioContext();
+const audioCtx =
+new AudioContext();
 
 let analyser = null;
 let micSource = null;
@@ -253,14 +254,80 @@ function monitor(){
     loop();
 }
 
+async function playAlarmChord(
+    freq1,
+    freq2,
+    duration
+){
+
+    if(audioCtx.state !== "running"){
+        await audioCtx.resume();
+    }
+
+    const osc1 =
+    audioCtx.createOscillator();
+
+    const osc2 =
+    audioCtx.createOscillator();
+
+    const gain =
+    audioCtx.createGain();
+
+    osc1.type = "sine";
+    osc2.type = "sine";
+
+    osc1.frequency.value = freq1;
+    osc2.frequency.value = freq2;
+
+    gain.gain.value = 0.55;
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+
+    gain.connect(
+        audioCtx.destination
+    );
+
+    osc1.start();
+    osc2.start();
+
+    osc1.stop(
+        audioCtx.currentTime +
+        duration
+    );
+
+    osc2.stop(
+        audioCtx.currentTime +
+        duration
+    );
+
+    return new Promise(resolve => {
+
+        setTimeout(
+            resolve,
+            duration * 1000
+        );
+
+    });
+}
+
 async function playCSVasRAW(){
 
     if(audioCtx.state !== "running"){
         await audioCtx.resume();
     }
 
+    /* Aggressiver Startton */
+
+    await playAlarmChord(
+        880,
+        1046,
+        0.8
+    );
+
     let csv =
 `SYNC,SYNC,SYNC
+DONNER-SATELLIT
 ZEIT,KILOMETER,PEGEL
 `;
 
@@ -318,8 +385,22 @@ ZEIT,KILOMETER,PEGEL
     new Date()
     .toLocaleTimeString();
 
-    console.log("CSV RAW SEND");
     console.log(csv);
+
+    const duration =
+    audioBuffer.duration * 1000;
+
+    setTimeout(async ()=>{
+
+        /* Tiefer, düsterer Endton */
+
+        await playAlarmChord(
+            440,
+            523,
+            1.0
+        );
+
+    }, duration);
 }
 
 document
