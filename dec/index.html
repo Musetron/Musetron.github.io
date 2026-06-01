@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8" />
-<title>Noise Waterfall Decoder</title>
+<title>Noise Raster Decoder</title>
 
 <style>
   body {
@@ -19,6 +19,8 @@
   }
 
   canvas {
+    width: 512px;
+    height: 512px;
     border: 1px solid #00ff88;
     image-rendering: pixelated;
   }
@@ -31,86 +33,108 @@
     cursor: pointer;
   }
 
-  button:hover {
-    background: #00ff88;
-    color: #000;
-  }
-
-  .status {
-    opacity: 0.8;
-  }
+  .status { opacity: 0.8; }
 </style>
 </head>
 
 <body>
 
-<canvas id="waterfall" width="512" height="256"></canvas>
-<button id="start">START DECODER</button>
+<canvas id="screen" width="128" height="128"></canvas>
+<button id="start">START DECODE</button>
 <div class="status" id="status">idle</div>
 
 <script>
-const canvas = document.getElementById("waterfall");
+const canvas = document.getElementById("screen");
 const ctx = canvas.getContext("2d");
 
 const status = document.getElementById("status");
-const btn = document.getElementById("start");
 
 let audioCtx;
 let analyser;
 let dataArray;
 
-const WIDTH = canvas.width;
-const HEIGHT = canvas.height;
+const WIDTH = 128;
+const HEIGHT = 128;
 
-function setupAudio() {
+let startTime;
+const duration = 6.0;
+
+// Frame buffer
+const img = ctx.createImageData(WIDTH, HEIGHT);
+
+// AUDIO SETUP
+async function setupAudio() {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
   analyser = audioCtx.createAnalyser();
-
-  // WICHTIG für dein Noise-System:
-  analyser.fftSize = 4096;
-  analyser.smoothingTimeConstant = 0.2;
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.0;
 
   dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-  return navigator.mediaDevices.getUserMedia({ audio: true });
-}
-
-// Wasserfall zeichnen
-function draw() {
-  requestAnimationFrame(draw);
-
-  analyser.getByteFrequencyData(dataArray);
-
-  // scroll down (klassischer waterfall)
-  const imageData = ctx.getImageData(0, 0, WIDTH, HEIGHT);
-  ctx.putImageData(imageData, 0, 1);
-
-  // neue Zeile oben zeichnen
-  for (let x = 0; x < WIDTH; x++) {
-
-    const index = Math.floor(x / WIDTH * dataArray.length);
-
-    const v = dataArray[index];
-
-    // Kontrastverstärkung (sehr wichtig für dein Signal)
-    const intensity = Math.min(255, v * 2.2);
-
-    ctx.fillStyle = `rgb(0, ${intensity}, ${intensity * 0.6})`;
-    ctx.fillRect(WIDTH - x, 0, 1, 1);
-  }
-}
-
-// Start
-btn.onclick = async () => {
-  status.textContent = "starting...";
-
-  const stream = await setupAudio();
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const source = audioCtx.createMediaStreamSource(stream);
 
   source.connect(analyser);
+}
 
-  status.textContent = "decoding live noise...";
+// MAP AUDIO → AMPLITUDE (einfacher RMS Ansatz)
+function getAmplitude() {
+  analyser.getByteTimeDomainData(dataArray);
+
+  let sum = 0;
+  for (let i = 0; i < dataArray.length; i++) {
+    let v = (dataArray[i] - 128) / 128;
+    sum += v * v;
+  }
+
+  return Math.sqrt(sum / dataArray.length);
+}
+
+// DRAW LOOP
+function draw() {
+  requestAnimationFrame(draw);
+
+  const now = (performance.now() - startTime) / 1000;
+
+  if (now > duration) {
+    status.textContent = "frame complete";
+    return;
+  }
+
+  const progress = now / duration;
+
+  const totalPixels = WIDTH * HEIGHT;
+  const pixelIndex = Math.floor(progress * totalPixels);
+
+  const x = pixelIndex % WIDTH;
+  const y = Math.floor(pixelIndex / WIDTH);
+
+  const amp = getAmplitude();
+
+  // invert (wie im Sender: dunkel = stark)
+  const intensity = Math.max(0, Math.min(255, (1 - amp) * 255));
+
+  const i = (y * WIDTH + x) * 4;
+
+  // schreiben
+  img.data[i] = intensity;
+  img.data[i+1] = intensity;
+  img.data[i+2] = intensity;
+  img.data[i+3] = 255;
+
+  ctx.putImageData(img, 0, 0);
+}
+
+// START
+document.getElementById("start").onclick = async () => {
+  status.textContent = "starting...";
+
+  await setupAudio();
+
+  startTime = performance.now();
+
+  status.textContent = "decoding stream...";
 
   draw();
 };
