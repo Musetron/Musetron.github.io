@@ -2,237 +2,225 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<title>RF Camera Decoder</title>
+<title>Camera Audio Sender</title>
 
 <style>
 body{
     margin:0;
-    background:#0b0b0b;
+    background:#000;
     color:#00ff88;
     font-family:monospace;
     display:flex;
     flex-direction:column;
-    justify-content:center;
     align-items:center;
+    justify-content:center;
     height:100vh;
     gap:10px;
 }
 
 canvas{
-    width:256px;
-    height:256px;
+    width:260px;
+    height:260px;
     image-rendering:pixelated;
     border:1px solid #00ff88;
 }
 
-.status{
-    opacity:.8;
+button{
+    padding:8px 14px;
+    background:transparent;
+    border:1px solid #00ff88;
+    color:#00ff88;
+    cursor:pointer;
+}
+
+button:hover{
+    background:#00ff88;
+    color:#000;
+}
+
+video{
+    display:none;
 }
 </style>
 </head>
+
 <body>
 
 <canvas id="canvas" width="128" height="128"></canvas>
-<div id="status" class="status">waiting for signal...</div>
+
+<button id="sendBtn">SEND NOW</button>
+
+<div id="status">idle</div>
+
+<video id="video" autoplay playsinline></video>
 
 <script>
 
+const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const status = document.getElementById("status");
-
-const WIDTH = 128;
-const HEIGHT = 128;
-
-const START_FREQ = 1200;
-const START_THRESHOLD = 120;
-
-const FRAME_DURATION = 1.6;
+const sendBtn = document.getElementById("sendBtn");
 
 let audioCtx;
-let analyser;
-let freqData;
+let grayFrame = null;
 
-let capturing = false;
-let frameSamples = [];
-
-async function init() {
-
+async function initCam()
+{
     const stream =
         await navigator.mediaDevices.getUserMedia({
-            audio:true
+            video:true
         });
 
-    audioCtx = new AudioContext();
-
-    const source =
-        audioCtx.createMediaStreamSource(stream);
-
-    analyser = audioCtx.createAnalyser();
-
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0;
-
-    source.connect(analyser);
-
-    freqData =
-        new Uint8Array(analyser.frequencyBinCount);
-
-    listen();
+    video.srcObject = stream;
 }
 
-function listen() {
+function previewLoop()
+{
+    ctx.drawImage(video,0,0,128,128);
 
-    requestAnimationFrame(listen);
+    const img = ctx.getImageData(0,0,128,128);
+    const d = img.data;
 
-    if(capturing) return;
+    for(let i=0;i<d.length;i+=4)
+    {
+        const g =
+            0.299*d[i] +
+            0.587*d[i+1] +
+            0.114*d[i+2];
 
-    analyser.getByteFrequencyData(freqData);
-
-    const bin =
-        Math.round(
-            START_FREQ /
-            (audioCtx.sampleRate / analyser.fftSize)
-        );
-
-    const level = freqData[bin] || 0;
-
-    if(level > START_THRESHOLD){
-
-        capturing = true;
-
-        status.textContent =
-            "start detected";
-
-        captureFrame();
-    }
-}
-
-function captureFrame(){
-
-    const processor =
-        audioCtx.createScriptProcessor(
-            4096,
-            1,
-            1
-        );
-
-    frameSamples = [];
-
-    const source =
-        audioCtx.createMediaStreamSource(
-            document.querySelector("audioStream") ||
-            window.streamRef
-        );
-
-    processor.onaudioprocess = e => {
-
-        const data =
-            e.inputBuffer.getChannelData(0);
-
-        frameSamples.push(
-            new Float32Array(data)
-        );
-    };
-
-    navigator.mediaDevices
-        .getUserMedia({audio:true})
-        .then(stream => {
-
-            const mic =
-                audioCtx.createMediaStreamSource(stream);
-
-            mic.connect(processor);
-            processor.connect(audioCtx.destination);
-
-            setTimeout(() => {
-
-                processor.disconnect();
-
-                decode(frameSamples);
-
-                capturing = false;
-
-                status.textContent =
-                    "waiting for signal...";
-
-            }, FRAME_DURATION * 1000);
-
-        });
-}
-
-function decode(chunks){
-
-    let total = 0;
-
-    for(const c of chunks)
-        total += c.length;
-
-    const samples =
-        new Float32Array(total);
-
-    let pos = 0;
-
-    for(const c of chunks){
-
-        samples.set(c,pos);
-
-        pos += c.length;
-    }
-
-    const pixels = WIDTH * HEIGHT;
-
-    const step =
-        Math.floor(samples.length / pixels);
-
-    const img =
-        ctx.createImageData(
-            WIDTH,
-            HEIGHT
-        );
-
-    for(let i=0;i<pixels;i++){
-
-        let sum = 0;
-
-        const start = i * step;
-        const end = start + step;
-
-        for(let s=start;s<end;s++){
-
-            sum += Math.abs(samples[s]);
-        }
-
-        const avg = sum / step;
-
-        let gray =
-            255 -
-            Math.min(
-                255,
-                avg * 1800
-            );
-
-        gray = Math.max(
-            0,
-            Math.min(255, gray)
-        );
-
-        const p = i * 4;
-
-        img.data[p]   = gray;
-        img.data[p+1] = gray;
-        img.data[p+2] = gray;
-        img.data[p+3] = 255;
+        d[i]=g;
+        d[i+1]=g;
+        d[i+2]=g;
     }
 
     ctx.putImageData(img,0,0);
 
-    status.textContent =
-        "frame received " +
-        new Date().toLocaleTimeString();
+    requestAnimationFrame(previewLoop);
 }
 
-init();
+function captureFrame()
+{
+    const img =
+        ctx.getImageData(0,0,128,128).data;
+
+    const gray =
+        new Uint8Array(128*128);
+
+    let p = 0;
+
+    for(let i=0;i<img.length;i+=4)
+    {
+        gray[p++] = img[i];
+    }
+
+    grayFrame = gray;
+}
+
+function playTone(freq,duration,startTime)
+{
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.value = freq;
+
+    gain.gain.value = 0.15;
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+}
+
+function sendFrame()
+{
+    if(!grayFrame) return;
+
+    if(!audioCtx)
+    {
+        audioCtx = new AudioContext();
+    }
+
+    status.textContent = "sending...";
+
+    const now = audioCtx.currentTime + 0.1;
+
+    //
+    // PREAMBLE
+    //
+    playTone(1900,0.5,now);
+
+    //
+    // START MARKER
+    //
+    playTone(1200,0.2,now + 0.55);
+
+    //
+    // PIXELS
+    //
+    const pixelDuration = 0.0015;
+
+    let t = now + 0.8;
+
+    for(let i=0;i<grayFrame.length;i++)
+    {
+        const gray = grayFrame[i];
+
+        const freq =
+            1500 +
+            (gray/255) * 800;
+
+        playTone(
+            freq,
+            pixelDuration,
+            t
+        );
+
+        t += pixelDuration;
+    }
+
+    //
+    // END MARKER
+    //
+    playTone(
+        900,
+        0.3,
+        t + 0.1
+    );
+
+    const totalTime =
+        (t + 0.5 - now) * 1000;
+
+    setTimeout(()=>{
+        status.textContent =
+            "sent ✔ " +
+            new Date().toLocaleTimeString();
+    },totalTime);
+}
+
+sendBtn.onclick = () =>
+{
+    captureFrame();
+    sendFrame();
+};
+
+setInterval(()=>
+{
+    captureFrame();
+    sendFrame();
+},10*60*1000);
+
+initCam().then(()=>
+{
+    video.onloadedmetadata = () =>
+    {
+        previewLoop();
+        status.textContent =
+            "running (auto + manual)";
+    };
+});
 
 </script>
 
