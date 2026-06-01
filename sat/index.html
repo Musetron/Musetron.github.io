@@ -71,7 +71,7 @@ th{
 
 <div class="toolbar">
     <button id="startBtn">Satellit Einschalten</button>
-    <button id="playCsvBtn">CSV Als RAW Abspielen</button>
+    <button id="sendBtn">CSV Als RAW Abspielen</button>
 </div>
 
 <table class="status-table">
@@ -122,7 +122,7 @@ let micSource = null;
 
 let thunderEvents = [];
 let lastDetection = 0;
-let autoSenderStarted = false;
+let autoStarted = false;
 
 async function startMic(){
 
@@ -155,19 +155,24 @@ async function startMic(){
 
     monitor();
 
-    if(!autoSenderStarted){
+    if(!autoStarted){
 
-        autoSenderStarted = true;
+        autoStarted = true;
 
-        setInterval(() => {
+        // Alle 5 Minuten senden + resetten
+        setInterval(async ()=>{
 
             if(thunderEvents.length === 0){
                 return;
             }
 
-            playCSVasRAW();
+            await playCSVasRAW();
 
-        }, 60000);
+            setTimeout(()=>{
+                resetThunderData();
+            },2000);
+
+        },300000);
     }
 }
 
@@ -205,7 +210,8 @@ function monitor(){
         .getElementById("level")
         .textContent = level;
 
-        const now = Date.now();
+        const now =
+        Date.now();
 
         if(
             level > 20 &&
@@ -260,10 +266,6 @@ async function playAlarmChord(
     duration
 ){
 
-    if(audioCtx.state !== "running"){
-        await audioCtx.resume();
-    }
-
     const osc1 =
     audioCtx.createOscillator();
 
@@ -279,7 +281,7 @@ async function playAlarmChord(
     osc1.frequency.value = freq1;
     osc2.frequency.value = freq2;
 
-    gain.gain.value = 0.55;
+    gain.gain.value = 0.65;
 
     osc1.connect(gain);
     osc2.connect(gain);
@@ -301,13 +303,11 @@ async function playAlarmChord(
         duration
     );
 
-    return new Promise(resolve => {
-
+    return new Promise(resolve=>{
         setTimeout(
             resolve,
-            duration * 1000
+            duration*1000
         );
-
     });
 }
 
@@ -317,8 +317,7 @@ async function playCSVasRAW(){
         await audioCtx.resume();
     }
 
-    /* Aggressiver Startton */
-
+    // Aggressiver Zweiton-Start
     await playAlarmChord(
         880,
         1046,
@@ -341,8 +340,6 @@ ZEIT,KILOMETER,PEGEL
 
     csv += "END\n";
 
-    csv = csv.repeat(50);
-
     const encoder =
     new TextEncoder();
 
@@ -351,7 +348,7 @@ ZEIT,KILOMETER,PEGEL
 
     const sampleRate = 4000;
 
-    const audioBuffer =
+    const buffer =
     audioCtx.createBuffer(
         1,
         bytes.length,
@@ -359,7 +356,7 @@ ZEIT,KILOMETER,PEGEL
     );
 
     const channel =
-    audioBuffer.getChannelData(0);
+    buffer.getChannelData(0);
 
     for(let i=0;i<bytes.length;i++){
 
@@ -371,7 +368,7 @@ ZEIT,KILOMETER,PEGEL
     audioCtx.createBufferSource();
 
     source.buffer =
-    audioBuffer;
+    buffer;
 
     source.connect(
         audioCtx.destination
@@ -385,22 +382,36 @@ ZEIT,KILOMETER,PEGEL
     new Date()
     .toLocaleTimeString();
 
+    console.log("SEND:");
     console.log(csv);
-
-    const duration =
-    audioBuffer.duration * 1000;
 
     setTimeout(async ()=>{
 
-        /* Tiefer, düsterer Endton */
-
+        // Tiefer aggressiver Endton
         await playAlarmChord(
             440,
             523,
             1.0
         );
 
-    }, duration);
+    }, buffer.duration * 1000);
+}
+
+function resetThunderData(){
+
+    thunderEvents = [];
+
+    document
+    .getElementById("log")
+    .innerHTML = "";
+
+    document
+    .getElementById("events")
+    .textContent = "0";
+
+    console.log(
+        "Datenspeicher zurückgesetzt"
+    );
 }
 
 document
@@ -411,7 +422,7 @@ document
 );
 
 document
-.getElementById("playCsvBtn")
+.getElementById("sendBtn")
 .addEventListener(
     "click",
     playCSVasRAW
