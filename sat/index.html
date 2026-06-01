@@ -260,7 +260,9 @@ async function playCSVasRAW(){
     }
 
     let csv =
-    "Zeit,Kilometer,Pegel\n";
+`SYNC,SYNC,SYNC
+ZEIT,KILOMETER,PEGEL
+`;
 
     for(const e of thunderEvents){
 
@@ -270,21 +272,27 @@ async function playCSVasRAW(){
             e.level + "\n";
     }
 
+    csv += "END\n";
+
+    csv = csv.repeat(50);
+
     const encoder =
     new TextEncoder();
 
     const bytes =
     encoder.encode(csv);
 
-    const buffer =
+    const sampleRate = 4000;
+
+    const audioBuffer =
     audioCtx.createBuffer(
         1,
         bytes.length,
-        44100
+        sampleRate
     );
 
     const channel =
-    buffer.getChannelData(0);
+    audioBuffer.getChannelData(0);
 
     for(let i=0;i<bytes.length;i++){
 
@@ -295,7 +303,8 @@ async function playCSVasRAW(){
     const source =
     audioCtx.createBufferSource();
 
-    source.buffer = buffer;
+    source.buffer =
+    audioBuffer;
 
     source.connect(
         audioCtx.destination
