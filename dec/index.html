@@ -2,84 +2,96 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Audio Wasserfall Decoder</title>
+<title>Bild → Audio Spektrogramm Encoder</title>
 <style>
-  body {
-    margin: 0;
-    background: black;
-    color: white;
-    font-family: sans-serif;
-    text-align: center;
-  }
-
-  canvas {
-    display: block;
-    margin: 0 auto;
-    background: black;
-  }
-
-  #status {
-    padding: 10px;
-  }
+  body { background:#111; color:white; font-family:sans-serif; text-align:center; }
+  canvas { margin:10px; }
 </style>
 </head>
 <body>
 
-<h2>🎧 Audio → Wasserfall Decoder</h2>
-<div id="status">Starte Mikrofon...</div>
+<h2>🖼️ Bild → Audio Spektrogramm Encoder</h2>
 
-<canvas id="canvas" width="800" height="512"></canvas>
+<input type="file" id="file" accept="image/*"><br>
+
+<canvas id="imgCanvas"></canvas>
+
+<button onclick="encode()">▶ Encode & Play Audio</button>
 
 <script>
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const status = document.getElementById("status");
+const imgCanvas = document.getElementById("imgCanvas");
+const ctx = imgCanvas.getContext("2d");
 
-let audioCtx;
-let analyser;
-let dataArray;
+let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-async function start() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+let imgDataGlobal;
 
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const source = audioCtx.createMediaStreamSource(stream);
+document.getElementById("file").onchange = function(e) {
+  const file = e.target.files[0];
+  const img = new Image();
 
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 1024;
+  img.onload = function() {
+    imgCanvas.width = 128;
+    imgCanvas.height = 128;
+    ctx.drawImage(img, 0, 0, 128, 128);
 
-  source.connect(analyser);
+    imgDataGlobal = ctx.getImageData(0, 0, 128, 128);
+  };
 
-  const bufferLength = analyser.frequencyBinCount;
-  dataArray = new Uint8Array(bufferLength);
+  img.src = URL.createObjectURL(file);
+};
 
-  status.textContent = "Mikrofon aktiv – Wasserfall läuft";
+function encode() {
+  if (!imgDataGlobal) return;
 
-  draw();
-}
+  const width = 128;
+  const height = 128;
 
-function draw() {
-  requestAnimationFrame(draw);
+  const sampleRate = audioCtx.sampleRate;
+  const duration = 4;
 
-  analyser.getByteFrequencyData(dataArray);
+  const buffer = audioCtx.createBuffer(1, sampleRate * duration, sampleRate);
+  const channel = buffer.getChannelData(0);
 
-  // Bild nach unten schieben (Wasserfall-Effekt)
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  ctx.putImageData(imageData, 0, 1);
+  // Initial silence
+  for (let i = 0; i < channel.length; i++) channel[i] = 0;
 
-  // neue Zeile oben zeichnen
-  for (let x = 0; x < canvas.width; x++) {
-    const index = Math.floor(x / canvas.width * dataArray.length);
-    const value = dataArray[index];
+  // Zeit pro Bildzeile
+  const samplesPerRow = Math.floor(channel.length / height);
 
-    const intensity = value;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
 
-    ctx.fillStyle = `rgb(${intensity}, ${intensity}, ${intensity})`;
-    ctx.fillRect(x, 0, 1, 1);
+      const idx = (y * width + x) * 4;
+
+      const r = imgDataGlobal.data[idx] / 255;
+      const g = imgDataGlobal.data[idx + 1] / 255;
+      const b = imgDataGlobal.data[idx + 2] / 255;
+
+      // grayscale brightness
+      const brightness = (r + g + b) / 3;
+
+      const freqPhase = x / width;
+      const timeStart = y * samplesPerRow;
+
+      for (let i = 0; i < samplesPerRow; i++) {
+        const t = timeStart + i;
+
+        const freq = 200 + freqPhase * 2000;
+
+        const sample =
+          Math.sin(2 * Math.PI * freq * t / sampleRate) * brightness;
+
+        channel[t] += sample * 0.002;
+      }
+    }
   }
-}
 
-start();
+  const source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioCtx.destination);
+  source.start();
+}
 </script>
 
 </body>
