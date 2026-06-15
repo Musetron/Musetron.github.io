@@ -2,12 +2,11 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Text → MP3</title>
+<title>Text → Audio Export Fix</title>
 
 <style>
 body {
-    margin: 0;
-    font-family: Arial, sans-serif;
+    font-family: Arial;
     background: #fff;
     color: #111;
     display: flex;
@@ -16,53 +15,41 @@ body {
     height: 100vh;
 }
 
-.container {
-    width: 420px;
+.box {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
+    width: 420px;
 }
 
-input {
-    padding: 12px;
-    font-size: 16px;
-    border: 1px solid #ccc;
-    outline: none;
-}
-
-button {
+input, button {
     padding: 12px;
     font-size: 16px;
     border: 1px solid #000;
     background: #fff;
-    cursor: pointer;
 }
 
-button:hover {
-    background: #f2f2f2;
-}
+button:hover { background: #eee; }
 
-small {
-    color: #666;
-}
+small { color: #666; }
 </style>
 </head>
 
 <body>
 
-<div class="container">
+<div class="box">
     <input id="text" placeholder="Text eingeben...">
-    <button onclick="generate()">MP3 erstellen</button>
+    <button onclick="generate()">MP3/WAV erstellen</button>
     <small id="status"></small>
 </div>
 
 <script>
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
 const cache = {};
 
 // einfache Lautsprache
-function toPhonetic(text) {
-    return text.toUpperCase()
+function toPhonetic(t) {
+    return t.toUpperCase()
         .replaceAll("EINE", "AINE")
         .replaceAll("EIN", "AIN")
         .replaceAll("IE", "I")
@@ -73,25 +60,52 @@ function toPhonetic(text) {
         .replaceAll("Ü", "UE");
 }
 
-// Audio laden
-async function loadSound(name) {
+// load wav
+async function load(name) {
     if (cache[name]) return cache[name];
-
     try {
-        const res = await fetch(name + ".wav");
-        const buf = await res.arrayBuffer();
-        const audio = await audioCtx.decodeAudioData(buf);
-        cache[name] = audio;
-        return audio;
+        const r = await fetch(name + ".wav");
+        const b = await r.arrayBuffer();
+        const a = await ctx.decodeAudioData(b);
+        cache[name] = a;
+        return a;
     } catch {
         return null;
     }
 }
 
-// WAV Recorder (MP3-ready export via blob)
+// 🧠 SAFE MIX ENGINE (kein Schneiden mehr)
+function mix(buffers, sampleRate) {
+
+    const length = sampleRate * 10; // 10 Sekunden max
+    const output = ctx.createBuffer(1, length, sampleRate);
+    const data = output.getChannelData(0);
+
+    let time = 0;
+
+    for (const buf of buffers) {
+
+        const src = buf.buffer;
+        const arr = src.getChannelData(0);
+
+        for (let i = 0; i < arr.length; i++) {
+            const idx = Math.floor(time * sampleRate) + i;
+
+            if (idx < data.length) {
+                data[idx] += arr[i] * 0.8; // mix gain
+            }
+        }
+
+        time += buf.duration;
+    }
+
+    return output;
+}
+
+// WAV export
 function exportWAV(buffer) {
-    const wavBlob = bufferToWav(buffer);
-    const url = URL.createObjectURL(wavBlob);
+    const wav = bufferToWav(buffer);
+    const url = URL.createObjectURL(wav);
 
     const a = document.createElement("a");
     a.href = url;
@@ -99,89 +113,75 @@ function exportWAV(buffer) {
     a.click();
 }
 
-// simple WAV encoder
+// WAV encoder
 function bufferToWav(buffer) {
-    const numOfChan = buffer.numberOfChannels;
-    const length = buffer.length * numOfChan * 2 + 44;
-    const wav = new ArrayBuffer(length);
-    const view = new DataView(wav);
+    const length = buffer.length * 2 + 44;
+    const view = new DataView(new ArrayBuffer(length));
 
-    let offset = 0;
+    let pos = 0;
 
-    function writeString(s) {
-        for (let i = 0; i < s.length; i++) {
-            view.setUint8(offset++, s.charCodeAt(i));
-        }
+    function w(s) {
+        for (let i = 0; i < s.length; i++) view.setUint8(pos++, s.charCodeAt(i));
     }
 
-    writeString("RIFF");
-    view.setUint32(offset, 36 + buffer.length * numOfChan * 2, true); offset += 4;
-    writeString("WAVE");
+    w("RIFF");
+    view.setUint32(pos, 36 + buffer.length * 2, true); pos += 4;
+    w("WAVEfmt ");
+    view.setUint32(pos, 16, true); pos += 4;
+    view.setUint16(pos, 1, true); pos += 2;
+    view.setUint16(pos, 1, true); pos += 2;
+    view.setUint32(pos, buffer.sampleRate, true); pos += 4;
+    view.setUint32(pos, buffer.sampleRate * 2, true); pos += 4;
+    view.setUint16(pos, 2, true); pos += 2;
+    view.setUint16(pos, 16, true); pos += 2;
 
-    writeString("fmt ");
-    view.setUint32(offset, 16, true); offset += 4;
-    view.setUint16(offset, 1, true); offset += 2;
-    view.setUint16(offset, numOfChan, true); offset += 2;
-    view.setUint32(offset, buffer.sampleRate, true); offset += 4;
-    view.setUint32(offset, buffer.sampleRate * numOfChan * 2, true); offset += 4;
-    view.setUint16(offset, numOfChan * 2, true); offset += 2;
-    view.setUint16(offset, 16, true); offset += 2;
+    w("data");
+    view.setUint32(pos, buffer.length * 2, true); pos += 4;
 
-    writeString("data");
-    view.setUint32(offset, buffer.length * numOfChan * 2, true); offset += 4;
+    const data = buffer.getChannelData(0);
 
-    const channels = [];
-    for (let i = 0; i < numOfChan; i++) {
-        channels.push(buffer.getChannelData(i));
+    for (let i = 0; i < data.length; i++) {
+        let s = Math.max(-1, Math.min(1, data[i]));
+        s = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        view.setInt16(pos, s, true);
+        pos += 2;
     }
 
-    let sampleIndex = 0;
-    while (sampleIndex < buffer.length) {
-        for (let c = 0; c < numOfChan; c++) {
-            let sample = Math.max(-1, Math.min(1, channels[c][sampleIndex]));
-            sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-            view.setInt16(offset, sample, true);
-            offset += 2;
-        }
-        sampleIndex++;
-    }
-
-    return new Blob([wav], { type: "audio/wav" });
+    return new Blob([view], { type: "audio/wav" });
 }
 
-// Hauptfunktion: render + export
 async function generate() {
-    const text = document.getElementById("text").value;
+
     const status = document.getElementById("status");
+    const text = document.getElementById("text").value;
 
-    status.innerText = "Generating...";
+    status.innerText = "loading...";
 
-    const phonetic = toPhonetic(text);
-    const chars = phonetic.toUpperCase().split("");
+    const phon = toPhonetic(text);
+    const chars = phon.toUpperCase().split("");
 
-    const offline = new OfflineAudioContext(1, 48000 * 10, 48000);
+    const list = [];
 
-    let t = 0;
+    for (const c of chars) {
 
-    for (let c of chars) {
-        const buffer = await loadSound(c);
-        if (!buffer) continue;
+        const buf = await load(c);
+        if (!buf) continue;
 
-        const src = offline.createBufferSource();
-        src.buffer = buffer;
-        src.connect(offline.destination);
-
-        src.start(t);
-        t += 0.1;
+        list.push({
+            buffer: buf,
+            duration: 0.1
+        });
     }
 
-    const rendered = await offline.startRendering();
+    status.innerText = "mixing...";
 
-    status.innerText = "Exporting WAV...";
+    const mixed = mix(list, ctx.sampleRate);
 
-    exportWAV(rendered);
+    status.innerText = "exporting...";
 
-    status.innerText = "Done ✔";
+    exportWAV(mixed);
+
+    status.innerText = "done ✔";
 }
 </script>
 
