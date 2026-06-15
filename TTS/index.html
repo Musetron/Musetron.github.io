@@ -2,69 +2,78 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Lautsprache Generator</title>
+<title>Text → MP3</title>
 
 <style>
 body {
-    font-family: Arial;
-    background: #111;
-    color: #eee;
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #fff;
+    color: #111;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.container {
+    width: 420px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding-top: 50px;
+    gap: 12px;
 }
 
 input {
-    width: 420px;
-    padding: 10px;
-    font-size: 18px;
+    padding: 12px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    outline: none;
 }
 
 button {
-    margin-top: 20px;
-    padding: 10px 20px;
+    padding: 12px;
+    font-size: 16px;
+    border: 1px solid #000;
+    background: #fff;
+    cursor: pointer;
 }
 
-#output {
-    margin-top: 20px;
-    font-size: 20px;
-    color: #6cf;
+button:hover {
+    background: #f2f2f2;
+}
+
+small {
+    color: #666;
 }
 </style>
 </head>
 
 <body>
 
-<h2>Text → Lautsprache → Audio</h2>
-
-<input id="textInput" placeholder="TEXT EINGEBEN...">
-<button onclick="start()">START</button>
-
-<div id="output"></div>
+<div class="container">
+    <input id="text" placeholder="Text eingeben...">
+    <button onclick="generate()">MP3 erstellen</button>
+    <small id="status"></small>
+</div>
 
 <script>
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const cache = {};
 
-// einfache Lautsprache-Regeln (DE → vereinfachte Aussprache)
+// einfache Lautsprache
 function toPhonetic(text) {
-    text = text.toUpperCase();
-
-    return text
+    return text.toUpperCase()
         .replaceAll("EINE", "AINE")
         .replaceAll("EIN", "AIN")
         .replaceAll("IE", "I")
         .replaceAll("EI", "AI")
-        .replaceAll("EU", "OI")
+        .replaceAll("SCH", "SCH")
         .replaceAll("Ä", "AE")
         .replaceAll("Ö", "OE")
-        .replaceAll("Ü", "UE")
-        .replaceAll("SCH", "SCH") // bleibt gleich
-        .replaceAll(" ", " ");
+        .replaceAll("Ü", "UE");
 }
 
-// Laden
+// Audio laden
 async function loadSound(name) {
     if (cache[name]) return cache[name];
 
@@ -74,81 +83,105 @@ async function loadSound(name) {
         const audio = await audioCtx.decodeAudioData(buf);
         cache[name] = audio;
         return audio;
-    } catch (e) {
-        console.warn("Fehlt:", name);
+    } catch {
         return null;
     }
 }
 
-// Play
-function play(buffer, t) {
-    const src = audioCtx.createBufferSource();
-    const gain = audioCtx.createGain();
+// WAV Recorder (MP3-ready export via blob)
+function exportWAV(buffer) {
+    const wavBlob = bufferToWav(buffer);
+    const url = URL.createObjectURL(wavBlob);
 
-    src.buffer = buffer;
-    src.connect(gain);
-    gain.connect(audioCtx.destination);
-
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(1, t + 0.02);
-    gain.gain.setValueAtTime(1, t + 0.12);
-    gain.gain.linearRampToValueAtTime(0, t + 0.16);
-
-    src.start(t);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "speech.wav";
+    a.click();
 }
 
-// Tokenizer
-function tokenize(text) {
-    const tokens = [];
-    let i = 0;
+// simple WAV encoder
+function bufferToWav(buffer) {
+    const numOfChan = buffer.numberOfChannels;
+    const length = buffer.length * numOfChan * 2 + 44;
+    const wav = new ArrayBuffer(length);
+    const view = new DataView(wav);
 
-    text = text.toUpperCase();
+    let offset = 0;
 
-    while (i < text.length) {
-
-        if (text.slice(i, i + 3) === "SCH") {
-            tokens.push("SCH");
-            i += 3;
-            continue;
+    function writeString(s) {
+        for (let i = 0; i < s.length; i++) {
+            view.setUint8(offset++, s.charCodeAt(i));
         }
-
-        const c = text[i];
-
-        if ("ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ".includes(c)) {
-            tokens.push(c);
-        }
-
-        i++;
     }
 
-    return tokens;
+    writeString("RIFF");
+    view.setUint32(offset, 36 + buffer.length * numOfChan * 2, true); offset += 4;
+    writeString("WAVE");
+
+    writeString("fmt ");
+    view.setUint32(offset, 16, true); offset += 4;
+    view.setUint16(offset, 1, true); offset += 2;
+    view.setUint16(offset, numOfChan, true); offset += 2;
+    view.setUint32(offset, buffer.sampleRate, true); offset += 4;
+    view.setUint32(offset, buffer.sampleRate * numOfChan * 2, true); offset += 4;
+    view.setUint16(offset, numOfChan * 2, true); offset += 2;
+    view.setUint16(offset, 16, true); offset += 2;
+
+    writeString("data");
+    view.setUint32(offset, buffer.length * numOfChan * 2, true); offset += 4;
+
+    const channels = [];
+    for (let i = 0; i < numOfChan; i++) {
+        channels.push(buffer.getChannelData(i));
+    }
+
+    let sampleIndex = 0;
+    while (sampleIndex < buffer.length) {
+        for (let c = 0; c < numOfChan; c++) {
+            let sample = Math.max(-1, Math.min(1, channels[c][sampleIndex]));
+            sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+            view.setInt16(offset, sample, true);
+            offset += 2;
+        }
+        sampleIndex++;
+    }
+
+    return new Blob([wav], { type: "audio/wav" });
 }
 
-async function start() {
-    await audioCtx.resume();
+// Hauptfunktion: render + export
+async function generate() {
+    const text = document.getElementById("text").value;
+    const status = document.getElementById("status");
 
-    const input = document.getElementById("textInput").value;
+    status.innerText = "Generating...";
 
-    // 1️⃣ Lautsprache erzeugen
-    const phonetic = toPhonetic(input);
+    const phonetic = toPhonetic(text);
+    const chars = phonetic.toUpperCase().split("");
 
-    document.getElementById("output").innerText =
-        "Lautsprache: " + phonetic;
+    const offline = new OfflineAudioContext(1, 48000 * 10, 48000);
 
-    // 2️⃣ Audio aus Lautsprache
-    const tokens = tokenize(phonetic);
+    let t = 0;
 
-    let t = audioCtx.currentTime;
+    for (let c of chars) {
+        const buffer = await loadSound(c);
+        if (!buffer) continue;
 
-    for (let token of tokens) {
+        const src = offline.createBufferSource();
+        src.buffer = buffer;
+        src.connect(offline.destination);
 
-        const buffer = await loadSound(token);
-
-        if (buffer) {
-            play(buffer, t);
-            t += 0.11;
-        }
+        src.start(t);
+        t += 0.1;
     }
+
+    const rendered = await offline.startRendering();
+
+    status.innerText = "Exporting WAV...";
+
+    exportWAV(rendered);
+
+    status.innerText = "Done ✔";
 }
 </script>
 
