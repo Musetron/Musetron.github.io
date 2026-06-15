@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Buchstaben Audio Player</title>
+<title>Flüssige Buchstaben-Sprache</title>
 
 <style>
 body {
@@ -31,7 +31,7 @@ button {
 
 <body>
 
-<h2>Text → Audio (DE erweitert)</h2>
+<h2>Text → flüssige Audio-Sprache</h2>
 
 <input id="textInput" placeholder="TEXT EINGEBEN...">
 <button onclick="playText()">PLAY</button>
@@ -40,7 +40,7 @@ button {
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const cache = {};
 
-// Datei laden
+// Laden
 async function loadSound(name) {
     if (cache[name]) return cache[name];
 
@@ -56,8 +56,8 @@ async function loadSound(name) {
     }
 }
 
-// Sound spielen mit Fade
-function play(buffer, time) {
+// Play mit Crossfade
+function play(buffer, startTime, duration = 0.12) {
     const src = audioCtx.createBufferSource();
     const gain = audioCtx.createGain();
 
@@ -65,15 +65,16 @@ function play(buffer, time) {
     src.connect(gain);
     gain.connect(audioCtx.destination);
 
-    gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(1, time + 0.05);
-    gain.gain.setValueAtTime(1, time + 0.4);
-    gain.gain.linearRampToValueAtTime(0, time + 0.5);
+    // 🔥 sehr kurzer Crossfade (smooth Spracheffekt)
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(1, startTime + 0.02);
+    gain.gain.setValueAtTime(1, startTime + duration);
+    gain.gain.linearRampToValueAtTime(0, startTime + duration + 0.03);
 
-    src.start(time);
+    src.start(startTime);
 }
 
-// Tokenizer (wichtig für SCH!)
+// Tokenizer inkl. SCH
 function tokenize(text) {
     text = text.toUpperCase();
 
@@ -82,7 +83,6 @@ function tokenize(text) {
 
     while (i < text.length) {
 
-        // SCH zuerst prüfen
         if (text.slice(i, i + 3) === "SCH") {
             tokens.push("SCH");
             i += 3;
@@ -91,8 +91,7 @@ function tokenize(text) {
 
         const c = text[i];
 
-        // erlaubte Zeichen
-        if ("ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ".includes(c)) {
+        if ("ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ, ".includes(c)) {
             tokens.push(c);
         }
 
@@ -112,13 +111,22 @@ async function playText() {
 
     for (let token of tokens) {
 
+        // 🟡 echte Pause nur bei Komma
+        if (token === ",") {
+            t += 0.35;
+            continue;
+        }
+
+        if (token === " ") {
+            continue; // KEINE Pause mehr bei Leerzeichen
+        }
+
         const buffer = await loadSound(token);
 
         if (buffer) {
             play(buffer, t);
+            t += 0.10; // 🔥 leicht überlappend = flüssige Sprache
         }
-
-        t += 0.5;
     }
 }
 </script>
