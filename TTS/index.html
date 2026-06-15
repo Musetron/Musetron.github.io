@@ -1,1 +1,109 @@
-test
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Letter Voice Player</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #111;
+        color: #eee;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 50px;
+    }
+
+    input {
+        width: 400px;
+        padding: 10px;
+        font-size: 18px;
+    }
+
+    button {
+        margin-top: 20px;
+        padding: 10px 20px;
+        font-size: 16px;
+        cursor: pointer;
+    }
+</style>
+</head>
+<body>
+
+<h2>Text → Buchstaben Audio</h2>
+
+<input id="textInput" placeholder="Text eingeben...">
+<button onclick="playText()">Play</button>
+
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+// Cache für geladenen Audio
+const bufferCache = {};
+
+async function loadLetter(letter) {
+    letter = letter.toLowerCase();
+
+    if (bufferCache[letter]) {
+        return bufferCache[letter];
+    }
+
+    try {
+        const response = await fetch(letter + ".wav");
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        bufferCache[letter] = audioBuffer;
+        return audioBuffer;
+    } catch (e) {
+        console.warn("Keine Datei für:", letter);
+        return null;
+    }
+}
+
+function playBuffer(buffer, time) {
+    const source = audioCtx.createBufferSource();
+    const gain = audioCtx.createGain();
+
+    source.buffer = buffer;
+
+    source.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    // 🎚 Smooth Fade In / Out
+    gain.gain.setValueAtTime(0, time);
+    gain.gain.linearRampToValueAtTime(1, time + 0.05);      // fade in
+    gain.gain.setValueAtTime(1, time + 0.4);
+    gain.gain.linearRampToValueAtTime(0, time + 0.5);      // fade out
+
+    source.start(time);
+}
+
+async function playText() {
+    await audioCtx.resume();
+
+    const text = document.getElementById("textInput").value;
+
+    let t = audioCtx.currentTime;
+
+    for (let char of text) {
+
+        // Pause / Space
+        if (char === " ") {
+            t += 0.5;
+            continue;
+        }
+
+        const buffer = await loadLetter(char);
+
+        if (buffer) {
+            playBuffer(buffer, t);
+        }
+
+        // jeder Buchstabe = 0.5s Slot
+        t += 0.5;
+    }
+}
+</script>
+
+</body>
+</html>
