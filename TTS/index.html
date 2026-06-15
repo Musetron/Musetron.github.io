@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Flüssige Buchstaben-Sprache</title>
+<title>Lautsprache Generator</title>
 
 <style>
 body {
@@ -24,21 +24,45 @@ input {
 button {
     margin-top: 20px;
     padding: 10px 20px;
-    font-size: 16px;
+}
+
+#output {
+    margin-top: 20px;
+    font-size: 20px;
+    color: #6cf;
 }
 </style>
 </head>
 
 <body>
 
-<h2>Text → flüssige Audio-Sprache</h2>
+<h2>Text → Lautsprache → Audio</h2>
 
 <input id="textInput" placeholder="TEXT EINGEBEN...">
-<button onclick="playText()">PLAY</button>
+<button onclick="start()">START</button>
+
+<div id="output"></div>
 
 <script>
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const cache = {};
+
+// einfache Lautsprache-Regeln (DE → vereinfachte Aussprache)
+function toPhonetic(text) {
+    text = text.toUpperCase();
+
+    return text
+        .replaceAll("EINE", "AINE")
+        .replaceAll("EIN", "AIN")
+        .replaceAll("IE", "I")
+        .replaceAll("EI", "AI")
+        .replaceAll("EU", "OI")
+        .replaceAll("Ä", "AE")
+        .replaceAll("Ö", "OE")
+        .replaceAll("Ü", "UE")
+        .replaceAll("SCH", "SCH") // bleibt gleich
+        .replaceAll(" ", " ");
+}
 
 // Laden
 async function loadSound(name) {
@@ -56,8 +80,8 @@ async function loadSound(name) {
     }
 }
 
-// Play mit Crossfade
-function play(buffer, startTime, duration = 0.12) {
+// Play
+function play(buffer, t) {
     const src = audioCtx.createBufferSource();
     const gain = audioCtx.createGain();
 
@@ -65,21 +89,20 @@ function play(buffer, startTime, duration = 0.12) {
     src.connect(gain);
     gain.connect(audioCtx.destination);
 
-    // 🔥 sehr kurzer Crossfade (smooth Spracheffekt)
-    gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(1, startTime + 0.02);
-    gain.gain.setValueAtTime(1, startTime + duration);
-    gain.gain.linearRampToValueAtTime(0, startTime + duration + 0.03);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(1, t + 0.02);
+    gain.gain.setValueAtTime(1, t + 0.12);
+    gain.gain.linearRampToValueAtTime(0, t + 0.16);
 
-    src.start(startTime);
+    src.start(t);
 }
 
-// Tokenizer inkl. SCH
+// Tokenizer
 function tokenize(text) {
-    text = text.toUpperCase();
-
     const tokens = [];
     let i = 0;
+
+    text = text.toUpperCase();
 
     while (i < text.length) {
 
@@ -91,7 +114,7 @@ function tokenize(text) {
 
         const c = text[i];
 
-        if ("ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ, ".includes(c)) {
+        if ("ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ".includes(c)) {
             tokens.push(c);
         }
 
@@ -101,31 +124,29 @@ function tokenize(text) {
     return tokens;
 }
 
-async function playText() {
+async function start() {
     await audioCtx.resume();
 
-    const text = document.getElementById("textInput").value;
-    const tokens = tokenize(text);
+    const input = document.getElementById("textInput").value;
+
+    // 1️⃣ Lautsprache erzeugen
+    const phonetic = toPhonetic(input);
+
+    document.getElementById("output").innerText =
+        "Lautsprache: " + phonetic;
+
+    // 2️⃣ Audio aus Lautsprache
+    const tokens = tokenize(phonetic);
 
     let t = audioCtx.currentTime;
 
     for (let token of tokens) {
 
-        // 🟡 echte Pause nur bei Komma
-        if (token === ",") {
-            t += 0.35;
-            continue;
-        }
-
-        if (token === " ") {
-            continue; // KEINE Pause mehr bei Leerzeichen
-        }
-
         const buffer = await loadSound(token);
 
         if (buffer) {
             play(buffer, t);
-            t += 0.10; // 🔥 leicht überlappend = flüssige Sprache
+            t += 0.11;
         }
     }
 }
