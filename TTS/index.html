@@ -2,104 +2,122 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Letter Voice Player</title>
+<title>Buchstaben Audio Player</title>
+
 <style>
-    body {
-        font-family: Arial, sans-serif;
-        background: #111;
-        color: #eee;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding-top: 50px;
-    }
+body {
+    font-family: Arial;
+    background: #111;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 50px;
+}
 
-    input {
-        width: 400px;
-        padding: 10px;
-        font-size: 18px;
-    }
+input {
+    width: 420px;
+    padding: 10px;
+    font-size: 18px;
+}
 
-    button {
-        margin-top: 20px;
-        padding: 10px 20px;
-        font-size: 16px;
-        cursor: pointer;
-    }
+button {
+    margin-top: 20px;
+    padding: 10px 20px;
+    font-size: 16px;
+}
 </style>
 </head>
+
 <body>
 
-<h2>Text → Buchstaben Audio</h2>
+<h2>Text → Audio (DE erweitert)</h2>
 
-<input id="textInput" placeholder="Text eingeben...">
-<button onclick="playText()">Play</button>
+<input id="textInput" placeholder="TEXT EINGEBEN...">
+<button onclick="playText()">PLAY</button>
 
 <script>
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const cache = {};
 
-// Cache für geladenen Audio
-const bufferCache = {};
-
-async function loadLetter(letter) {
-    letter = letter.toLowerCase();
-
-    if (bufferCache[letter]) {
-        return bufferCache[letter];
-    }
+// Datei laden
+async function loadSound(name) {
+    if (cache[name]) return cache[name];
 
     try {
-        const response = await fetch(letter + ".wav");
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        bufferCache[letter] = audioBuffer;
-        return audioBuffer;
+        const res = await fetch(name + ".wav");
+        const buf = await res.arrayBuffer();
+        const audio = await audioCtx.decodeAudioData(buf);
+        cache[name] = audio;
+        return audio;
     } catch (e) {
-        console.warn("Keine Datei für:", letter);
+        console.warn("Fehlt:", name);
         return null;
     }
 }
 
-function playBuffer(buffer, time) {
-    const source = audioCtx.createBufferSource();
+// Sound spielen mit Fade
+function play(buffer, time) {
+    const src = audioCtx.createBufferSource();
     const gain = audioCtx.createGain();
 
-    source.buffer = buffer;
-
-    source.connect(gain);
+    src.buffer = buffer;
+    src.connect(gain);
     gain.connect(audioCtx.destination);
 
-    // 🎚 Smooth Fade In / Out
     gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(1, time + 0.05);      // fade in
+    gain.gain.linearRampToValueAtTime(1, time + 0.05);
     gain.gain.setValueAtTime(1, time + 0.4);
-    gain.gain.linearRampToValueAtTime(0, time + 0.5);      // fade out
+    gain.gain.linearRampToValueAtTime(0, time + 0.5);
 
-    source.start(time);
+    src.start(time);
+}
+
+// Tokenizer (wichtig für SCH!)
+function tokenize(text) {
+    text = text.toUpperCase();
+
+    const tokens = [];
+    let i = 0;
+
+    while (i < text.length) {
+
+        // SCH zuerst prüfen
+        if (text.slice(i, i + 3) === "SCH") {
+            tokens.push("SCH");
+            i += 3;
+            continue;
+        }
+
+        const c = text[i];
+
+        // erlaubte Zeichen
+        if ("ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ".includes(c)) {
+            tokens.push(c);
+        }
+
+        i++;
+    }
+
+    return tokens;
 }
 
 async function playText() {
     await audioCtx.resume();
 
     const text = document.getElementById("textInput").value;
+    const tokens = tokenize(text);
 
     let t = audioCtx.currentTime;
 
-    for (let char of text) {
+    for (let token of tokens) {
 
-        // Pause / Space
-        if (char === " ") {
-            t += 0.5;
-            continue;
-        }
-
-        const buffer = await loadLetter(char);
+        const buffer = await loadSound(token);
 
         if (buffer) {
-            playBuffer(buffer, t);
+            play(buffer, t);
         }
 
-        // jeder Buchstabe = 0.5s Slot
         t += 0.5;
     }
 }
