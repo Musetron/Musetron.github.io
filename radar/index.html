@@ -64,14 +64,13 @@
 </div>
 
 <script>
-// Audio-Kontext und Variablen für die Sound-Knoten
 let audioCtx;
 let sounds = {
-    engine: { url: 'engine.wav', buffer: null, source: null, gainNode: null },
-    gas: { url: 'gas.wav', buffer: null, source: null, gainNode: null },
-    metall: { url: 'metall.wav', buffer: null, source: null, gainNode: null },
-    static: { url: 'static.wav', buffer: null, source: null, gainNode: null },
-    noise: { url: 'noise.wav', buffer: null, source: null, gainNode: null }
+    engine: { url: 'engine.wav', element: null, source: null, gainNode: null },
+    gas: { url: 'gas.wav', element: null, source: null, gainNode: null },
+    metall: { url: 'metall.wav', element: null, source: null, gainNode: null },
+    static: { url: 'static.wav', element: null, source: null, gainNode: null },
+    noise: { url: 'noise.wav', element: null, source: null, gainNode: null }
 };
 
 const startBtn = document.getElementById('startBtn');
@@ -81,57 +80,44 @@ const sliderValue = document.getElementById('sliderValue');
 
 startBtn.addEventListener('click', async () => {
     if (!audioCtx) {
+        // 1. Audio Kontext starten
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        statusText.innerText = "Lade Sounddateien...";
+        statusText.innerText = "Initialisiere Motor...";
         startBtn.disabled = true;
         
         try {
-            // Alle Sounds parallel laden
-            await Promise.all(Object.keys(sounds).map(key => loadSound(key)));
-            
-            // Sounds starten (im Loop)
-            initAndStartSounds();
+            // 2. Sounds über Audio-Elemente laden (toleriert fast alle WAV-Formate)
+            Object.keys(sounds).forEach(key => {
+                const sound = sounds[key];
+                
+                sound.element = new Audio(sound.url);
+                sound.element.loop = true;
+                sound.element.crossOrigin = "anonymous"; // Verhindert CORS Probleme
+                
+                // Erstelle die Knotenkette
+                sound.source = audioCtx.createMediaElementSource(sound.element);
+                sound.gainNode = audioCtx.createGain();
+                
+                sound.source.connect(sound.gainNode);
+                sound.gainNode.connect(audioCtx.destination);
+            });
+
+            // 3. Alle Sounds gleichzeitig abspielen
+            const playPromises = Object.keys(sounds).map(key => sounds[key].element.play());
+            await Promise.all(playPromises);
             
             statusText.innerText = "Motor läuft.";
             gasSlider.disabled = false;
-            updateSounds(0); // Initialisiere mit Standgas
+            updateSounds(0); // Standgas einstellen
+            
         } catch (error) {
-            statusText.innerText = "Fehler beim Laden der Sounds: " + error.message;
+            statusText.innerText = "Fehler: " + error.message;
+            console.error(error);
             startBtn.disabled = false;
         }
     }
 });
 
-// Funktion zum Laden der Dateien via Fetch
-async function loadSound(key) {
-    const response = await fetch(sounds[key].url);
-    const arrayBuffer = await response.arrayBuffer();
-    sounds[key].buffer = await audioCtx.decodeAudioData(arrayBuffer);
-}
-
-// Initialisiert die Loops und Nodes
-function initAndStartSounds() {
-    Object.keys(sounds).forEach(key => {
-        const sound = sounds[key];
-        
-        // Source Node erstellen
-        sound.source = audioCtx.createBufferSource();
-        sound.source.buffer = sound.buffer;
-        sound.source.loop = true;
-        
-        // Gain Node (Lautstärke) erstellen
-        sound.gainNode = audioCtx.createGain();
-        
-        // Verbinden: Source -> Gain -> Lautsprecher
-        sound.source.connect(sound.gainNode);
-        sound.gainNode.connect(audioCtx.destination);
-        
-        // Starten
-        sound.source.start(0);
-    });
-}
-
-// Hier passiert die Sound-Logik basierend auf deinem Wunsch
 gasSlider.addEventListener('input', (e) => {
     const value = parseFloat(e.target.value);
     sliderValue.innerText = `Drehzahl: ${Math.round(value * 100)}%`;
@@ -141,33 +127,29 @@ gasSlider.addEventListener('input', (e) => {
 function updateSounds(x) {
     if (!audioCtx) return;
     
-    // Aktuelle Zeit für weiche Übergänge
     const now = audioCtx.currentTime;
-    const fadeTime = 0.05; // Kurzer Fade, damit es nicht knackt
+    const fadeTime = 0.05;
 
-    // 1. ENGINE.WAV (Wird schneller und lauter)
-    // Standgas: Speed 1.0, Vol 0.5 -> Vollgas: Speed 2.5, Vol 1.0
-    sounds.engine.source.playbackRate.linearRampToValueAtTime(1.0 + (x * 1.5), now + fadeTime);
+    // 1. ENGINE
+    sounds.engine.element.playbackRate = 1.0 + (x * 1.5);
     sounds.engine.gainNode.gain.linearRampToValueAtTime(0.5 + (x * 0.5), now + fadeTime);
 
-    // 2. GAS.WAV (Feuert direkt heftig rein, flacht dann bei Höchstdrehzahl leicht ab für den "Schub"-Effekt)
-    // Nutzt eine Kurve: Bei x=0 aus, bei x=0.4 sehr laut, bei x=1.0 wieder etwas konstanter
+    // 2. GAS
     let gasVolume = 0;
     if (x > 0) {
         gasVolume = x < 0.4 ? (x / 0.4) * 1.0 : 1.0 - ((x - 0.4) * 0.3); 
     }
+    sounds.gas.element.playbackRate = 0.8 + (x * 0.7);
     sounds.gas.gainNode.gain.linearRampToValueAtTime(gasVolume, now + fadeTime);
-    sounds.gas.source.playbackRate.linearRampToValueAtTime(0.8 + (x * 0.7), now + fadeTime);
 
-    // 3. METALL.AIFF (Klappern dreht durch: wird bei viel Gas extrem schnell und laut)
-    // Standgas: fast unhörbar leise und langsam -> Vollgas: extrem laut und doppelte Geschwindigkeit
+    // 3. METALL
+    sounds.metall.element.playbackRate = 0.5 + (x * 2.0);
     sounds.metall.gainNode.gain.linearRampToValueAtTime(0.05 + (x * 0.95), now + fadeTime);
-    sounds.metall.source.playbackRate.linearRampToValueAtTime(0.5 + (x * 2.0), now + fadeTime);
 
-    // 4. STATIC.WAV (Konstantes Hintergrundgeräusch, wird nur minimal lauter)
+    // 4. STATIC
     sounds.static.gainNode.gain.linearRampToValueAtTime(0.4 + (x * 0.2), now + fadeTime);
 
-    // 5. NOISE.WAV (Begleiter für alles, schwillt linear mit an)
+    // 5. NOISE
     sounds.noise.gainNode.gain.linearRampToValueAtTime(0.2 + (x * 0.6), now + fadeTime);
 }
 </script>
