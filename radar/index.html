@@ -3,382 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Overloaded Motion-Tracking Radar</title>
+    <title>Panzer Motor Sound Simulator</title>
     <style>
-        * {
-            box-sizing: border-box;
-        }
-        body, html {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #010a01;
-            overflow: hidden;
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #2b2b2a;
+            color: #d4d4d2;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
         }
-
         .container {
-            position: relative;
+            background-color: #3a3a38;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+            border: 2px solid #555552;
+            text-align: center;
+            width: 350px;
+        }
+        button {
+            background-color: #5c674e;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            font-weight: bold;
+            margin-bottom: 20px;
             width: 100%;
-            height: 100%;
         }
-
-        canvas {
-            display: block;
+        button:hover { background-color: #717e60; }
+        button:disabled { background-color: #444; color: #777; cursor: not-allowed; }
+        .slider-container { margin-top: 20px; }
+        input[type=range] {
             width: 100%;
-            height: 100%;
-            filter: saturate(1.2) contrast(1.1);
+            margin: 15px 0;
+            accent-color: #8da075;
         }
-
-        /* Kamera-Erlaubnis-Hinweis (wird ausgeblendet sobald aktiv) */
-        #cameraPrompt {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: #00ff00;
-            font-family: monospace;
-            font-size: 14px;
-            background: rgba(0, 20, 0, 0.8);
-            padding: 10px 20px;
-            border: 1px solid #00ff00;
-            border-radius: 4px;
-            z-index: 100;
-            pointer-events: none;
-            text-transform: uppercase;
-            box-shadow: 0 0 10px rgba(0,255,0,0.3);
-        }
-
-        /* Aggressives CRT-Raster & Phosphor-Leuchten */
-        .crt-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(rgba(18, 50, 18, 0) 40%, rgba(0, 0, 0, 0.4) 40%), 
-                        linear-gradient(90deg, rgba(0, 255, 0, 0.03), rgba(0, 0, 0, 0.1), rgba(0, 255, 0, 0.03));
-            background-size: 100% 5px, 8px 100%;
-            pointer-events: none;
-            z-index: 10;
-        }
-
-        .vignette {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle, rgba(0,20,0,0) 20%, rgba(0,5,0,0.8) 100%);
-            pointer-events: none;
-            z-index: 11;
-        }
-
-        .screen-glitch-bar {
-            position: absolute;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            background: rgba(0, 255, 50, 0.3);
-            opacity: 0.4;
-            pointer-events: none;
-            z-index: 12;
-            animation: vhsRoll 6s linear infinite;
-        }
-
-        @keyframes vhsRoll {
-            0% { top: -10%; }
-            100% { top: 110%; }
-        }
-
-        /* Unsichtbare Elemente für die Video-Verarbeitung */
-        video, #videoCanvas {
-            display: none;
-        }
+        .status { font-size: 12px; color: #888; margin-top: 15px; }
     </style>
 </head>
 <body>
 
-    <div id="cameraPrompt">Initialisiere Kamera-Tracking... Bitte Zugriff erlauben.</div>
-
-    <div class="container">
-        <div class="crt-overlay"></div>
-        <div class="vignette"></div>
-        <div class="screen-glitch-bar"></div>
-        <canvas id="radarCanvas"></canvas>
+<div class="container">
+    <h2>Panzer Motor</h2>
+    <button id="startBtn">1. MOTOR STARTEN</button>
+    
+    <div class="slider-container">
+        <label for="gasSlider"><strong>DREHZAHL / GAS</strong></label>
+        <input type="range" id="gasSlider" min="0" max="1" step="0.01" value="0" disabled>
+        <div id="sliderValue">Standgas (0%)</div>
     </div>
+    
+    <div class="status" id="statusText">Warte auf Start...</div>
+</div>
 
-    <video id="webcam" autoplay playsinline></video>
-    <canvas id="videoCanvas" width="64" height="48"></canvas>
+<script>
+// Audio-Kontext und Variablen für die Sound-Knoten
+let audioCtx;
+let sounds = {
+    engine: { url: 'engine.wav', buffer: null, source: null, gainNode: null },
+    gas: { url: 'gas.wav', buffer: null, source: null, gainNode: null },
+    metall: { url: 'metall.aiff', buffer: null, source: null, gainNode: null },
+    static: { url: 'static.wav', buffer: null, source: null, gainNode: null },
+    noise: { url: 'noise.wav', buffer: null, source: null, gainNode: null }
+};
 
-    <script>
-        const canvas = document.getElementById('radarCanvas');
-        const ctx = canvas.getContext('2d');
-        const video = document.getElementById('webcam');
-        const vCanvas = document.getElementById('videoCanvas');
-        const vCtx = vCanvas.getContext('2d');
-        const promptText = document.getElementById('cameraPrompt');
+const startBtn = document.getElementById('startBtn');
+const gasSlider = document.getElementById('gasSlider');
+const statusText = document.getElementById('statusText');
+const sliderValue = document.getElementById('sliderValue');
 
-        let centerX, centerY, radius;
-        let prevFrameData = null;
-        let motionPoints = []; // Liste aktuell erkannter Bewegungen aus der Kamera
-
-        function resizeCanvas() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            centerX = canvas.width / 2;
-            centerY = canvas.height * 0.90; 
-            radius = Math.max(canvas.width, canvas.height) * 0.9;
-        }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        // Mittlere 3 von 5 Segmenten (Scanbereich)
-        const START_ANGLE = Math.PI + (Math.PI * 1 / 5); 
-        const END_ANGLE = Math.PI + (Math.PI * 4 / 5);   
-
-        let angle = START_ANGLE;
-        let speed = 0.025; 
-        let direction = 1;
-
-        // Array für getroffene Radarkontakte (Blips), die aufleuchten und faden
-        let activeBlips = [];
-
-        // 1. WEBCAM INITIALISIERUNG (Unsichtbar)
-        navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } })
-            .then(stream => {
-                video.srcObject = stream;
-                promptText.style.display = 'none'; // Hinweis ausblenden bei Erfolg
-            })
-            .catch(err => {
-                console.error("Kamerafehler: ", err);
-                promptText.innerText = "Kamerazugriff verweigert / Nicht gefunden.";
-            });
-
-        // 2. BEWEGUNGSTRACKING (Motion Detection per Differenzbild)
-        function trackMotion() {
-            if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-
-            // Zeichne das Videobild verkleinert auf das unsichtbare Hilfs-Canvas (spart massiv CPU)
-            // Kamerasignal spiegeln (horizontal), damit Bewegungen links auch im Radar links sind
-            vCtx.save();
-            vCtx.translate(vCanvas.width, 0);
-            vCtx.scale(-1, 1);
-            vCtx.drawImage(video, 0, 0, vCanvas.width, vCanvas.height);
-            vCtx.restore();
-
-            const frame = vCtx.getImageData(0, 0, vCanvas.width, vCanvas.height);
-            const data = frame.data;
-
-            motionPoints = [];
-
-            if (prevFrameData) {
-                // Vergleiche Pixel für Pixel mit dem vorherigen Frame
-                for (let i = 0; i < data.length; i += 4) {
-                    let rDiff = Math.abs(data[i] - prevFrameData[i]);
-                    let gDiff = Math.abs(data[i+1] - prevFrameData[i+1]);
-                    let bDiff = Math.abs(data[i+2] - prevFrameData[i+2]);
-                    
-                    // Schwellenwert für Bewegungserkennung (höher = unempfindlicher gegen Rauschen)
-                    if (rDiff + gDiff + bDiff > 75) { 
-                        let pixelIndex = i / 4;
-                        let vx = pixelIndex % vCanvas.width;
-                        let vy = Math.floor(pixelIndex / vCanvas.width);
-
-                        // Normalisiere Koordinaten auf Werte von -1 bis 1 (X) und 0 bis 1 (Y depth)
-                        let normX = (vx / vCanvas.width) * 2 - 1; 
-                        let normY = 1 - (vy / vCanvas.height); // Umkehren, damit "oben" im Kamerabild "weit weg" im Radar ist
-
-                        // Transformiere Kamera-Koordinaten in den kreisförmigen Radar-Sektor
-                        // Wir verteilen die Kamera-X-Achse über unseren erlaubten Sichtwinkel
-                        let targetAngle = START_ANGLE + ((normX + 1) / 2) * (END_ANGLE - START_ANGLE);
-                        let targetDist = radius * (0.2 + normY * 0.75); // Nicht ganz im Zentrum starten
-
-                        motionPoints.push({
-                            x: centerX + Math.cos(targetAngle) * targetDist,
-                            y: centerY + Math.sin(targetAngle) * targetDist,
-                            angle: targetAngle
-                        });
-                    }
-                }
-            }
-            prevFrameData = data;
-        }
-
-        function drawGrid() {
-            ctx.strokeStyle = 'rgba(0, 255, 50, 0.12)';
-            ctx.lineWidth = 1.5;
-
-            for (let r = radius * 0.15; r <= radius; r += radius * 0.15) {
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, r, START_ANGLE, END_ANGLE, false);
-                ctx.stroke();
-            }
-
-            const segments = 3;
-            for (let i = 0; i <= segments; i++) {
-                let currentAngle = START_ANGLE + ((END_ANGLE - START_ANGLE) * i / segments);
-                let x = centerX + Math.cos(currentAngle) * radius;
-                let y = centerY + Math.sin(currentAngle) * radius;
-
-                ctx.beginPath();
-                ctx.moveTo(centerX, centerY);
-                ctx.lineTo(x, y);
-                ctx.stroke();
-            }
-        }
-
-        function drawRadarSweep() {
-            // Intensiver Primärstrahl
-            ctx.strokeStyle = 'rgba(100, 255, 100, 0.9)';
-            ctx.lineWidth = 4;
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = 'rgba(0, 255, 0, 1)';
+startBtn.addEventListener('click', async () => {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        statusText.innerText = "Lade Sounddateien...";
+        startBtn.disabled = true;
+        
+        try {
+            // Alle Sounds parallel laden
+            await Promise.all(Object.keys(sounds).map(key => loadSound(key)));
             
-            let targetX = centerX + Math.cos(angle) * radius;
-            let targetY = centerY + Math.sin(angle) * radius;
-
-            ctx.beginPath();
-            ctx.moveTo(centerX, centerY);
-            ctx.lineTo(targetX, targetY);
-            ctx.stroke();
-
-            ctx.shadowBlur = 0;
-
-            // Breiter Schweif
-            ctx.fillStyle = 'rgba(0, 200, 50, 0.04)';
-            ctx.beginPath();
-            ctx.moveTo(centerX, centerY);
-            ctx.arc(centerX, centerY, radius, angle, angle - (direction * 0.18), direction === -1);
-            ctx.closePath();
-            ctx.fill();
+            // Sounds starten (im Loop)
+            initAndStartSounds();
+            
+            statusText.innerText = "Motor läuft.";
+            gasSlider.disabled = false;
+            updateSounds(0); // Initialisiere mit Standgas
+        } catch (error) {
+            statusText.innerText = "Fehler beim Laden der Sounds: " + error.message;
+            startBtn.disabled = false;
         }
+    }
+});
 
-        // 3. BLIPS AKTIVIEREN & ZEICHNEN WENN VOM STRAHL GETROFFEN
-        function updateAndDrawBlips() {
-            // Prüfen, ob der aktive Sweep-Strahl einen aktuellen Bewegungspunkt schneidet
-            motionPoints.forEach(pt => {
-                let diff = Math.abs(angle - pt.angle);
-                if (diff < 0.04) { // Strahl trifft exakt den Bewegungspunkt
-                    // Prüfen, ob an der Stelle schon ein Blip existiert, um Doppelbelegung zu vermeiden
-                    let exists = activeBlips.some(b => Math.hypot(b.x - pt.x, b.y - pt.y) < 30);
-                    if (!exists) {
-                        activeBlips.push({
-                            x: pt.x,
-                            y: pt.y,
-                            intensity: 1.0
-                        });
-                    }
-                }
-            });
+// Funktion zum Laden der Dateien via Fetch
+async function loadSound(key) {
+    const response = await fetch(sounds[key].url);
+    const arrayBuffer = await response.arrayBuffer();
+    sounds[key].buffer = await audioCtx.decodeAudioData(arrayBuffer);
+}
 
-            // Gezeichnete Blips updaten und rendern
-            for (let i = activeBlips.length - 1; i >= 0; i--) {
-                let blip = activeBlips[i];
+// Initialisiert die Loops und Nodes
+function initAndStartSounds() {
+    Object.keys(sounds).forEach(key => {
+        const sound = sounds[key];
+        
+        // Source Node erstellen
+        sound.source = audioCtx.createBufferSource();
+        sound.source.buffer = sound.buffer;
+        sound.source.loop = true;
+        
+        // Gain Node (Lautstärke) erstellen
+        sound.gainNode = audioCtx.createGain();
+        
+        // Verbinden: Source -> Gain -> Lautsprecher
+        sound.source.connect(sound.gainNode);
+        sound.gainNode.connect(audioCtx.destination);
+        
+        // Starten
+        sound.source.start(0);
+    });
+}
 
-                // Verwaschener analoger Echo-Glow
-                let glow = ctx.createRadialGradient(blip.x, blip.y, 1, blip.x, blip.y, 12 + (1 - blip.intensity) * 15);
-                glow.addColorStop(0, `rgba(140, 255, 140, ${blip.intensity})`);
-                glow.addColorStop(0.3, `rgba(0, 230, 30, ${blip.intensity * 0.5})`);
-                glow.addColorStop(1, 'rgba(0,0,0,0)');
+// Hier passiert die Sound-Logik basierend auf deinem Wunsch
+gasSlider.addEventListener('input', (e) => {
+    const value = parseFloat(e.target.value);
+    sliderValue.innerText = `Drehzahl: ${Math.round(value * 100)}%`;
+    updateSounds(value);
+});
 
-                ctx.fillStyle = glow;
-                ctx.beginPath();
-                ctx.arc(blip.x, blip.y, 30, 0, Math.PI * 2);
-                ctx.fill();
+function updateSounds(x) {
+    if (!audioCtx) return;
+    
+    // Aktuelle Zeit für weiche Übergänge
+    const now = audioCtx.currentTime;
+    const fadeTime = 0.05; // Kurzer Fade, damit es nicht knackt
 
-                // Intensitätsverlust (Nachleucht-Dauer)
-                blip.intensity -= 0.007; 
-                if (blip.intensity <= 0) {
-                    activeBlips.splice(i, 1);
-                }
-            }
-        }
+    // 1. ENGINE.WAV (Wird schneller und lauter)
+    // Standgas: Speed 1.0, Vol 0.5 -> Vollgas: Speed 2.5, Vol 1.0
+    sounds.engine.source.playbackRate.linearRampToValueAtTime(1.0 + (x * 1.5), now + fadeTime);
+    sounds.engine.gainNode.gain.linearRampToValueAtTime(0.5 + (x * 0.5), now + fadeTime);
 
-        function applyHeavyGlitches() {
-            const w = canvas.width;
-            const h = canvas.height;
+    // 2. GAS.WAV (Feuert direkt heftig rein, flacht dann bei Höchstdrehzahl leicht ab für den "Schub"-Effekt)
+    // Nutzt eine Kurve: Bei x=0 aus, bei x=0.4 sehr laut, bei x=1.0 wieder etwas konstanter
+    let gasVolume = 0;
+    if (x > 0) {
+        gasVolume = x < 0.4 ? (x / 0.4) * 1.0 : 1.0 - ((x - 0.4) * 0.3); 
+    }
+    sounds.gas.gainNode.gain.linearRampToValueAtTime(gasVolume, now + fadeTime);
+    sounds.gas.source.playbackRate.linearRampToValueAtTime(0.8 + (x * 0.7), now + fadeTime);
 
-            // 1. Massives digitales Rauschen überall
-            const noiseIntensity = 1800; 
-            for (let i = 0; i < noiseIntensity; i++) {
-                let noiseX = Math.random() * w;
-                let noiseY = Math.random() * h;
-                let size = Math.random() * 2;
-                let greenChannel = Math.floor(100 + Math.random() * 155);
-                ctx.fillStyle = `rgba(0, ${greenChannel}, 0, ${Math.random() * 0.23})`;
-                ctx.fillRect(noiseX, noiseY, size, size);
-            }
+    // 3. METALL.AIFF (Klappern dreht durch: wird bei viel Gas extrem schnell und laut)
+    // Standgas: fast unhörbar leise und langsam -> Vollgas: extrem laut und doppelte Geschwindigkeit
+    sounds.metall.gainNode.gain.linearRampToValueAtTime(0.05 + (x * 0.95), now + fadeTime);
+    sounds.metall.source.playbackRate.linearRampToValueAtTime(0.5 + (x * 2.0), now + fadeTime);
 
-            // 2. Horizontale Zeilensprünge
-            if (Math.random() < 0.18) { 
-                let numGlitches = Math.floor(Math.random() * 3) + 1;
-                for(let g=0; g<numGlitches; g++) {
-                    let glitchY = Math.random() * h;
-                    let glitchHeight = Math.random() * 40 + 5;
-                    let shift = (Math.random() - 0.5) * 45;
+    // 4. STATIC.WAV (Konstantes Hintergrundgeräusch, wird nur minimal lauter)
+    sounds.static.gainNode.gain.linearRampToValueAtTime(0.4 + (x * 0.2), now + fadeTime);
 
-                    ctx.drawImage(canvas, 0, glitchY, w, glitchHeight, shift, glitchY + (Math.random() * 6 - 3), w, glitchHeight);
-                    
-                    ctx.fillStyle = `rgba(0, 255, 0, ${Math.random() * 0.15})`;
-                    ctx.fillRect(0, glitchY, w, glitchHeight);
-                }
-            }
+    // 5. NOISE.WAV (Begleiter für alles, schwillt linear mit an)
+    sounds.noise.gainNode.gain.linearRampToValueAtTime(0.2 + (x * 0.6), now + fadeTime);
+}
+</script>
 
-            // 3. Vertikales Zucken
-            if (Math.random() < 0.03) {
-                let jumpOffset = (Math.random() - 0.5) * 30;
-                ctx.drawImage(canvas, 0, 0, w, h, 0, jumpOffset, w, h);
-            }
-
-            // 4. Signalausfall Helligkeits-Flicker
-            if (Math.random() < 0.08) {
-                ctx.fillStyle = `rgba(0, 255, 50, ${Math.random() * 0.07})`;
-                ctx.fillRect(0, 0, w, h);
-            }
-        }
-
-        function update() {
-            // Organischer Monitor-Fade
-            let unstableFade = 0.04 + (Math.random() * 0.03);
-            ctx.fillStyle = `rgba(1, 12, 1, ${unstableFade})`; 
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Bewegung via unsichtbarer Webcam tracken
-            trackMotion();
-
-            // Raster zeichnen
-            drawGrid();
-
-            // Kontakte updaten & zeichnen (Nur sichtbar wenn der Strahl drüberfährt)
-            updateAndDrawBlips();
-
-            // Strahl zeichnen
-            drawRadarSweep();
-
-            // Winkel updaten
-            angle += speed * direction;
-
-            if (angle <= START_ANGLE) {
-                angle = START_ANGLE;
-                direction = 1;
-                if(Math.random() < 0.3) angle += Math.random() * 0.05;
-            } else if (angle >= END_ANGLE) {
-                angle = END_ANGLE;
-                direction = -1;
-                if(Math.random() < 0.3) angle -= Math.random() * 0.05;
-            }
-
-            // Glitches berechnen
-            applyHeavyGlitches();
-
-            requestAnimationFrame(update);
-        }
-
-        update();
-    </script>
 </body>
 </html>
