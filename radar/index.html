@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panzer Motor Sound Simulator</title>
+    <title>Panzer Sound Simulator - Extreme</title>
     <style>
         body {
             font-family: 'Courier New', Courier, monospace;
-            background-color: #2b2b2a;
-            color: #d4d4d2;
+            background-color: #1a1a19;
+            color: #e0e0dc;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -17,50 +17,54 @@
             margin: 0;
         }
         .container {
-            background-color: #3a3a38;
+            background-color: #2b2b28;
             padding: 30px;
             border-radius: 10px;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
-            border: 2px solid #555552;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.7);
+            border: 2px solid #444441;
             text-align: center;
-            width: 350px;
+            width: 380px;
         }
         button {
-            background-color: #5c674e;
+            background-color: #732929;
             color: white;
             border: none;
-            padding: 12px 24px;
+            padding: 15px 24px;
             font-size: 16px;
             cursor: pointer;
             border-radius: 5px;
             font-weight: bold;
             margin-bottom: 20px;
             width: 100%;
+            letter-spacing: 1px;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
         }
-        button:hover { background-color: #717e60; }
-        button:disabled { background-color: #444; color: #777; cursor: not-allowed; }
-        .slider-container { margin-top: 20px; }
+        button:hover { background-color: #8c3232; }
+        button:disabled { background-color: #333; color: #666; cursor: not-allowed; border: 1px solid #222;}
+        .slider-container { margin-top: 25px; }
         input[type=range] {
             width: 100%;
             margin: 15px 0;
-            accent-color: #8da075;
+            accent-color: #732929;
         }
-        .status { font-size: 12px; color: #888; margin-top: 15px; }
+        .status { font-size: 11px; color: #888; margin-top: 15px; text-transform: uppercase; }
+        .warning { color: #cc3333; font-size: 12px; margin-bottom: 10px; font-weight: bold;}
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Panzer Motor</h2>
-    <button id="startBtn">1. MOTOR STARTEN</button>
+    <h2>PANZER ENGINE CORE</h2>
+    <div class="warning">ACHTUNG: SEHR LAUT (DRÖHNEN AKTIVIERT)</div>
+    <button id="startBtn">ZÜNDUNG STARTEN</button>
     
     <div class="slider-container">
-        <label for="gasSlider"><strong>DREHZAHL / GAS</strong></label>
-        <input type="range" id="gasSlider" min="0" max="1" step="0.01" value="0" disabled>
-        <div id="sliderValue">Standgas (0%)</div>
+        <label for="gasSlider"><strong>THROTTLE / LEISTUNG</strong></label>
+        <input type="range" id="gasSlider" min="0" max="1" step="0.005" value="0" disabled>
+        <div id="sliderValue">Standgas (30 Hz)</div>
     </div>
     
-    <div class="status" id="statusText">Warte auf Start...</div>
+    <div class="status" id="statusText">System bereit...</div>
 </div>
 
 <script>
@@ -73,6 +77,9 @@ let sounds = {
     noise: { url: 'noise.wav', element: null, source: null, gainNode: null }
 };
 
+let metallInterval = null; // Für das unberechenbare Klappern
+let currentGasValue = 0;
+
 const startBtn = document.getElementById('startBtn');
 const gasSlider = document.getElementById('gasSlider');
 const statusText = document.getElementById('statusText');
@@ -80,21 +87,18 @@ const sliderValue = document.getElementById('sliderValue');
 
 startBtn.addEventListener('click', async () => {
     if (!audioCtx) {
-        // 1. Audio Kontext starten
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        statusText.innerText = "Initialisiere Motor...";
+        statusText.innerText = "Lade Aggregate...";
         startBtn.disabled = true;
         
         try {
-            // 2. Sounds über Audio-Elemente laden (toleriert fast alle WAV-Formate)
+            // Setup aller Audios über HTML5-Elemente (Fehlersicher gegen Bitraten-Zicken)
             Object.keys(sounds).forEach(key => {
                 const sound = sounds[key];
-                
                 sound.element = new Audio(sound.url);
                 sound.element.loop = true;
-                sound.element.crossOrigin = "anonymous"; // Verhindert CORS Probleme
+                sound.element.crossOrigin = "anonymous";
                 
-                // Erstelle die Knotenkette
                 sound.source = audioCtx.createMediaElementSource(sound.element);
                 sound.gainNode = audioCtx.createGain();
                 
@@ -102,55 +106,103 @@ startBtn.addEventListener('click', async () => {
                 sound.gainNode.connect(audioCtx.destination);
             });
 
-            // 3. Alle Sounds gleichzeitig abspielen
-            const playPromises = Object.keys(sounds).map(key => sounds[key].element.play());
-            await Promise.all(playPromises);
+            // --- UNSYNCHRONER START ---
+            // Wir starten die Sounds bewusst zeitversetzt, damit die Loops niemals synchron laufen
+            sounds.static.element.play();
             
-            statusText.innerText = "Motor läuft.";
+            setTimeout(() => { sounds.engine.element.play(); }, 120);
+            setTimeout(() => { sounds.noise.element.play(); }, 350);
+            setTimeout(() => { sounds.gas.element.play(); }, 580);
+            setTimeout(() => { sounds.metall.element.play(); }, 820);
+            
+            statusText.innerText = "MOTOR LÄUFT - REGLER FREIGEGEBEN";
             gasSlider.disabled = false;
-            updateSounds(0); // Standgas einstellen
+            
+            // Starte den unberechenbaren Metall-Zufallsgenerator
+            startWildMetalTicker();
+            
+            // Initiale Berechnung (Standgas)
+            updateSounds(0);
             
         } catch (error) {
-            statusText.innerText = "Fehler: " + error.message;
-            console.error(error);
+            statusText.innerText = "FEHLER: " + error.message;
             startBtn.disabled = false;
         }
     }
 });
 
 gasSlider.addEventListener('input', (e) => {
-    const value = parseFloat(e.target.value);
-    sliderValue.innerText = `Drehzahl: ${Math.round(value * 100)}%`;
-    updateSounds(value);
+    currentGasValue = parseFloat(e.target.value);
+    
+    // Frequenz-Anzeige für den User berechnen (30Hz bis 70Hz)
+    let currentHz = Math.round(30 + (currentGasValue * 40));
+    sliderValue.innerText = `Frequenz: ${currentHz} Hz (${Math.round(currentGasValue * 100)}% Gas)`;
+    
+    updateSounds(currentGasValue);
 });
 
 function updateSounds(x) {
     if (!audioCtx) return;
     
     const now = audioCtx.currentTime;
-    const fadeTime = 0.05;
+    const fadeTime = 0.02; // Extrem schnelle Reaktionszeit für "Ausraster"
 
-    // 1. ENGINE
-    sounds.engine.element.playbackRate = 1.0 + (x * 1.5);
-    sounds.engine.gainNode.gain.linearRampToValueAtTime(0.5 + (x * 0.5), now + fadeTime);
+    // 1. STATIC (GANZ LAUT - Maximale Dröhnung über das gesamte Band)
+    sounds.static.gainNode.gain.linearRampToValueAtTime(2.5 + (x * 1.5), now + fadeTime); // Boost auf Faktor 2.5 bis 4.0!
+    sounds.static.element.playbackRate = 0.9 + (x * 0.2); // Verändert sich minimal asynchron
 
-    // 2. GAS
-    let gasVolume = 0;
-    if (x > 0) {
-        gasVolume = x < 0.4 ? (x / 0.4) * 1.0 : 1.0 - ((x - 0.4) * 0.3); 
+    // 2. ENGINE (Exakt von 30 Hz auf 70 Hz skalieren)
+    // Wenn die Originaldatei bei Pitch 1.0 = 30Hz hat, entspricht 70Hz einem Pitch von ~2.33
+    let enginePitch = 1.0 + (x * 1.333); 
+    sounds.engine.element.playbackRate = enginePitch;
+    sounds.engine.gainNode.gain.linearRampToValueAtTime(1.0 + (x * 0.5), now + fadeTime);
+
+    // 3. GAS (Ausraster zwischen 20% und 35%, danach wieder normal)
+    let gasVolume = 0.3 + (x * 0.5); // Normaler Verlauf
+    let gasPitch = 0.85 + (x * 0.6);   // Normaler Pitchverlauf (asynchron zur Engine)
+
+    if (x >= 0.20 && x <= 0.35) {
+        // DER AUSRASTER: Volle Lautstärke und heftiger, unruhiger Pitch-Sprung im Fenster
+        gasVolume = 3.0; 
+        gasPitch = 2.5; 
     }
-    sounds.gas.element.playbackRate = 0.8 + (x * 0.7);
+    
     sounds.gas.gainNode.gain.linearRampToValueAtTime(gasVolume, now + fadeTime);
+    sounds.gas.element.playbackRate = gasPitch;
 
-    // 3. METALL
-    sounds.metall.element.playbackRate = 0.5 + (x * 2.0);
-    sounds.metall.gainNode.gain.linearRampToValueAtTime(0.05 + (x * 0.95), now + fadeTime);
+    // 4. NOISE (Stabiler Begleiter)
+    sounds.noise.gainNode.gain.linearRampToValueAtTime(0.4 + (x * 0.8), now + fadeTime);
+    sounds.noise.element.playbackRate = 1.0 - (x * 0.15); // Pitcht asynchron nach UNTEN während Engine nach oben geht
+}
 
-    // 4. STATIC
-    sounds.static.gainNode.gain.linearRampToValueAtTime(0.4 + (x * 0.2), now + fadeTime);
+// 5. METALL.WAV (Unberechenbar wilder Ticker)
+function startWildMetalTicker() {
+    function tick() {
+        if (!audioCtx) return;
 
-    // 5. NOISE
-    sounds.noise.gainNode.gain.linearRampToValueAtTime(0.2 + (x * 0.6), now + fadeTime);
+        const now = audioCtx.currentTime;
+        
+        // Je mehr Gas (x), desto wilder und lauter wird das metallische Klappern
+        if (currentGasValue > 0.05) {
+            // Zufällige Lautstärken-Spitzen (Zufallswert * Gas-Faktor)
+            let randomVol = Math.random() * currentGasValue * 2.5;
+            // Völlig unberechenbarer Pitch zwischen Schneckentempo und Hyper-Speed
+            let randomPitch = 0.3 + (Math.random() * currentGasValue * 4.0);
+
+            sounds.metall.gainNode.gain.linearRampToValueAtTime(randomVol, now + 0.01);
+            sounds.metall.element.playbackRate = randomPitch;
+        } else {
+            // Fast still im Standgas
+            sounds.metall.gainNode.gain.linearRampToValueAtTime(0.02, now + 0.1);
+            sounds.metall.element.playbackRate = 0.4;
+        }
+
+        // Zufälliges nächstes Intervall für die Unberechenbarkeit (zwischen 30ms und 250ms)
+        let nextTick = 30 + (Math.random() * (250 - (currentGasValue * 200)));
+        setTimeout(tick, nextTick);
+    }
+    
+    tick(); // Ticker starten
 }
 </script>
 
