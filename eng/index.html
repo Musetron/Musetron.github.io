@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Vehicle & Turret Engine</title>
+    <title>Advanced Vehicle & Turret Engine - Balanced Audio</title>
     <style>
         * {
             box-sizing: border-box;
@@ -94,7 +94,6 @@
 
         let targetCenter = 50, currentCenter = 50;
         
-        // Physikalische Variablen
         let vehicleSpeed = 0;   
         let engineRPM = 0;      
         let valLeft = 0;        
@@ -109,32 +108,34 @@
         
         const keys = { w: false, s: false };
 
-        // --- Web Audio API Setup ---
+        // --- Web Audio API Setup & LAUTSTÄRKEN-MIXER KONFIGURATION ---
         let audioCtx = null;
         let audioBuffers = {};
         
-        // Gain Nodes
+        // Master-Gain-Nodes für die Kategorien (Hierarchie-Mischpult)
+        let motorMasterGain = null;   // Kontrolliert den gesamten Motor (wird geduckt)
+        let FXMasterGain = null;      // Kontrolliert Turret, Creaks, Gas-Entladung (Volle Power)
+        let weaponMasterGain = null;  // Kontrolliert Ready & Fire (Maximale Priorität)
+
+        // Sub-Gain Nodes für Crossfades
         let idleGainNode = null;
         let driveGainNode = null;
         let bgGainNode = null;
         let turretLoopGainNode = null;
         
-        // Aktive Quellen
         let activeSources = { start: null, idle: null, drive: null, bg: null, turretLoop: null };
         
-        // Zustände Engine & Waffe
         let motorRunning = false;
         let isBraking = false;
         let hasLaunched = false; 
         let lastRPM = 0;
         let soundsLoaded = false;
-        let weaponState = "idle"; // "idle", "ready", "cooldown"
+        let weaponState = "idle"; 
         let cooldownTimer = 0;
 
-        // Zustände Maus / Turret
         let isMouseMoving = false;
         let mouseTimeout = null;
-        let turretState = "stopped"; // "stopped", "starting", "looping", "stopping"
+        let turretState = "stopped"; 
 
         const soundFiles = {
             start: 'start.wav',
@@ -158,6 +159,21 @@
         async function initAudio() {
             if (audioCtx) return;
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Mischpult-Kanäle initialisieren und mit dem Ausgang verbinden
+            motorMasterGain = audioCtx.createGain();
+            FXMasterGain = audioCtx.createGain();
+            weaponMasterGain = audioCtx.createGain();
+
+            motorMasterGain.connect(audioCtx.destination);
+            FXMasterGain.connect(audioCtx.destination);
+            weaponMasterGain.connect(audioCtx.destination);
+
+            // --- BASIS LAUTSTÄRKEN ALGORITHMUS ---
+            motorMasterGain.gain.setValueAtTime(0.4, audioCtx.currentTime);  // Motor standardmäßig leiser im Hintergrund (40%)
+            FXMasterGain.gain.setValueAtTime(1.0, audioCtx.currentTime);     // Turret & Mechanik voll präsent (100%)
+            weaponMasterGain.gain.setValueAtTime(1.2, audioCtx.currentTime); // Waffe sticht kraftvoll hervor (120%)
+
             await loadSounds();
         }
 
@@ -173,44 +189,58 @@
                 }
             }
             soundsLoaded = true;
-            statusText.innerHTML = "Engine & Turret bereit!<br>(ENTER drücken zum Starten)";
+            statusText.innerHTML = "Engine, FX & Weapon bereit!<br>(ENTER drücken zum Starten)";
         }
 
-        function playSound(buffer, loop = false, gainNode = null) {
+        // Hilfsfunktion zum Abspielen in bestimmten Mixer-Kanälen
+        function playSoundInChannel(buffer, loop = false, targetNode = null) {
             if (!buffer || !audioCtx) return null;
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.loop = loop;
             
-            const destination = gainNode || audioCtx.destination;
-            source.connect(destination);
+            source.connect(targetNode || audioCtx.destination);
             source.start(0);
             return source;
         }
 
-        // --- Auspuff Knallen (Deutlich präsenter & lauter) ---
+        // --- Dynamischer DUCKING Algorithmus ---
+        // Senkt den Motor temporär ab, damit Effekte Platz im Mix haben
+        function duckMotor(targetVolume, duration) {
+            if (!motorMasterGain || !audioCtx) return;
+            const now = audioCtx.currentTime;
+            // Schnelles Absenken des Motors
+            motorMasterGain.gain.linearRampToValueAtTime(targetVolume, now + 0.05);
+            // Sanftes Zurücksetzen nach Ablauf der Zeit
+            motorMasterGain.gain.setValueAtTime(targetVolume, now + duration);
+            motorMasterGain.gain.linearRampToValueAtTime(0.4, now + duration + 0.3);
+        }
+
+        // --- Auspuff Knallen (Auf FX-Kanal geroutet) ---
         function triggerExhaustPop(volume) {
             if (!motorRunning || !audioBuffers['pop'] || !audioCtx) return;
             
             const popGain = audioCtx.createGain();
-            // Erhöhte Lautstärken-Präsenz für deutliche Knaller
-            popGain.gain.setValueAtTime(volume * 0.9, audioCtx.currentTime);
-            popGain.connect(audioCtx.destination);
+            popGain.gain.setValueAtTime(volume * 1.0, audioCtx.currentTime);
+            popGain.connect(FXMasterGain); // Läuft über FX-Schiene
 
             const source = audioCtx.createBufferSource();
             source.buffer = audioBuffers['pop'];
-            // Variablerer Pitch für dreckigen Sound
-            source.playbackRate.setValueAtTime(0.75 + Math.random() * 0.4, audioCtx.currentTime);
+            source.playbackRate.setValueAtTime(0.7 + Math.random() * 0.4, audioCtx.currentTime);
             source.connect(popGain);
             source.start(0);
         }
 
-        // Dynamische Druckentlastung (gas.wav)
-        function triggerGasVent(volume = 0.6) {
+        // Dynamische Druckentladung (gas.wav)
+        function triggerGasVent(volume = 0.9) {
             if (!motorRunning || !audioBuffers['gas']) return;
+            
+            // Wenn Gas ausströmt, den Motor leicht zur Seite drücken
+            duckMotor(0.2, 0.4);
+
             const gasGain = audioCtx.createGain();
             gasGain.gain.setValueAtTime(volume, audioCtx.currentTime);
-            gasGain.connect(audioCtx.destination);
+            gasGain.connect(FXMasterGain);
 
             const source = audioCtx.createBufferSource();
             source.buffer = audioBuffers['gas'];
@@ -221,31 +251,32 @@
         // Lastwechsel-Prüfung für Auspuff
         setInterval(() => {
             if (!motorRunning) return;
-
             if (lastRPM > 25 && engineRPM < lastRPM - 2) {
                 if (Math.random() < 0.5) { 
-                    let intensity = Math.min(1, (lastRPM - engineRPM) / 22) * (0.6 + Math.random() * 0.4);
+                    let intensity = Math.min(1, (lastRPM - engineRPM) / 22) * (0.7 + Math.random() * 0.3);
                     triggerExhaustPop(intensity);
                 }
             } else if (engineRPM < 15 && Math.random() < 0.05) {
-                triggerExhaustPop(0.15 + Math.random() * 0.15); 
+                triggerExhaustPop(0.2 + Math.random() * 0.2); 
             }
             lastRPM = engineRPM;
         }, 100);
 
-        // --- Mausbewegung & Turret-Logik ---
+        // --- Mausbewegung & Turret-Logik (Über FX-Kanal) ---
         window.addEventListener('mousemove', (e) => { 
             targetCenter = (e.clientX / window.innerWidth) * 100; 
 
             if (!motorRunning || !soundsLoaded) return;
 
-            // Turret Starten
+            // Während sich der Turm aktiv bewegt, Motor dezent im Hintergrund halten (Ducking)
+            motorMasterGain.gain.linearRampToValueAtTime(0.25, audioCtx.currentTime + 0.1);
+
             if (turretState === "stopped" || turretState === "stopping") {
                 turretState = "starting";
                 
                 const startBuf = audioBuffers['turretstart'];
                 if (startBuf) {
-                    playSound(startBuf, false);
+                    playSoundInChannel(startBuf, false, FXMasterGain);
                     const halfDuration = (startBuf.duration / 2) * 1000;
 
                     setTimeout(() => {
@@ -253,39 +284,43 @@
                         turretState = "looping";
 
                         turretLoopGainNode = audioCtx.createGain();
-                        turretLoopGainNode.connect(audioCtx.destination);
-                        turretLoopGainNode.gain.setValueAtTime(0.7, audioCtx.currentTime);
+                        turretLoopGainNode.connect(FXMasterGain); // In FX-Kanal speisen
+                        turretLoopGainNode.gain.setValueAtTime(1.0, audioCtx.currentTime); // Volle Lautstärke auf diesem Kanal
                         
-                        activeSources.turretLoop = playSound(audioBuffers['turretloop'], true, turretLoopGainNode);
+                        activeSources.turretLoop = playSoundInChannel(audioBuffers['turretloop'], true, turretLoopGainNode);
                     }, halfDuration);
                 }
             }
 
-            // Gelegentliches Quietschen während der Turmdrehung
-            if (turretState === "looping" && Math.random() < 0.04) {
+            // Quietschen (Lautstärken angehoben)
+            if (turretState === "looping" && Math.random() < 0.05) {
                 const creakFiles = ['creak1', 'creak2', 'creak3', 'creak4'];
                 const randomCreak = creakFiles[Math.floor(Math.random() * creakFiles.length)];
                 if (audioBuffers[randomCreak]) {
                     const creakGain = audioCtx.createGain();
-                    creakGain.gain.setValueAtTime(0.3 + Math.random() * 0.3, audioCtx.currentTime);
-                    creakGain.connect(audioCtx.destination);
-                    const src = playSound(audioBuffers[randomCreak], false, creakGain);
-                    if(src) src.playbackRate.setValueAtTime(0.9 + Math.random()*0.2, audioCtx.currentTime);
+                    creakGain.gain.setValueAtTime(0.6 + Math.random() * 0.4, audioCtx.currentTime);
+                    creakGain.connect(FXMasterGain);
+                    const src = audioCtx.createBufferSource();
+                    src.buffer = audioBuffers[randomCreak];
+                    src.playbackRate.setValueAtTime(0.85 + Math.random()*0.3, audioCtx.currentTime);
+                    src.connect(creakGain);
+                    src.start(0);
                 }
             }
 
-            // Timeout-Erkennung für das Stoppen der Maus
             clearTimeout(mouseTimeout);
             mouseTimeout = setTimeout(() => {
+                // Wenn Maus stoppt, Motor-Lautstärke wieder auf Normalwert (40%) hochrampen
+                if (motorMasterGain) motorMasterGain.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime + 0.2);
+
                 if (turretState === "looping" || turretState === "starting") {
                     turretState = "stopping";
                     
                     const stopBuf = audioBuffers['turretstop'];
                     if (stopBuf) {
-                        playSound(stopBuf, false);
+                        playSoundInChannel(stopBuf, false, FXMasterGain);
                         const halfDuration = (stopBuf.duration / 2) * 1000;
 
-                        // Ab der Hälfte des Stop-Sounds fließend den Loop beenden
                         setTimeout(() => {
                             if (turretState !== "stopping") return;
                             if (activeSources.turretLoop) {
@@ -299,22 +334,28 @@
                         turretState = "stopped";
                     }
                 }
-            }, 150); // Millisekunden Inaktivität bis Stopp erkannt wird
+            }, 180); 
         });
         
-        // --- Waffensystem (Space-Logik) ---
+        // --- Waffensystem (Über Weapon-Kanal mit starkem Ducking-Effekt) ---
         function handleWeaponTrigger() {
             if (!motorRunning || !soundsLoaded) return;
 
             if (weaponState === "idle") {
                 weaponState = "ready";
-                playSound(audioBuffers['ready'], false);
+                // Leichtes Absenken beim Laden
+                duckMotor(0.2, 0.6);
+                playSoundInChannel(audioBuffers['ready'], false, weaponMasterGain);
             } 
             else if (weaponState === "ready") {
                 weaponState = "cooldown";
-                playSound(audioBuffers['fire'], false);
                 
-                cooldownTimer = 5; // 5 Sekunden Sperre
+                // Aggressives Ducking: Motor bricht beim Schuss komplett ein für maximale Wucht!
+                duckMotor(0.05, 1.2); 
+                
+                playSoundInChannel(audioBuffers['fire'], false, weaponMasterGain);
+                
+                cooldownTimer = 5; 
                 let interval = setInterval(() => {
                     cooldownTimer--;
                     if (cooldownTimer <= 0) {
@@ -325,7 +366,7 @@
             }
         }
 
-        // --- Motor Start ---
+        // --- Motor Start (Geleitet auf den MotorMasterKanal) ---
         function startMotor() {
             if (motorRunning || !soundsLoaded) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -334,7 +375,7 @@
             statusText.innerHTML = "Motor: STARTET...";
 
             const startBuf = audioBuffers['start'];
-            activeSources.start = playSound(startBuf, false);
+            activeSources.start = playSoundInChannel(startBuf, false, motorMasterGain);
 
             if (startBuf) {
                 const halfDuration = startBuf.duration / 2;
@@ -345,17 +386,18 @@
                     driveGainNode = audioCtx.createGain();
                     bgGainNode = audioCtx.createGain();
                     
-                    idleGainNode.connect(audioCtx.destination);
-                    driveGainNode.connect(audioCtx.destination);
-                    bgGainNode.connect(audioCtx.destination);
+                    // Alles in den flexiblen MotorMaster leiten
+                    idleGainNode.connect(motorMasterGain);
+                    driveGainNode.connect(motorMasterGain);
+                    bgGainNode.connect(motorMasterGain);
 
                     idleGainNode.gain.setValueAtTime(1, audioCtx.currentTime);
                     driveGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-                    bgGainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    bgGainNode.gain.setValueAtTime(0.2, audioCtx.currentTime); // Hintergrund-Rauschen dezent halten
 
-                    activeSources.idle = playSound(audioBuffers['idle'], true, idleGainNode);
-                    activeSources.drive = playSound(audioBuffers['drive'], true, driveGainNode);
-                    activeSources.bg = playSound(audioBuffers['bg'], true, bgGainNode);
+                    activeSources.idle = playSoundInChannel(audioBuffers['idle'], true, idleGainNode);
+                    activeSources.drive = playSoundInChannel(audioBuffers['drive'], true, driveGainNode);
+                    activeSources.bg = playSoundInChannel(audioBuffers['bg'], true, bgGainNode);
 
                 }, halfDuration * 1000);
             }
@@ -369,15 +411,14 @@
 
             if (activeSources.start) { try { activeSources.start.stop(); } catch(e){} }
 
-            const stopBuf = audioBuffers['stop'];
-            playSound(stopBuf, false);
+            playSoundInChannel(audioBuffers['stop'], false, motorMasterGain);
 
-            if (stopBuf) {
+            if (idleGainNode && driveGainNode) {
                 const fadeTime = 0.4;
                 const now = audioCtx.currentTime;
 
-                if (idleGainNode) idleGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
-                if (driveGainNode) driveGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
+                idleGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
+                driveGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
                 if (bgGainNode) bgGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
 
                 setTimeout(() => {
@@ -402,7 +443,7 @@
                 e.preventDefault();
                 btn.classList.add('active');
                 btn.click();
-                handleWeaponTrigger(); // Waffensystem aufrufen
+                handleWeaponTrigger(); 
             }
 
             if (e.key === 'Enter') startMotor();
@@ -421,11 +462,10 @@
             currentCenter += (targetCenter - currentCenter) * friction;
             sCenter.value = currentCenter;
 
-            // --- 1. PEDAL PHYSIK ---
+            // --- PEDAL PHYSIK ---
             let targetRPM = 0;
 
             if (motorRunning) {
-                // BREMSEN (S gedrückt während Fahrt)
                 if (keys.s && vehicleSpeed > 0) {
                     vehicleSpeed = Math.max(0, vehicleSpeed - brakingPower);
                     targetRPM = vehicleSpeed * 0.2; 
@@ -434,31 +474,28 @@
                     
                     if (!isBraking) {
                         isBraking = true;
-                        playSound(audioBuffers['stop'], false); 
-                        triggerGasVent(0.7); // Druckentladung beim harten Abbremsen
+                        playSoundInChannel(audioBuffers['stop'], false, motorMasterGain); 
+                        triggerGasVent(1.0); 
                     }
                 } else {
                     if (isBraking) {
                         isBraking = false;
-                        triggerGasVent(0.5); // Kurzes Zischen beim Lösen der Bremse
+                        triggerGasVent(0.6); 
                     }
                     valLeft = 0; 
 
-                    // GAS GEBEN (W)
                     if (keys.w) {
                         vehicleSpeed = Math.min(maxSpeed, vehicleSpeed + acceleration);
                         targetRPM = vehicleSpeed * 0.7 + 30; 
                         valRight = vehicleSpeed;
                     } else {
-                        // AUSROLLEN / STILLSTAND
                         let oldSpeed = vehicleSpeed;
                         vehicleSpeed = Math.max(0, vehicleSpeed - rollFriction);
                         targetRPM = vehicleSpeed * 0.4;
                         valRight = vehicleSpeed;
 
-                        // Exakt im Moment des Stehenbleibens Druckentlastung (gas.wav)
                         if (oldSpeed > 0 && vehicleSpeed === 0) {
-                            triggerGasVent(0.8);
+                            triggerGasVent(1.0);
                         }
                     }
                 }
@@ -474,27 +511,24 @@
             sLeft.value = valLeft;
             sRight.value = valRight;
 
-            // --- 2. AUDIO & UI TEXT ENGINE ---
+            // --- AUDIO MIX UPDATE ---
             if (motorRunning && idleGainNode && driveGainNode) {
                 const now = audioCtx.currentTime;
                 const transitionSpeed = 0.05; 
 
-                // Losfahr-Effekt aus dem Stand (Kicker + Gasdruck)
                 if (vehicleSpeed > 5 && !hasLaunched) {
                     hasLaunched = true;
-                    playSound(audioBuffers['stop'], false); 
-                    triggerGasVent(0.5); 
+                    playSoundInChannel(audioBuffers['stop'], false, motorMasterGain); 
+                    triggerGasVent(0.7); 
                 } else if (vehicleSpeed <= 2) {
                     hasLaunched = false;
                 }
 
-                // Generierung des Waffen-Status-Strings
                 let weaponStatusText = "";
                 if (weaponState === "idle") weaponStatusText = "BEREIT ZUM LADEN";
                 if (weaponState === "ready") weaponStatusText = "FEUERBEREIT (Space!)";
                 if (weaponState === "cooldown") weaponStatusText = `RELOAD IN ${cooldownTimer}s`;
 
-                // UI Text-Update
                 if (isBraking) {
                     statusText.innerHTML = `Motor: BREMST! | Speed: ${Math.round(vehicleSpeed)} km/h<br>Waffe: ${weaponStatusText}`;
                 } else if (vehicleSpeed > 5) {
@@ -503,7 +537,6 @@
                     statusText.innerHTML = `Motor: LEERLAUF | Speed: 0 km/h<br>Waffe: ${weaponStatusText}`;
                 }
 
-                // CROSSFADE-BERECHNUNG (Wechsel bei halber Last/RPM)
                 let targetIdle = 1;
                 let targetDrive = 0;
 
@@ -520,11 +553,9 @@
                     targetDrive = 0.0;
                 }
 
-                // Fades anwenden
                 idleGainNode.gain.linearRampToValueAtTime(targetIdle, now + transitionSpeed);
                 driveGainNode.gain.linearRampToValueAtTime(targetDrive, now + transitionSpeed);
                 
-                // Pitch-Modulation
                 if (activeSources.idle) activeSources.idle.playbackRate.setValueAtTime(0.95 + (engineRPM / 200), now);
                 if (activeSources.drive) activeSources.drive.playbackRate.setValueAtTime(0.8 + (engineRPM / 110), now);
             }
