@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Vehicle & Turret Engine - Balanced Audio</title>
+    <title>Tank Audio Engine</title>
     <style>
         * {
             box-sizing: border-box;
@@ -12,76 +12,86 @@
         }
 
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             height: 100vh;
             display: flex;
             flex-direction: column;
-            justify-content: flex-end;
+            justify-content: center;
             align-items: center;
-            background-color: #f0f2f5;
+            background-color: #0b0f19; /* Moderner Dark Mode */
+            color: #f3f4f6;
             overflow: hidden;
-            padding-bottom: 30px;
             user-select: none;
+            gap: 30px;
         }
 
-        .slider-vertical {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%) rotate(-90deg);
-            width: 200px;
-        }
-
-        .slider-left { left: -60px; }
-        .slider-right { right: -60px; }
-
-        .bottom-controls {
+        /* Tacho Container */
+        .tacho-container {
+            position: relative;
+            width: 350px;
+            height: 350px;
             display: flex;
-            flex-direction: column;
+            justify-content: center;
             align-items: center;
-            gap: 20px;
-            width: 100%;
-            max-width: 300px;
+            background-image: url('tacho.png');
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            filter: drop-shadow(0 10px 25px rgba(0, 0, 0, 0.5));
         }
 
-        .slider-horizontal { width: 100%; }
-
-        .btn {
-            padding: 10px 20px;
-            font-size: 16px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            width: 100%;
-            transition: background 0.1s;
-        }
-
-        .btn.active {
-            background-color: #003d7a;
-            transform: scale(0.98);
-        }
-
-        #motorStatus {
+        /* Tachonadel */
+        .tacho-needle {
             position: absolute;
-            top: 20px;
-            font-weight: bold;
-            color: #555;
+            width: 100%;
+            height: 100%;
+            background-image: url('needle.png');
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            /* Da die Nadel nach 12 Uhr zeigt, ist das der Drehpunkt genau in der Mitte */
+            transform-origin: center center;
+            transition: transform 0.05s ease-out; /* Verhindert Zittern, bleibt extrem responsiv */
+            z-index: 2;
+        }
+
+        /* Digitaler Status-Text unter dem Tacho */
+        #motorStatus {
+            font-weight: 500;
+            color: #9ca3af;
             text-align: center;
             line-height: 1.6;
+            font-size: 15px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 15px 25px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            max-width: 400px;
+        }
+
+        /* Versteckte, ungenutzte Alt-Elemente (Logik benötigt die IDs, GUI zeigt sie nicht) */
+        .hidden-inputs {
+            position: absolute;
+            visibility: hidden;
+            opacity: 0;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
 
+    <div class="tacho-container">
+        <div id="tachoNeedle" class="tacho-needle"></div>
+    </div>
+
     <div id="motorStatus">Motor: AUS<br>(Beliebige Taste drücken zum Aktivieren, ENTER zum Starten)</div>
 
-    <input type="range" id="sliderLeft" class="slider-vertical slider-left" min="0" max="100" value="0">
-    <input type="range" id="sliderRight" class="slider-vertical slider-right" min="0" max="100" value="0">
-
-    <div class="bottom-controls">
-        <input type="range" id="sliderCenter" class="slider-horizontal" min="0" max="100" value="50">
-        <button id="myButton" class="btn">Klick mich</button>
+    <div class="hidden-inputs">
+        <input type="range" id="sliderLeft" min="0" max="100" value="0">
+        <input type="range" id="sliderRight" min="0" max="100" value="0">
+        <input type="range" id="sliderCenter" min="0" max="100" value="50">
+        <button id="myButton"></button>
     </div>
 
     <script>
@@ -91,6 +101,7 @@
         const sCenter = document.getElementById('sliderCenter');
         const btn = document.getElementById('myButton');
         const statusText = document.getElementById('motorStatus');
+        const tachoNeedle = document.getElementById('tachoNeedle'); // Zugriff auf neue Nadel
 
         let targetCenter = 50, currentCenter = 50;
         
@@ -510,6 +521,15 @@
 
             sLeft.value = valLeft;
             sRight.value = valRight;
+
+            // --- TACHONADEL UPDATE ---
+            // engineRPM geht theoretisch von 0 bis 100. 
+            // Die Nadel zeigt standardmäßig nach oben (12 Uhr). 
+            // Wir mappen die Rotation von -135 Grad (Links-Anschlag) bis +135 Grad (Rechts-Anschlag)
+            const minAngle = -135;
+            const maxAngle = 135;
+            const calculatedAngle = minAngle + (engineRPM / 100) * (maxAngle - minAngle);
+            tachoNeedle.style.transform = `rotate(${calculatedAngle}deg)`;
 
             // --- AUDIO MIX UPDATE ---
             if (motorRunning && idleGainNode && driveGainNode) {
