@@ -74,7 +74,7 @@
 </head>
 <body>
 
-    <div id="motorStatus">Motor: AUS<br>(Beliebige Taste drücken zum Laden, ENTER zum Starten)</div>
+    <div id="motorStatus">Motor: AUS<br>(Beliebige Taste drücken zum Aktivieren, ENTER zum Starten)</div>
 
     <input type="range" id="sliderLeft" class="slider-vertical slider-left" min="0" max="100" value="0">
     <input type="range" id="sliderRight" class="slider-vertical slider-right" min="0" max="100" value="0">
@@ -94,15 +94,18 @@
 
         let targetCenter = 50, currentCenter = 50;
         
-        // Physikalische Variablen für echte Fahrzeugdynamik
-        let vehicleSpeed = 0;   // Tatsächliche Geschwindigkeit des Autos (0 - 100)
-        let engineRPM = 0;      // Motordrehzahl (0 - 100)
+        // Physikalische Variablen
+        let vehicleSpeed = 0;   // Geschwindigkeit (0 - 100)
+        let engineRPM = 0;      // Drehzahl (0 - 100)
+        let valLeft = 0;        // Slider Links (Bremse)
+        let valRight = 0;       // Slider Rechts (Gas/Tacho)
         
         const maxSpeed = 100;
-        const acceleration = 0.8;  // Wie schnell das Auto beschleunigt (W)
-        const brakingPower = 2.5;  // Wie stark die Bremse greift (S)
-        const rollFriction = 0.2;  // Natürlicher Geschwindigkeitsverlust ohne Gas
-        const engineResponse = 0.25; // Wie schnell die Drehzahl dem Gaspedal folgt
+        const acceleration = 1.2;    // Wie schnell beschleunigt wird (W)
+        const brakingPower = 3.0;    // Wie stark gebremst wird (S)
+        const rollFriction = 0.25;   // Ausrollen ohne Gas
+        const engineResponse = 0.2;  // Trägheit der Motordrehzahl
+        const friction = 0.15;
         
         const keys = { w: false, s: false };
 
@@ -170,7 +173,7 @@
             if (!motorRunning || !audioBuffers['pop'] || !audioCtx) return;
             
             const popGain = audioCtx.createGain();
-            popGain.gain.setValueAtTime(volume * 0.5, audioCtx.currentTime);
+            popGain.gain.setValueAtTime(volume * 0.4, audioCtx.currentTime);
             popGain.connect(audioCtx.destination);
 
             const source = audioCtx.createBufferSource();
@@ -184,16 +187,16 @@
         setInterval(() => {
             if (!motorRunning) return;
 
-            if (lastRPM > 30 && engineRPM < lastRPM - 3) {
-                if (Math.random() < 0.45) { // 45% Chance bei dynamischem Lastwechsel
-                    let intensity = Math.min(1, (lastRPM - engineRPM) / 30) * (0.4 + Math.random() * 0.6);
+            if (lastRPM > 25 && engineRPM < lastRPM - 2) {
+                if (Math.random() < 0.4) { 
+                    let intensity = Math.min(1, (lastRPM - engineRPM) / 25) * (0.5 + Math.random() * 0.5);
                     triggerExhaustPop(intensity);
                 }
-            } else if (engineRPM < 10 && Math.random() < 0.03) {
-                triggerExhaustPop(0.08 + Math.random() * 0.1); // Dezentes Blubbern im Leerlauf
+            } else if (engineRPM < 15 && Math.random() < 0.04) {
+                triggerExhaustPop(0.08 + Math.random() * 0.1); 
             }
             lastRPM = engineRPM;
-        }, 100);
+        }, 120);
 
         // --- Motor Start ---
         function startMotor() {
@@ -269,8 +272,8 @@
             if (!audioCtx) { await initAudio(); }
 
             const key = e.key.toLowerCase();
-            if (key === 'w') keys.w = true; // Gas
-            if (key === 's') keys.s = true; // Bremse
+            if (key === 'w') keys.w = true; 
+            if (key === 's') keys.s = true; 
             
             if (e.key === ' ' || e.code === 'Space') {
                 e.preventDefault();
@@ -289,99 +292,106 @@
             if (e.key === ' ' || e.code === 'Space') btn.classList.remove('active');
         });
 
-        // --- Physik & Real-Pedal Audio Mix Loop ---
+        // --- Physik & Pedal Audio Mix Loop ---
         function updatePhysics() {
             currentCenter += (targetCenter - currentCenter) * friction;
             sCenter.value = currentCenter;
 
-            // --- 1. ECHTE PEDAL-PHYSIK ---
+            // --- 1. PEDAL PHYSIK ---
             let targetRPM = 0;
 
             if (motorRunning) {
+                // BREMSEN: S gedrückt während das Auto fährt
                 if (keys.s && vehicleSpeed > 0) {
-                    // BREMSEN: S wird gedrückt während das Fahrzeug rollt
                     vehicleSpeed = Math.max(0, vehicleSpeed - brakingPower);
-                    targetRPM = vehicleSpeed * 0.3; // Drehzahl sackt beim Bremsen stark ab
+                    targetRPM = vehicleSpeed * 0.2; // Drehzahl bricht ein
+                    valLeft = 100;                  // Brems-Slider voll hoch
+                    valRight = vehicleSpeed;        // Rechter Slider fällt mit Speed
                     
                     if (!isBraking) {
                         isBraking = true;
-                        playSound(audioBuffers['stop'], false); // Bremsgeräusch einmalig zünden
+                        statusText.innerHTML = "Motor: BREMST!";
+                        playSound(audioBuffers['stop'], false); // stop.wav triggern
                     }
                 } else {
                     isBraking = false;
+                    valLeft = 0; // Bremse gelöst
 
+                    // GAS GEBEN (W)
                     if (keys.w) {
-                        // GAS GEBEN: W beschleunigt das Auto
                         vehicleSpeed = Math.min(maxSpeed, vehicleSpeed + acceleration);
-                        targetRPM = vehicleSpeed * 0.8 + 20; // Höheres Gas = Höhere Drehzahl
+                        targetRPM = vehicleSpeed * 0.7 + 30; // Drehzahl geht hoch
+                        valRight = vehicleSpeed;
                     } else {
-                        // AUSROLLEN: Kein Pedal gedrückt
+                        // AUSROLLEN (Keine Taste)
                         vehicleSpeed = Math.max(0, vehicleSpeed - rollFriction);
-                        targetRPM = vehicleSpeed * 0.5; 
+                        targetRPM = vehicleSpeed * 0.4;
+                        valRight = vehicleSpeed;
                     }
                 }
                 
-                // Drehzahl folgt dem Gaspedal/Zustand verzögert (Trägheit des Motors)
+                // Trägheit berechnen
                 engineRPM += (targetRPM - engineRPM) * engineResponse;
             } else {
                 vehicleSpeed = 0;
                 engineRPM = 0;
+                valLeft = 0;
+                valRight = 0;
             }
 
-            // Slider-Anzeigen spiegeln nun die Physik wider:
-            // Linker Slider = Bremsdruck / Rechter Slider = Fahrzeug-Geschwindigkeit (Tachometer)
-            sLeft.value = keys.s ? 100 : 0;
-            sRight.value = vehicleSpeed;
+            // Zuweisung an HTML-Slider damit sie sich bewegen!
+            sLeft.value = valLeft;
+            sRight.value = valRight;
 
-            // --- 2. DYNAMISCHE AUDIO STEUERUNG ---
+            // --- 2. AUDIO ENGINE SMOOTHING ---
             if (motorRunning && idleGainNode && driveGainNode) {
                 const now = audioCtx.currentTime;
-                const transitionSpeed = 0.08; // Extrem smoothe Überblendzeit (80ms)
+                const transitionSpeed = 0.05; // 50ms absolut knackfreie Übergänge
 
-                // Losfahr-Effekt (Trigger beim ersten echten Beschleunigen aus dem Stand)
+                // Losfahr-Effekt aus dem Stand
                 if (vehicleSpeed > 5 && !hasLaunched) {
                     hasLaunched = true;
-                    playSound(audioBuffers['stop'], false); // Spielt stop.wav als Einsetz-Kicker
+                    playSound(audioBuffers['stop'], false); 
                 } else if (vehicleSpeed <= 2) {
                     hasLaunched = false;
                 }
 
-                // UI Status Update
+                // UI Text-Update
                 if (isBraking) {
                     statusText.innerHTML = `Motor: BREMST!<br>Speed: ${Math.round(vehicleSpeed)} km/h | RPM: ${Math.round(engineRPM)}`;
                 } else if (vehicleSpeed > 5) {
-                    statusText.innerHTML = `Motor: FAHRT (${engineRPM > 60 ? 'Vollgas' : 'Beschleunigt'})<br>Speed: ${Math.round(vehicleSpeed)} km/h | RPM: ${Math.round(engineRPM)}`;
+                    statusText.innerHTML = `Motor: FAHRT (${engineRPM > 65 ? 'Vollgas' : 'Beschleunigt'})<br>Speed: ${Math.round(vehicleSpeed)} km/h | RPM: ${Math.round(engineRPM)}`;
                 } else {
                     statusText.innerHTML = `Motor: LEERLAUF<br>Speed: 0 km/h | RPM: ${Math.round(engineRPM)}`;
                 }
 
-                // ECHTER CROSSFADE basierend auf der Motordrehzahl (engineRPM 0 - 100)
+                // DYNAMISCHES ÜBERBLENDEN (Ab 50% Drehzahl kippt das System)
                 let targetIdle = 1;
                 let targetDrive = 0;
 
                 if (engineRPM <= 50) {
-                    // 0% bis 50% Drehzahl: Leerlauf bleibt dominant, drive.wav fängt an reinzufaden
+                    // Stand bis mittlere Last: Leerlauf bleibt da, drive fadet bis zur Hälfte ein
                     targetIdle = 1;
                     targetDrive = engineRPM / 50;
                 } else {
-                    // Über 50% Drehzahl: idle1.wav verschwindet komplett, drive.wav dröhnt voll
+                    // Ab 50% Last: Leerlauf verschwindet, Drive übernimmt vollends
                     targetIdle = 1 - ((engineRPM - 50) / 50);
                     targetDrive = 1;
                 }
 
-                // Wenn man voll auf der Bremse steht, Sounds stark dämpfen
+                // Bei Vollbremsung Sound dämpfen und in den Leerlauf zwingen
                 if (isBraking) {
-                    targetIdle = 0.4;
+                    targetIdle = 0.3;
                     targetDrive = 0.0;
                 }
 
-                // Werte knackfrei übergeben
+                // Fades übergeben
                 idleGainNode.gain.linearRampToValueAtTime(targetIdle, now + transitionSpeed);
                 driveGainNode.gain.linearRampToValueAtTime(targetDrive, now + transitionSpeed);
                 
-                // Realistische Tonhöhenverschiebung (Pitch) gekoppelt an die Drehzahl
+                // Pitch-Modulation
                 if (activeSources.idle) {
-                    activeSources.idle.playbackRate.setValueAtTime(0.9 + (engineRPM / 200), now);
+                    activeSources.idle.playbackRate.setValueAtTime(0.95 + (engineRPM / 200), now);
                 }
                 if (activeSources.drive) {
                     activeSources.drive.playbackRate.setValueAtTime(0.8 + (engineRPM / 110), now);
