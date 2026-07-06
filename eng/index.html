@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slider Layout mit Audio</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            background-color: #f0f2f5;
+            overflow: hidden;
+            padding-bottom: 30px;
+            user-select: none;
+        }
+
+        .slider-vertical {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%) rotate(-90deg);
+            width: 200px;
+        }
+
+        .slider-left { left: -60px; }
+        .slider-right { right: -60px; }
+
+        .bottom-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            width: 100%;
+            max-width: 300px;
+        }
+
+        .slider-horizontal { width: 100%; }
+
+        .btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.1s;
+        }
+
+        .btn.active {
+            background-color: #003d7a;
+            transform: scale(0.98);
+        }
+
+        /* Status-Anzeige für den Motor */
+        #motorStatus {
+            position: absolute;
+            top: 20px;
+            font-weight: bold;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="motorStatus">Motor: AUS (Enter drücken)</div>
+
+    <input type="range" id="sliderLeft" class="slider-vertical slider-left" min="0" max="100" value="0">
+    <input type="range" id="sliderRight" class="slider-vertical slider-right" min="0" max="100" value="0">
+
+    <div class="bottom-controls">
+        <input type="range" id="sliderCenter" class="slider-horizontal" min="0" max="100" value="50">
+        <button id="myButton" class="btn">Klick mich</button>
+    </div>
+
+    <script>
+        // --- UI & Slider Logik (wie vorher) ---
+        const sLeft = document.getElementById('sliderLeft');
+        const sRight = document.getElementById('sliderRight');
+        const sCenter = document.getElementById('sliderCenter');
+        const btn = document.getElementById('myButton');
+        const statusText = document.getElementById('motorStatus');
+
+        let targetCenter = 50, currentCenter = 50;
+        let valLeft = 0, valRight = 0;
+        const gravity = 1.5, liftSpeed = 3.5, friction = 0.15;
+        const keys = { w: false, s: false };
+
+        window.addEventListener('mousemove', (e) => { targetCenter = (e.clientX / window.innerWidth) * 100; });
+        
+        // --- Web Audio API Setup ---
+        let audioCtx = null;
+        let audioBuffers = {};
+        
+        // Audio-Knoten für das Routing (wichtig für Fades)
+        let idleGainNode = null;
+        let bgGainNode = null;
+        
+        // Aktive Audio-Quellen, um sie stoppen zu können
+        let activeSources = { start: null, idle: null, bg: null, stop: null };
+        let motorRunning = false;
+
+        // Sound-Dateien definieren
+        const soundFiles = {
+            start: 'start.wav',
+            bg: 'background.wav',
+            idle: 'idle1.wav',
+            stop: 'stop.wav'
+        };
+
+        // Funktion zum Laden der Audiodateien in den Speicher
+        async function loadSounds() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            statusText.innerText = "Lade Sounds...";
+            
+            for (let name in soundFiles) {
+                try {
+                    const response = await fetch(soundFiles[name]);
+                    const arrayBuffer = await response.arrayBuffer();
+                    audioBuffers[name] = await audioCtx.decodeAudioData(arrayBuffer);
+                } catch (e) {
+                    console.error("Fehler beim Laden von " + soundFiles[name], e);
+                }
+            }
+            statusText.innerText = "Motor: AUS (Enter drücken)";
+        }
+
+        // Hilfsfunktion zum Abspielen eines Buffers
+        function playSound(buffer, loop = false, gainNode = null) {
+            if (!buffer) return null;
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.loop = loop;
+            
+            // Wenn kein spezieller Gain-Knoten übergeben wurde, direkt an die Lautsprecher senden
+            const destination = gainNode || audioCtx.destination;
+            source.connect(destination);
+            source.start(0);
+            return source;
+        }
+
+        // --- Motor Start-Logik ---
+        function startMotor() {
+            if (motorRunning) return;
+            motorRunning = true;
+            statusText.innerText = "Motor: STARTET...";
+
+            // Falls noch stop.wav läuft, abbrechen
+            if (activeSources.stop) { activeSources.stop.stop(); }
+
+            // 1. Start-Sound abspielen
+            const startBuf = audioBuffers['start'];
+            activeSources.start = playSound(startBuf, false);
+
+            if (startBuf) {
+                const halfDuration = startBuf.duration / 2;
+
+                // 2. Ab der Hälfte von start.wav: Loops starten & einfaden
+                setTimeout(() => {
+                    if (!motorRunning) return; // Falls in der Zwischenzeit ausgeschaltet wurde
+                    statusText.innerText = "Motor: LÄUFT (Idle)";
+
+                    // Gain Nodes für Fades erstellen und verbinden
+                    idleGainNode = audioCtx.createGain();
+                    bgGainNode = audioCtx.createGain();
+                    idleGainNode.connect(audioCtx.destination);
+                    bgGainNode.connect(audioCtx.destination);
+
+                    // Fade-In über 0.5 Sekunden
+                    idleGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+                    idleGainNode.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.5);
+                    bgGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+                    bgGainNode.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.5);
+
+                    // Loops starten
+                    activeSources.idle = playSound(audioBuffers['idle'], true, idleGainNode);
+                    activeSources.bg = playSound(audioBuffers['bg'], true, bgGainNode);
+
+                }, halfDuration * 1000); // Umrechnung in Millisekunden
+            }
+        }
+
+        // --- Motor Stopp-Logik ---
+        function stopMotor() {
+            if (!motorRunning) return;
+            motorRunning = false;
+            statusText.innerText = "Motor: SCHALTET AUS...";
+
+            // Falls start.wav noch läuft, abbrechen
+            if (activeSources.start) { activeSources.start.stop(); }
+
+            // Stop-Sound abspielen
+            const stopBuf = audioBuffers['stop'];
+            activeSources.stop = playSound(stopBuf, false);
+
+            if (stopBuf) {
+                const halfDuration = stopBuf.duration / 2;
+
+                // Ab der Hälfte von stop.wav: Alles ausfaden und stoppen
+                setTimeout(() => {
+                    if (motorRunning) return; // Falls wieder gestartet wurde
+
+                    const fadeTime = 0.5; // Sekunden für das Ausfaden
+                    const now = audioCtx.currentTime;
+
+                    // Fade-Out für die Loops einleiten
+                    if (idleGainNode) idleGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
+                    if (bgGainNode) bgGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
+
+                    // Nach dem Fade komplett stoppen
+                    setTimeout(() => {
+                        if (motorRunning) return;
+                        if (activeSources.idle) { activeSources.idle.stop(); activeSources.idle = null; }
+                        if (activeSources.bg) { activeSources.bg.stop(); activeSources.bg = null; }
+                        statusText.innerText = "Motor: AUS (Enter drücken)";
+                    }, fadeTime * 1000);
+
+                }, halfDuration * 1000);
+            }
+        }
+
+        // --- Tasten-Abfragen ---
+        window.addEventListener('keydown', (e) => {
+            // Web Audio verlangt eine Benutzerinteraktion (z.B. ersten Tastendruck), um zu starten
+            if (!audioCtx) {
+                loadSounds();
+                return;
+            }
+
+            const key = e.key.toLowerCase();
+            if (key === 's') keys.s = true;
+            if (key === 'w') keys.w = true;
+            
+            if (e.key === ' ' || e.code === 'Space') {
+                e.preventDefault();
+                btn.classList.add('active');
+                btn.click();
+            }
+
+            // Enter startet den Motor
+            if (e.key === 'Enter') {
+                startMotor();
+            }
+
+            // Backspace/Delete schaltet den Motor aus
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                stopMotor();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 's') keys.s = false;
+            if (key === 'w') keys.w = false;
+            if (e.key === ' ' || e.code === 'Space') btn.classList.remove('active');
+        });
+
+        // --- Physik-Loop (unverändert) ---
+        function updatePhysics() {
+            currentCenter += (targetCenter - currentCenter) * friction;
+            sCenter.value = currentCenter;
+
+            if (keys.s) valLeft = Math.min(100, valLeft + liftSpeed);
+            else valLeft = Math.max(0, valLeft - gravity);
+            sLeft.value = valLeft;
+
+            if (keys.w) valRight = Math.min(100, valRight + liftSpeed);
+            else valRight = Math.max(0, valRight - gravity);
+            sRight.value = valRight;
+
+            requestAnimationFrame(updatePhysics);
+        }
+        requestAnimationFrame(updatePhysics);
+    </script>
+</body>
+</html>
