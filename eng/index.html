@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Slider Layout mit Audio</title>
+    <title>Slider Layout mit Audio Engine</title>
     <style>
         * {
             box-sizing: border-box;
@@ -62,12 +62,12 @@
             transform: scale(0.98);
         }
 
-        /* Status-Anzeige für den Motor */
         #motorStatus {
             position: absolute;
             top: 20px;
             font-weight: bold;
             color: #555;
+            text-align: center;
         }
     </style>
 </head>
@@ -84,7 +84,7 @@
     </div>
 
     <script>
-        // --- UI & Slider Logik (wie vorher) ---
+        // --- UI & Slider Logik ---
         const sLeft = document.getElementById('sliderLeft');
         const sRight = document.getElementById('sliderRight');
         const sCenter = document.getElementById('sliderCenter');
@@ -102,23 +102,27 @@
         let audioCtx = null;
         let audioBuffers = {};
         
-        // Audio-Knoten für das Routing (wichtig für Fades)
+        // Gain Nodes für präzises Mischen
         let idleGainNode = null;
+        let driveGainNode = null;
         let bgGainNode = null;
         
-        // Aktive Audio-Quellen, um sie stoppen zu können
-        let activeSources = { start: null, idle: null, bg: null, stop: null };
+        // Aktive Audio-Quellen
+        let activeSources = { start: null, idle: null, drive: null, bg: null, stop: null };
         let motorRunning = false;
+        let isBraking = false;
+        let lastLoad = 0; // Zur Erkennung von Lastabfall (für Auspuffknallen)
 
-        // Sound-Dateien definieren
+        // Sound-Dateien
         const soundFiles = {
             start: 'start.wav',
             bg: 'background.wav',
             idle: 'idle1.wav',
-            stop: 'stop.wav'
+            drive: 'drive.wav',
+            stop: 'stop.wav',
+            pop: 'pop.wav'
         };
 
-        // Funktion zum Laden der Audiodateien in den Speicher
         async function loadSounds() {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             statusText.innerText = "Lade Sounds...";
@@ -135,93 +139,127 @@
             statusText.innerText = "Motor: AUS (Enter drücken)";
         }
 
-        // Hilfsfunktion zum Abspielen eines Buffers
         function playSound(buffer, loop = false, gainNode = null) {
             if (!buffer) return null;
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.loop = loop;
             
-            // Wenn kein spezieller Gain-Knoten übergeben wurde, direkt an die Lautsprecher senden
             const destination = gainNode || audioCtx.destination;
             source.connect(destination);
             source.start(0);
             return source;
         }
 
-        // --- Motor Start-Logik ---
+        // --- Auspuff Knallen (Pops & Bangs) ---
+        function triggerExhaustPop(volume) {
+            if (!motorRunning || !audioBuffers['pop']) return;
+            
+            // Zufällige leichte Tonhöhenänderung für mehr Realismus
+            const popGain = audioCtx.createGain();
+            popGain.gain.setValueAtTime(volume, audioCtx.currentTime);
+            popGain.connect(audioCtx.destination);
+
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuffers['pop'];
+            // Pitch leicht variieren (zwischen 0.85 und 1.15)
+            source.playbackRate.setValueAtTime(0.85 + Math.random() * 0.3, audioCtx.currentTime);
+            source.connect(popGain);
+            source.start(0);
+        }
+
+        // Loop zur permanenten Überprüfung von Auspuff-Fehlzündungen
+        setInterval(() => {
+            if (!motorRunning) return;
+
+            // Aktuelle Last berechnen (Durchschnitt der vertikalen Slider)
+            let currentLoad = (valLeft + valRight) / 2;
+
+            // Wenn die Last abrupt abfällt (vom Gas gegangen), besteht Chance auf Knallen
+            if (lastLoad > 20 && currentLoad < lastLoad - 5) {
+                if (Math.random() < 0.35) { // 35% Chance pro Intervall bei Gaswechsel
+                    let intensity = Math.min(1, (lastLoad - currentLoad) / 50) * (0.4 + Math.random() * 0.6);
+                    triggerExhaustPop(intensity);
+                }
+            } 
+            // Gelegentliches, leises Blubbern im Idle-Zustand
+            else if (currentLoad < 5 && Math.random() < 0.05) {
+                triggerExhaustPop(0.1 + Math.random() * 0.15);
+            }
+
+            lastLoad = currentLoad;
+        }, 150);
+
+
+        // --- Motor Start ---
         function startMotor() {
             if (motorRunning) return;
             motorRunning = true;
             statusText.innerText = "Motor: STARTET...";
 
-            // Falls noch stop.wav läuft, abbrechen
-            if (activeSources.stop) { activeSources.stop.stop(); }
+            if (activeSources.stop) { try { activeSources.stop.stop(); } catch(e){} }
 
-            // 1. Start-Sound abspielen
             const startBuf = audioBuffers['start'];
             activeSources.start = playSound(startBuf, false);
 
             if (startBuf) {
                 const halfDuration = startBuf.duration / 2;
 
-                // 2. Ab der Hälfte von start.wav: Loops starten & einfaden
                 setTimeout(() => {
-                    if (!motorRunning) return; // Falls in der Zwischenzeit ausgeschaltet wurde
-                    statusText.innerText = "Motor: LÄUFT (Idle)";
+                    if (!motorRunning) return;
+                    statusText.innerText = "Motor: LÄUFT";
 
-                    // Gain Nodes für Fades erstellen und verbinden
+                    // Gain Nodes initialisieren
                     idleGainNode = audioCtx.createGain();
+                    driveGainNode = audioCtx.createGain();
                     bgGainNode = audioCtx.createGain();
+                    
                     idleGainNode.connect(audioCtx.destination);
+                    driveGainNode.connect(audioCtx.destination);
                     bgGainNode.connect(audioCtx.destination);
 
-                    // Fade-In über 0.5 Sekunden
-                    idleGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-                    idleGainNode.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.5);
-                    bgGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-                    bgGainNode.gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.5);
+                    // Standard-Lautstärken setzen
+                    idleGainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+                    driveGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+                    bgGainNode.gain.setValueAtTime(1, audioCtx.currentTime);
 
                     // Loops starten
                     activeSources.idle = playSound(audioBuffers['idle'], true, idleGainNode);
+                    activeSources.drive = playSound(audioBuffers['drive'], true, driveGainNode);
                     activeSources.bg = playSound(audioBuffers['bg'], true, bgGainNode);
 
-                }, halfDuration * 1000); // Umrechnung in Millisekunden
+                }, halfDuration * 1000);
             }
         }
 
-        // --- Motor Stopp-Logik ---
+        // --- Motor Komplett-Stopp (über Backspace/Delete) ---
         function stopMotor() {
             if (!motorRunning) return;
             motorRunning = false;
             statusText.innerText = "Motor: SCHALTET AUS...";
 
-            // Falls start.wav noch läuft, abbrechen
-            if (activeSources.start) { activeSources.start.stop(); }
+            if (activeSources.start) { try { activeSources.start.stop(); } catch(e){} }
 
-            // Stop-Sound abspielen
             const stopBuf = audioBuffers['stop'];
             activeSources.stop = playSound(stopBuf, false);
 
             if (stopBuf) {
                 const halfDuration = stopBuf.duration / 2;
 
-                // Ab der Hälfte von stop.wav: Alles ausfaden und stoppen
                 setTimeout(() => {
-                    if (motorRunning) return; // Falls wieder gestartet wurde
-
-                    const fadeTime = 0.5; // Sekunden für das Ausfaden
+                    if (motorRunning) return;
+                    const fadeTime = 0.5;
                     const now = audioCtx.currentTime;
 
-                    // Fade-Out für die Loops einleiten
                     if (idleGainNode) idleGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
+                    if (driveGainNode) driveGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
                     if (bgGainNode) bgGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
 
-                    // Nach dem Fade komplett stoppen
                     setTimeout(() => {
                         if (motorRunning) return;
-                        if (activeSources.idle) { activeSources.idle.stop(); activeSources.idle = null; }
-                        if (activeSources.bg) { activeSources.bg.stop(); activeSources.bg = null; }
+                        if (activeSources.idle) { try{activeSources.idle.stop();}catch(e){} activeSources.idle = null; }
+                        if (activeSources.drive) { try{activeSources.drive.stop();}catch(e){} activeSources.drive = null; }
+                        if (activeSources.bg) { try{activeSources.bg.stop();}catch(e){} activeSources.bg = null; }
                         statusText.innerText = "Motor: AUS (Enter drücken)";
                     }, fadeTime * 1000);
 
@@ -231,7 +269,6 @@
 
         // --- Tasten-Abfragen ---
         window.addEventListener('keydown', (e) => {
-            // Web Audio verlangt eine Benutzerinteraktion (z.B. ersten Tastendruck), um zu starten
             if (!audioCtx) {
                 loadSounds();
                 return;
@@ -247,15 +284,8 @@
                 btn.click();
             }
 
-            // Enter startet den Motor
-            if (e.key === 'Enter') {
-                startMotor();
-            }
-
-            // Backspace/Delete schaltet den Motor aus
-            if (e.key === 'Backspace' || e.key === 'Delete') {
-                stopMotor();
-            }
+            if (e.key === 'Enter') startMotor();
+            if (e.key === 'Backspace' || e.key === 'Delete') stopMotor();
         });
 
         window.addEventListener('keyup', (e) => {
@@ -265,7 +295,7 @@
             if (e.key === ' ' || e.code === 'Space') btn.classList.remove('active');
         });
 
-        // --- Physik-Loop (unverändert) ---
+        // --- Physik & Dynamischer Audio-Mix Loop ---
         function updatePhysics() {
             currentCenter += (targetCenter - currentCenter) * friction;
             sCenter.value = currentCenter;
@@ -277,6 +307,57 @@
             if (keys.w) valRight = Math.min(100, valRight + liftSpeed);
             else valRight = Math.max(0, valRight - gravity);
             sRight.value = valRight;
+
+            // --- AUDIO ENGINE UPDATE ---
+            if (motorRunning && idleGainNode && driveGainNode) {
+                
+                // 1. Brems-Logik: W und S sind gleichzeitig gedrückt
+                if (keys.w && keys.s) {
+                    if (!isBraking) {
+                        isBraking = true;
+                        statusText.innerText = "Motor: BREMST!";
+                        // Spiele Bremsgeräusch ab
+                        if (audioBuffers['stop']) {
+                            playSound(audioBuffers['stop'], false);
+                        }
+                    }
+                    // Während des Bremsens regeln wir die Antriebssounds drastisch runter
+                    idleGainNode.gain.setTargetAtTime(0.2, audioCtx.currentTime, 0.1);
+                    driveGainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+                } 
+                else {
+                    // Bremsstatus zurücksetzen, sobald eine Taste losgelassen wird
+                    if (isBraking) {
+                        isBraking = false;
+                        statusText.innerText = "Motor: LÄUFT";
+                    }
+
+                    // 2. Normaler Fahr-Mix basierend auf Slider-Auslastung (0 bis 100)
+                    let engineLoad = (valLeft + valRight) / 2; // Durchschnittliche Last
+
+                    // Ab hälfte (50%) fadet idle1 aus und drive setzt ein
+                    let idleVolume = 1;
+                    let driveVolume = 0;
+
+                    if (engineLoad <= 50) {
+                        // Von 0% bis 50% Last: Idle bleibt voll da, Drive fängt langsam an
+                        idleVolume = 1;
+                        driveVolume = engineLoad / 50; 
+                    } else {
+                        // Von 50% bis 100% Last: Idle fadet komplett aus, Drive ist voll da
+                        idleVolume = 1 - ((engineLoad - 50) / 50);
+                        driveVolume = 1;
+                    }
+
+                    // Werte glatt anwenden (verhindert digitales Knacken)
+                    idleGainNode.gain.setTargetAtTime(idleVolume, audioCtx.currentTime, 0.1);
+                    driveGainNode.gain.setTargetAtTime(driveVolume, audioCtx.currentTime, 0.1);
+                    
+                    // Pitch (Tonhöhe) leicht anheben je nach Drehzahl/Last für realistischeren Sound
+                    if(activeSources.idle) activeSources.idle.playbackRate.setValueAtTime(1 + (engineLoad / 200), audioCtx.currentTime);
+                    if(activeSources.drive) activeSources.drive.playbackRate.setValueAtTime(0.9 + (engineLoad / 150), audioCtx.currentTime);
+                }
+            }
 
             requestAnimationFrame(updatePhysics);
         }
