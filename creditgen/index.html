@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credits Generator</title>
+    <style>
+        :root {
+            --bg-color: #0b0b0f;
+            --card-bg: #15151a;
+            --accent-color: #2563eb;
+            --accent-hover: #1d4ed8;
+            --text-color: #f3f4f6;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 680px;
+            background: var(--card-bg);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            text-align: center;
+            font-size: 14px;
+            margin-bottom: 28px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 160px;
+            background: #000;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            color: #fff;
+            font-size: 16px;
+            resize: vertical;
+            outline: none;
+            transition: all 0.2s;
+            margin-bottom: 20px;
+        }
+
+        textarea:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn:disabled {
+            background: #27272a;
+            color: #71717a;
+            cursor: not-allowed;
+        }
+
+        .preview-container {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .status-text {
+            font-size: 14px;
+            color: #38bdf8;
+            margin-bottom: 12px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .video-box {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Credits Generator</h1>
+        
+        <textarea id="creditsText" placeholder="REGIE&#10;Max Mustermann&#10;&#10;DREHBUCH&#10;Erika Mustermann&#10;&#10;PRODUKTION&#10;Kino-Studio GmbH"></textarea>
+
+        <button class="btn" id="generateBtn">Generate</button>
+
+        <div class="preview-container" id="previewContainer">
+            <div class="status-text" id="statusMessage">Loading...</div>
+            <div class="video-box">
+                <canvas id="creditsCanvas" width="1280" height="720"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const generateBtn = document.getElementById('generateBtn');
+        const textInput = document.getElementById('creditsText');
+        const previewContainer = document.getElementById('previewContainer');
+        const canvas = document.getElementById('creditsCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusMessage = document.getElementById('statusMessage');
+
+        generateBtn.addEventListener('click', () => {
+            const text = textInput.value.trim();
+            if (!text) {
+                alert('Please Enter Credits!');
+                return;
+            }
+
+            generateBtn.disabled = true;
+            previewContainer.style.display = 'block';
+            statusMessage.textContent = "Loading...";
+
+            const lines = text.split('\n');
+            const fps = 30;
+            const scrollSpeed = 1.8; // Kinotypische, gleichmäßige Geschwindigkeit
+            const lineHeight = 45;   // Perfekt abgestimmt auf 720p HD
+            
+            let yPos = canvas.height + 30; 
+            const totalTextHeight = lines.length * lineHeight;
+            const endY = -totalTextHeight - 50;
+
+            // Stream vom Canvas erzeugen (30 FPS)
+            const stream = canvas.captureStream(fps);
+            
+            // Unterstützten Videotyp des Browsers automatisch ermitteln
+            let options = { mimeType: 'video/webm;codecs=vp9' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'video/webm' };
+            }
+            
+            const mediaRecorder = new MediaRecorder(stream, options);
+            const chunks = [];
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    chunks.push(e.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                // Erstelle die Videodatei aus den aufgenommenen Teilen
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                
+                // Automatischer Download
+                const a = document.createElement('a');
+                a.href = url;
+                // .mp4 anhängen, damit Mediaplayer es sofort als Video erkennen
+                a.download = 'kino-abspann.mp4';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                generateBtn.disabled = false;
+                statusMessage.textContent = "✅ Video erfolgreich als MP4 heruntergeladen!";
+            };
+
+            // Start der Aufnahme
+            mediaRecorder.start();
+
+            // Render-Schleife (Nutzt requestAnimationFrame für flüssige Bewegung)
+            function render() {
+                // Hintergrund leeren (Schwarz)
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Text zeichnen
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = 'normal 28px "Times New Roman", Times, serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                for (let i = 0; i < lines.length; i++) {
+                    const currentY = yPos + (i * lineHeight);
+                    if (currentY > -50 && currentY < canvas.height + 50) {
+                        ctx.fillText(lines[i], canvas.width / 2, currentY);
+                    }
+                }
+
+                // Scrollen
+                yPos -= scrollSpeed;
+
+                if (yPos > endY) {
+                    requestAnimationFrame(render);
+                } else {
+                    // Stoppe die Aufnahme, sobald der Text durchgelaufen ist
+                    mediaRecorder.stop();
+                }
+            }
+
+            // Starte das Rendering
+            render();
+        });
+    </script>
+</body>
+</html>
