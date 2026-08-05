@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Unterwasserwelt</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+        body { font-family: sans-serif; background-color: #050e18; overflow: hidden; height: 100vh; width: 100vw; margin: 0; padding: 0;}
+        #canvas-container { width: 100%; height: 100%; touch-action: none; display: block;}
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 18px; color: #38bdf8; background: rgba(3, 7, 18, 0.9); padding: 20px 35px;
+            border-radius: 16px; border: 1px solid rgba(56, 189, 248, 0.3); z-index: 20; text-align: center;
+        }
+        #audio-controls {
+            position: absolute; top: 15px; right: 15px; z-index: 30;
+            background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(8px);
+            padding: 8px 14px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+</head>
+<body>
+
+    <div id="loading">Lade Unterwasser-Welt...</div>
+    
+    <div id="audio-controls">
+        <span id="music-icon">🎵</span>
+        <span id="music-text">Musik an</span>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <!-- Hintergrundmusik Stream -->
+    <audio id="bg-music" src="https://stream.laut.fm/lofi" loop preload="none"></audio>
+
+    <script>
+        const container = document.getElementById('canvas-container');
+        const loadingEl = document.getElementById('loading');
+
+        // Audio Stream Steuerung
+        const bgMusic = document.getElementById('bg-music');
+        const audioBtn = document.getElementById('audio-controls');
+        const musicText = document.getElementById('music-text');
+        let musicPlaying = false;
+
+        function toggleMusic() {
+            if (musicPlaying) {
+                bgMusic.pause();
+                musicText.innerText = "Musik an";
+                musicPlaying = false;
+            } else {
+                bgMusic.play().then(() => {
+                    musicText.innerText = "Musik aus";
+                    musicPlaying = true;
+                }).catch(err => console.log("Audio Autoplay blockiert:", err));
+            }
+        }
+
+        audioBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Verhindert Algen-Spawn beim Klick auf Musik-Button
+            toggleMusic();
+        });
+
+        // --- SZENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x061526);
+        scene.fog = new THREE.FogExp2(0x061526, 0.035);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 18);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        container.appendChild(renderer.domElement);
+
+        // OrbitControls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enablePan = false;
+
+        // --- BELEUCHTUNG ---
+        scene.add(new THREE.AmbientLight(0x38bdf8, 0.6));
+        const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        mainLight.position.set(5, 15, 8);
+        scene.add(mainLight);
+        
+        // --- PARTIKEL (WASSEREFFEKT) ---
+        const particleCount = 200;
+        const particleGeo = new THREE.BufferGeometry();
+        const particlePositions = new Float32Array(particleCount * 3);
+        for(let i = 0; i < particleCount * 3; i += 3) {
+            particlePositions[i] = (Math.random() - 0.5) * 40;
+            particlePositions[i+1] = (Math.random() - 0.5) * 30;
+            particlePositions[i+2] = (Math.random() - 0.5) * 40;
+        }
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        const particles = new THREE.Points(particleGeo, new THREE.PointsMaterial({ color: 0x7dd3fc, size: 0.1, transparent: true, opacity: 0.5 }));
+        scene.add(particles);
+
+        // --- LOADER & MATERIAL ---
+        const textureLoader = new THREE.TextureLoader();
+        const objLoader = new THREE.OBJLoader();
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // Custom Shader Material für Wiggle-Physik
+        function createPhysicsShaderMaterial(texture) {
+            return new THREE.ShaderMaterial({
+                uniforms: {
+                    uMap: { value: texture },
+                    uTime: { value: 0.0 },
+                    uWiggleSpeed: { value: 6.0 },
+                    uWiggleAmp: { value: 0.35 },
+                    uCurvature: { value: 0.0 },
+                    uTurnLag: { value: 0.0 }
+                },
+                vertexShader: `
+                    uniform float uTime;
+                    uniform float uWiggleSpeed;
+                    uniform float uWiggleAmp;
+                    uniform float uCurvature;
+                    uniform float uTurnLag;
+                    varying vec2 vUv;
+                    varying vec3 vNormal;
+                    void main() {
+                        vUv = uv;
+                        vNormal = normalMatrix * normal;
+                        vec3 pos = position;
+                        float tailFactor = smoothstep(-0.5, 2.5, -pos.z);
+                        float wave = sin(uTime * uWiggleSpeed + pos.z * 1.8) * uWiggleAmp * tailFactor;
+                        float curveForce = uCurvature * (pos.z * pos.z * 0.12);
+                        float lagForce = uTurnLag * tailFactor * 0.4;
+                        pos.x += wave + curveForce + lagForce;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D uMap;
+                    varying vec2 vUv;
+                    varying vec3 vNormal;
+                    void main() {
+                        vec4 texColor = texture2D(uMap, vUv);
+                        vec3 lightDir = normalize(vec3(0.5, 1.0, 0.7));
+                        float light = max(dot(vNormal, lightDir), 0.35);
+                        gl_FragColor = vec4(texColor.rgb * light, texColor.a);
+                    }
+                `,
+                side: THREE.DoubleSide
+            });
+        }
+
+        // --- GLOBALER ZUSTAND ---
+        const swimmers = [];
+        const foodList = []; // Mehrere Algen gleichzeitig möglich
+        const crunchEffects = []; // Brösel / Crunch Partikel Animationen
+        let algaeTexture = null;
+        let loadedCount = 0;
+
+        textureLoader.load('Alge.png', (tex) => {
+            tex.encoding = THREE.sRGBEncoding;
+            algaeTexture = tex;
+        });
+
+        // --- BRÖSEL / CRUNCH EFFECT SYSTEM ---
+        function createCrunchEffect(position) {
+            const count = 18;
+            const geo = new THREE.BufferGeometry();
+            const positions = new Float32Array(count * 3);
+            const velocities = [];
+
+            for (let i = 0; i < count; i++) {
+                positions[i * 3] = position.x;
+                positions[i * 3 + 1] = position.y;
+                positions[i * 3 + 2] = position.z;
+
+                // Explosion in zufällige Richtungen
+                velocities.push(new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.12,
+                    (Math.random() - 0.5) * 0.12,
+                    (Math.random() - 0.5) * 0.12
+                ));
+            }
+
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const mat = new THREE.PointsMaterial({
+                color: 0x4ade80, // Helles Algen-Grün für Brösel
+                size: 0.18,
+                transparent: true,
+                opacity: 1.0
+            });
+
+            const pSystem = new THREE.Points(geo, mat);
+            scene.add(pSystem);
+
+            crunchEffects.push({
+                mesh: pSystem,
+                velocities: velocities,
+                life: 1.0 // 1.0 bis 0.0 (Fade out)
+            });
+        }
+
+        function updateCrunchEffects(delta) {
+            for (let i = crunchEffects.length - 1; i >= 0; i--) {
+                const effect = crunchEffects[i];
+                effect.life -= delta * 2.2; // Schnell verblassen
+
+                const posAttr = effect.mesh.geometry.attributes.position;
+                for (let j = 0; j < effect.velocities.length; j++) {
+                    posAttr.setXYZ(
+                        j,
+                        posAttr.getX(j) + effect.velocities[j].x,
+                        posAttr.getY(j) + effect.velocities[j].y,
+                        posAttr.getZ(j) + effect.velocities[j].z
+                    );
+                }
+                posAttr.needsUpdate = true;
+                effect.mesh.material.opacity = Math.max(0, effect.life);
+
+                if (effect.life <= 0) {
+                    scene.remove(effect.mesh);
+                    effect.mesh.geometry.dispose();
+                    effect.mesh.material.dispose();
+                    crunchEffects.splice(i, 1);
+                }
+            }
+        }
+
+        // --- KLASSE FÜR SCHWIMMER ---
+        class PhysicsWiggleSwimmer {
+            constructor(group, materials, type) {
+                this.group = group;
+                this.materials = materials;
+                this.type = type;
+
+                this.group.position.set((Math.random() - 0.5) * 15, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 15);
+                this.speed = type === 'axolotl' ? 0.06 : 0.035;
+                this.rotSpeed = 0.055;
+                this.eatRadius = type === 'axolotl' ? 1.5 : 1.0;
+
+                this.target = new THREE.Vector3();
+                this.isChasing = false;
+                this.getNewTarget();
+
+                this.previousYaw = 0;
+                this.yawVelocity = 0;
+                this.yawAcceleration = 0;
+            }
+
+            getNewTarget() {
+                this.target.set(
+                    (Math.random() - 0.5) * 25,
+                    Math.max(-5, Math.min(6, (Math.random() - 0.5) * 12)),
+                    (Math.random() - 0.5) * 25
+                );
+                this.isChasing = false;
+            }
+
+            update(delta, time) {
+                let currentTarget = this.target;
+
+                // Finde die nächste Alge aus der Liste
+                let nearestFood = null;
+                let nearestDist = Infinity;
+
+                for (let food of foodList) {
+                    const dist = this.group.position.distanceTo(food.position);
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearestFood = food;
+                    }
+                }
+
+                if (nearestFood) {
+                    currentTarget = nearestFood.position;
+                    this.isChasing = true;
+
+                    // Wenn nah genug: Alge fressen mit Brösel-Effekt
+                    if (nearestDist < this.eatRadius) {
+                        createCrunchEffect(nearestFood.position);
+                        removeFood(nearestFood);
+                        this.getNewTarget();
+                        return;
+                    }
+                } else if (this.isChasing) {
+                    this.getNewTarget();
+                    currentTarget = this.target;
+                }
+
+                const dir = new THREE.Vector3().subVectors(currentTarget, this.group.position);
+                if (!this.isChasing && dir.length() < 2.0) {
+                    this.getNewTarget();
+                    return;
+                }
+                dir.normalize();
+
+                const targetRotation = new THREE.Matrix4().lookAt(
+                    this.group.position,
+                    new THREE.Vector3().addVectors(this.group.position, dir),
+                    new THREE.Vector3(0, 1, 0)
+                );
+                const targetQuaternion = new THREE.Quaternion().setFromRotationMatrix(targetRotation);
+                this.group.quaternion.slerp(targetQuaternion, this.rotSpeed);
+
+                const currentEuler = new THREE.Euler().setFromQuaternion(this.group.quaternion, 'YXZ');
+                let deltaYaw = currentEuler.y - this.previousYaw;
+                if (deltaYaw > Math.PI) deltaYaw -= Math.PI * 2;
+                if (deltaYaw < -Math.PI) deltaYaw += Math.PI * 2;
+                this.yawAcceleration = (deltaYaw - this.yawVelocity);
+                this.yawVelocity = THREE.MathUtils.lerp(this.yawVelocity, deltaYaw, 0.1);
+                this.previousYaw = currentEuler.y;
+
+                const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
+                const currentSpeed = this.isChasing ? this.speed * 1.6 : this.speed;
+                this.group.position.addScaledVector(forward, currentSpeed);
+
+                this.materials.forEach(mat => {
+                    mat.uniforms.uTime.value = time;
+                    mat.uniforms.uCurvature.value = THREE.MathUtils.lerp(mat.uniforms.uCurvature.value, -this.yawVelocity * 15.0, 0.08);
+                    mat.uniforms.uTurnLag.value = THREE.MathUtils.lerp(mat.uniforms.uTurnLag.value, -this.yawAcceleration * 25.0, 0.05);
+                });
+            }
+        }
+
+        // --- MODELLE LADEN ---
+        function loadCreature(type, objPath, texturePath, scaleTarget) {
+            textureLoader.load(texturePath, (texture) => {
+                texture.encoding = THREE.sRGBEncoding;
+                objLoader.load(objPath, (obj) => {
+                    const materials = [];
+                    obj.traverse((child) => {
+                        if (child.isMesh) {
+                            const mat = createPhysicsShaderMaterial(texture);
+                            if (type === 'tardigrade') {
+                                mat.uniforms.uWiggleSpeed.value = 3.5;
+                                mat.uniforms.uWiggleAmp.value = 0.18;
+                            }
+                            child.material = mat;
+                            materials.push(mat);
+                        }
+                    });
+                    const box = new THREE.Box3().setFromObject(obj);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const scale = scaleTarget / Math.max(box.getSize(new THREE.Vector3()).x, box.getSize(new THREE.Vector3()).y, box.getSize(new THREE.Vector3()).z);
+                    obj.scale.set(scale, scale, scale);
+                    obj.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+                    obj.rotation.y = Math.PI;
+                    const group = new THREE.Group();
+                    group.add(obj);
+                    scene.add(group);
+                    swimmers.push(new PhysicsWiggleSwimmer(group, materials, type));
+                    loadedCount++;
+                    if (loadedCount >= 2) loadingEl.style.display = 'none';
+                });
+            });
+        }
+
+        loadCreature('axolotl', 'Axolotl.obj', 'Axolotl.png', 4.0);
+        loadCreature('tardigrade', 'Tardigrade.obj', 'Tardigrade.png', 2.5);
+
+        // --- MEHRERE ALGEN ERAUGEN ---
+        const planeGeo = new THREE.PlaneGeometry(100, 100);
+        const planeMat = new THREE.MeshBasicMaterial({ visible: false });
+        const interactionPlane = new THREE.Mesh(planeGeo, planeMat);
+        scene.add(interactionPlane);
+
+        function spawnFood(position) {
+            let foodItem;
+            if (algaeTexture) {
+                const spriteMaterial = new THREE.SpriteMaterial({ map: algaeTexture, transparent: true });
+                foodItem = new THREE.Sprite(spriteMaterial);
+                foodItem.scale.set(1.2, 1.2, 1.2);
+            } else {
+                const geo = new THREE.SphereGeometry(0.4, 16, 16);
+                const mat = new THREE.MeshStandardMaterial({ color: 0x228B22 });
+                foodItem = new THREE.Mesh(geo, mat);
+            }
+            
+            foodItem.position.copy(position);
+            scene.add(foodItem);
+            foodList.push(foodItem);
+        }
+
+        function removeFood(foodItem) {
+            const index = foodList.indexOf(foodItem);
+            if (index !== -1) {
+                scene.remove(foodItem);
+                if (foodItem.material) foodItem.material.dispose();
+                foodList.splice(index, 1);
+            }
+        }
+
+        // --- TIPP/KLICK LOGIK (Unterdrückt Kamera-Klick) ---
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        window.addEventListener('pointerdown', (e) => {
+            touchStartX = e.clientX;
+            touchStartY = e.clientY;
+        });
+
+        window.addEventListener('pointerup', (e) => {
+            if (e.target === audioBtn || audioBtn.contains(e.target)) return;
+
+            const deltaX = Math.abs(e.clientX - touchStartX);
+            const deltaY = Math.abs(e.clientY - touchStartY);
+
+            if (deltaX < 6 && deltaY < 6) {
+                // Erster Klick startet auch die Musik, falls noch aus
+                if (!musicPlaying) {
+                    toggleMusic();
+                }
+
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(interactionPlane);
+
+                if (intersects.length > 0) {
+                    spawnFood(intersects[0].point);
+                }
+            }
+        });
+
+        // --- ANIMATION LOOP ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            interactionPlane.quaternion.copy(camera.quaternion);
+
+            swimmers.forEach(s => s.update(delta, time));
+            updateCrunchEffects(delta);
+
+            // Partikel (Wasserstrom)
+            const pos = particles.geometry.attributes.position.array;
+            for(let i = 1; i < particleCount * 3; i += 3) {
+                pos[i] += delta * 0.4;
+                if(pos[i] > 15) pos[i] = -15;
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
