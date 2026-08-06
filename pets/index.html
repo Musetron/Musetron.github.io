@@ -35,7 +35,6 @@
 
     <div id="canvas-container"></div>
 
-    <!-- Hintergrundmusik Stream -->
     <audio id="bg-music" src="https://stream.laut.fm/lofi" loop preload="none"></audio>
 
     <script>
@@ -331,7 +330,7 @@
             }
         }
 
-        // --- MODELLE LADEN ---
+        // --- MODELLE LADEN (LINKS INTEGRATION) ---
         function loadCreature(type, objPath, texturePath, scaleTarget) {
             textureLoader.load(texturePath, (texture) => {
                 texture.encoding = THREE.sRGBEncoding;
@@ -364,10 +363,14 @@
             });
         }
 
-        loadCreature('axolotl', 'Axolotl.obj', 'Axolotl.png', 4.0);
-        loadCreature('tardigrade', 'Tardigrade.obj', 'Tardigrade.png', 2.5);
+        // Echte MediaFire-Direktlinks eingebunden
+        const axolotlUrl = 'https://download1323.mediafire.com/3roiqmav438gkfzkkHQdt3EAfXaDkDZkhf7Pla3wqGlfw_WSzBi-Y-2tojPNMjO_3tDGHTuaEx7fUUinre2h2bs0t9zxchOT0FEi8CGkNE1lm6a_itAkF0hFbpiUlZjqmfzqha3clcFsBeAqXHF1MEy2zjg2gd3Z95sg6q4Ppg/72ah4uat5crnxhn/Axolotl.obj';
+        const tardigradeUrl = 'https://download938.mediafire.com/gtdbcpucucxgC5pt5BLfIz4aG1HsT4xw-fAbGIGAdXMkdGl276jrza48Jq8kjk6wCFW9SJu0KwUlwG1qe7nNVCWNgyWqgIqwy9OIP9Nb4psW869XLeIgXhSgPfkMPbXiSGcHqhXPUfp_HhLF3aCvTRfEJCgiJ7QbponjZLUXBw/0t7mhzpjzuznkhh/Tardigrade.obj';
 
-        // --- MEHRERE ALGEN ERAUGEN ---
+        loadCreature('axolotl', axolotlUrl, 'Axolotl.png', 4.0);
+        loadCreature('tardigrade', tardigradeUrl, 'Tardigrade.png', 2.5);
+
+        // --- MEHRERE ALGEN ERZEUGEN ---
         const planeGeo = new THREE.PlaneGeometry(100, 100);
         const planeMat = new THREE.MeshBasicMaterial({ visible: false });
         const interactionPlane = new THREE.Mesh(planeGeo, planeMat);
