@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Slime Mould Simulation</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script>
+    const OPC = {
+      button: function(id, label) {
+        window.addEventListener('DOMContentLoaded', () => {
+          let btn = document.createElement('button');
+          btn.innerText = label;
+          btn.onclick = () => { if (typeof buttonPressed === 'function') buttonPressed(); };
+          document.body.appendChild(btn);
+        });
+      }
+    };
+  </script>
+</head>
+<body style="background: #000; margin: 0; display: flex; flex-direction: column; align-items: center;">
+
+  <script>
+    // Inspired by Jason
+    // https://softologyblog.wordpress.com/2019/04/11/physarum-simulations/
+
+    OPC.button("btoButton", "back to origin");
+    
+    // Gelber Schleimpilz auf dunkel
+    const agentColor = new Uint8Array([255, 255, 0]); 
+    const agentsNum = 1000;
+    const sensorOffset = 10;
+    const sensorAngle = Math.PI / 7;
+    const turnAngle = Math.PI / 5;
+    let agents;
+
+    function setup() {
+      createCanvas(720, 720);
+      pixelDensity(1);
+      background(0);
+      agents = new Agents();
+    }
+
+    function buttonPressed() {
+      background(0);
+      agents = new Agents();
+    }
+
+    function draw() {
+      // Dunkler Trail-Fade statt weiß
+      background(0, 10);
+
+      stroke("blue");
+      strokeWeight(3);
+      mouseIsPressed && line(pmouseX, pmouseY, mouseX, mouseY);
+
+      loadPixels();
+      for (let i = 10; i--; ) {
+        agents.update();
+      }
+      updatePixels();
+    }
+
+    class Agent {
+      constructor() {
+        this.x = width / 2;
+        this.y = height / 2;
+        this.dir = random(TWO_PI);
+      }
+
+      updateDirection() {
+        const right = this.sense(+sensorAngle);
+        const center = this.sense(0);
+        const left = this.sense(-sensorAngle);
+
+        // Sucht nach der höchsten Intensität (max statt min), da der Spurtrail jetzt hell auf dunkel ist
+        const threeWays = [left, center + 1, right];
+        const maxIndex = threeWays.indexOf(max(...threeWays));
+        this.dir += turnAngle * (maxIndex - 1);
+      }
+      
+      sense(dirOffset) {
+        const angle = this.dir + dirOffset;
+        let x = floor(this.x + sensorOffset * cos(angle));
+        let y = floor(this.y + sensorOffset * sin(angle));
+        x = (x + width) % width;
+        y = (y + height) % height;
+
+        const index = (x + y * width) * 4;
+        return pixels[index];
+      }
+      
+      updatePosition() {
+        this.x += cos(this.dir);
+        this.y += sin(this.dir);
+        this.x = (this.x + width) % width;
+        this.y = (this.y + height) % height;
+
+        const index = floor(this.x) + floor(this.y) * width;
+        pixels.set(agentColor, index * 4);
+      }
+    }
+
+    class Agents {
+      constructor() {
+        this.agents = Array(agentsNum)
+          .fill()
+          .map((e) => new Agent());
+      }
+      update() {
+        this.agents.forEach((e) => e.updateDirection());
+        this.agents.forEach((e) => e.updatePosition());
+      }
+    }
+  </script>
+</body>
+</html>
