@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Video Feed</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body { background-color: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        
+        .app-container { width: 100%; max-width: 400px; height: 100%; max-height: 840px; background: #000; position: relative; display: flex; flex-direction: column; overflow: hidden; }
+        @media (min-width: 401px) { .app-container { border-radius: 20px; border: 2px solid #222; } }
+        
+        #feed { flex: 1; overflow-y: scroll; scroll-snap-type: y mandatory; position: relative; scrollbar-width: none; }
+        #feed::-webkit-scrollbar { display: none; }
+        
+        .video-card { width: 100%; height: 100%; scroll-snap-align: start; scroll-snap-stop: always; position: relative; background: #000; display: flex; justify-content: center; align-items: center; }
+        .video-card video { width: 100%; height: 100%; object-fit: cover; cursor: pointer; }
+        
+        .video-info { position: absolute; bottom: 30px; left: 15px; right: 80px; z-index: 10; text-shadow: 0 1px 4px rgba(0,0,0,0.8); pointer-events: none; }
+        .tags { color: #00f2fe; font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; }
+        
+        .action-sidebar { position: absolute; right: 15px; bottom: 80px; z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        .action-btn { background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(5px); border: none; color: white; font-size: 1.4rem; width: 48px; height: 48px; border-radius: 50%; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: transform 0.1s; }
+        .action-btn:active { transform: scale(0.85); }
+        .action-btn.liked { color: #ff3b30; background: rgba(255, 59, 48, 0.2); }
+
+        /* Floating Heart Animation */
+        .floating-heart { position: absolute; font-size: 4rem; z-index: 25; pointer-events: none; animation: popUp 0.8s ease-out forwards; transform: translate(-50%, -50%) scale(0); }
+        @keyframes popUp {
+            0% { transform: translate(-50%, -50%) scale(0) rotate(-20deg); opacity: 0; }
+            50% { transform: translate(-50%, -50%) scale(1.2) rotate(10deg); opacity: 1; }
+            100% { transform: translate(-50%, -80px) scale(1) rotate(0deg); opacity: 0; }
+        }
+
+        .nav-bar { height: 60px; background: #0f0f0f; display: flex; justify-content: space-around; align-items: center; border-top: 1px solid #1a1a1a; z-index: 30; }
+        .nav-btn { background: none; border: none; color: #777; font-size: 0.95rem; cursor: pointer; font-weight: 600; transition: color 0.2s; }
+        .nav-btn.active { color: #fff; }
+
+        #upload-view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #121212; z-index: 40; display: none; flex-direction: column; padding: 25px; justify-content: center; gap: 16px; }
+        #upload-view h2 { font-size: 1.4rem; text-align: center; margin-bottom: 5px; }
+        #upload-view input, #upload-view button { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid #333; background: #1a1a1a; color: white; font-size: 1rem; outline: none; }
+        #upload-view button { background: #00f2fe; color: #000; font-weight: 700; cursor: pointer; border: none; }
+        .close-upload { background: #2a2a2a !important; color: #fff !important; }
+        
+        .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 50; flex-direction: column; gap: 12px; font-weight: 500; text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- Feed -->
+        <div id="feed"></div>
+
+        <!-- Upload Ansicht -->
+        <div id="upload-view">
+            <h2>Video hochladen</h2>
+            <p style="font-size: 0.85rem; color: #888; text-align: center;">Teile dein Video mit der Community.</p>
+            <input type="file" id="videoFile" accept="video/mp4">
+            <input type="text" id="videoTags" placeholder="Tags (z.B. funny, gaming)">
+            <button onclick="handleUploadProcess()">Hochladen</button>
+            <button class="close-upload" onclick="toggleUpload(false)">Abbrechen</button>
+        </div>
+
+        <!-- Lade- / Moderations-Screen -->
+        <div class="loading-overlay" id="loadingOverlay">
+            <p id="loadingText">Lade Video hoch...</p>
+        </div>
+
+        <!-- Untere Navigation -->
+        <div class="nav-bar">
+            <button class="nav-btn active" onclick="toggleUpload(false)">Feed</button>
+            <button class="nav-btn" onclick="toggleUpload(true)">+ Upload</button>
+        </div>
+    </div>
+
+    <script>
+        const GITHUB_USER = "musetron";
+        const GITHUB_REPO = "musetron.github.io"; 
+        const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1541893729152143390/4rOTD38WurR5JzqLGVm8OqL2DwlJT9G5nuwvsvzC9ArvNovwkcf9bUM0vxg6MQb3i9zz";
+        
+        let videos = [];
+        let likedTags = JSON.parse(localStorage.getItem('likedTags')) || {};
+
+        window.onload = () => loadVideosFromGitHub();
+
+        async function loadVideosFromGitHub() {
+            const feed = document.getElementById('feed');
+            feed.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100%;color:#888;text-align:center;padding:30px;">Lade Videos...</div>';
+
+            try {
+                const apiUrl = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/video`;
+                
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error("Fehler beim Laden");
+
+                const files = await response.json();
+
+                const mp4Files = files.filter(file => file.name.toLowerCase().endsWith('.mp4') && file.type === 'file');
+
+                videos = mp4Files.map((file, index) => {
+                    const cleanName = file.name.replace(/\.mp4$/i, '').replace(/[-_]/g, ' ');
+                    const tags = cleanName.split(' ').filter(t => t.length > 0);
+
+                    return {
+                        id: 'gh_' + index,
+                        url: file.download_url,
+                        tags: tags.length > 0 ? tags : ['video'],
+                        liked: false
+                    };
+                });
+
+                renderFeed();
+            } catch (error) {
+                console.error(error);
+                feed.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100%;color:#ff3b30;text-align:center;padding:30px;">Keine Videos gefunden.</div>';
+            }
+        }
+
+        function renderFeed() {
+            const feed = document.getElementById('feed');
+            feed.innerHTML = '';
+
+            if (videos.length === 0) {
+                feed.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100%;color:#666;text-align:center;padding:30px;">Noch keine Videos vorhanden.</div>';
+                return;
+            }
+
+            videos.sort((a, b) => {
+                let scoreA = a.tags.reduce((sum, tag) => sum + (likedTags[tag] || 0), 0);
+                let scoreB = b.tags.reduce((sum, tag) => sum + (likedTags[tag] || 0), 0);
+                return scoreB - scoreA;
+            });
+
+            videos.forEach((video) => {
+                const card = document.createElement('div');
+                card.className = 'video-card';
+                card.innerHTML = `
+                    <video src="${video.url}" loop playsinline preload="metadata"></video>
+                    <div class="video-info">
+                        <div class="tags">${video.tags.map(t => '#' + t).join(' ')}</div>
+                    </div>
+                    <div class="action-sidebar">
+                        <button class="action-btn ${video.liked ? 'liked' : ''}" onclick="likeVideo('${video.id}', this)">❤️</button>
+                    </div>
+                `;
+
+                const videoEl = card.querySelector('video');
+
+                videoEl.addEventListener('click', () => {
+                    if (videoEl.paused) videoEl.play();
+                    else videoEl.pause();
+                });
+
+                let lastTap = 0;
+                card.addEventListener('touchend', (e) => handleDoubleTap(e, video.id, card));
+                card.addEventListener('click', (e) => {
+                    let currentTime = new Date().getTime();
+                    let tapLength = currentTime - lastTap;
+                    if (tapLength < 300 && tapLength > 0) {
+                        triggerLikeAnimation(e, video.id, card);
+                    }
+                    lastTap = currentTime;
+                });
+
+                feed.appendChild(card);
+            });
+
+            setupObserver();
+        }
+
+        function setupObserver() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    const video = entry.target.querySelector('video');
+                    if (video) {
+                        if (entry.isIntersecting) {
+                            video.currentTime = 0;
+                            video.play().catch(() => {});
+                        } else {
+                            video.pause();
+                            video.currentTime = 0;
+                        }
+                    }
+                });
+            }, { threshold: 0.65 });
+
+            document.querySelectorAll('.video-card').forEach(card => observer.observe(card));
+        }
+
+        function triggerLikeAnimation(e, id, card) {
+            const btn = card.querySelector('.action-btn');
+            if (!btn.classList.contains('liked')) {
+                likeVideo(id, btn);
+            }
+            
+            const heart = document.createElement('div');
+            heart.className = 'floating-heart';
+            heart.innerHTML = '❤️';
+            
+            const rect = card.getBoundingClientRect();
+            const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+            const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
+            
+            heart.style.left = `${x}px`;
+            heart.style.top = `${y}px`;
+            card.appendChild(heart);
+            
+            setTimeout(() => heart.remove(), 800);
+        }
+
+        let lastTouchTime = 0;
+        function handleDoubleTap(e, id, card) {
+            let currentTime = new Date().getTime();
+            let tapLength = currentTime - lastTouchTime;
+            if (tapLength < 300 && tapLength > 0) {
+                triggerLikeAnimation(e, id, card);
+                e.preventDefault();
+            }
+            lastTouchTime = currentTime;
+        }
+
+        function likeVideo(id, btn) {
+            btn.classList.toggle('liked');
+            const video = videos.find(v => v.id === id);
+            if (video) {
+                video.liked = btn.classList.contains('liked');
+                video.tags.forEach(tag => {
+                    if (!likedTags[tag]) likedTags[tag] = 0;
+                    likedTags[tag] += video.liked ? 2 : -2;
+                });
+                localStorage.setItem('likedTags', JSON.stringify(likedTags));
+            }
+        }
+
+        async function handleUploadProcess() {
+            const fileInput = document.getElementById('videoFile');
+            const tagsInput = document.getElementById('videoTags');
+            const loading = document.getElementById('loadingOverlay');
+            const loadingText = document.getElementById('loadingText');
+
+            if (fileInput.files.length === 0) {
+                alert("Bitte wähle eine MP4-Datei aus!");
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const MAX_SIZE = 50 * 1024 * 1024; // 50MB Limit
+            if (file.size > MAX_SIZE) {
+                alert("Das Video ist zu groß. Bitte wähle eine kleinere Datei!");
+                return;
+            }
+
+            const tagsText = tagsInput.value.trim() || "video";
+
+            loading.style.display = 'flex';
+            loadingText.innerText = "Lade Video hoch...";
+
+            try {
+                // Daten für den Discord Webhook vorbereiten
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('content', `Neues Video hochgeladen! Tags: #${tagsText.replace(/,/g, ' #')}`);
+
+                // Sende das Video an deinen Discord-Webhook
+                const response = await fetch(DISCORD_WEBHOOK_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error("Upload fehlgeschlagen");
+
+                loadingText.innerText = "Video wird moderiert...";
+                
+                setTimeout(() => {
+                    loading.style.display = 'none';
+                    alert("Upload erfolgreich! Das Video wird nach der Prüfung im Feed angezeigt.");
+
+                    fileInput.value = '';
+                    tagsInput.value = '';
+                    toggleUpload(false);
+                }, 2000);
+
+            } catch (error) {
+                console.error(error);
+                loading.style.display = 'none';
+                alert("Beim Hochladen ist ein Fehler aufgetreten. Bitte versuche es später noch einmal.");
+            }
+        }
+
+        function toggleUpload(show) {
+            document.getElementById('upload-view').style.display = show ? 'flex' : 'none';
+        }
+    </script>
+</body>
+</html>
