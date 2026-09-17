@@ -115,21 +115,38 @@ label {
 </div>
 
 <script>
-  // Audio-Context initialisieren beim Klick
   let audioCtx = null;
+  let engineOscillator = null;
+  let engineGain = null;
 
-  function initMotionSensors() {
-    // Audio / Web Audio Kontext starten
+  // Start-Button für Audio-Kontext & Sensoren
+  document.getElementById('unlockAudio').addEventListener('click', () => {
+    initAudio();
+    initMotionSensors();
+    document.getElementById('unlockAudio').style.display = 'none';
+  });
+
+  function initAudio() {
     try {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
-    } catch(e) {
-      console.log("AudioContext nicht unterstützt");
-    }
+      
+      // Motorensound-Oszillator erstellen (Sägezahn klingt nach Motor)
+      engineOscillator = audioCtx.createOscillator();
+      engineOscillator.type = 'sawtooth';
+      engineOscillator.frequency.setValueAtTime(60, audioCtx.currentTime);
 
-    // Bewegungssensoren freigeben (iOS & Android)
+      engineGain = audioCtx.createGain();
+      engineGain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+
+      engineOscillator.connect(engineGain);
+      engineGain.connect(audioCtx.destination);
+      engineOscillator.start();
+    } catch(e) {
+      console.log("Audio konnte nicht gestartet werden", e);
+    }
+  }
+
+  function initMotionSensors() {
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
       DeviceMotionEvent.requestPermission().then(response => {
         if (response === 'granted') {
@@ -139,37 +156,25 @@ label {
     } else {
       window.addEventListener('devicemotion', handleMotion);
     }
-    
-    const unlockOverlay = document.getElementById('unlockAudio');
-    if (unlockOverlay) {
-      unlockOverlay.style.display = 'none';
-    }
   }
-
-  document.getElementById('unlockAudio').addEventListener('click', initMotionSensors);
 
   let smoothedGas = 0;
   let smoothedBrake = 0;
 
   function handleMotion(event) {
-    // Wir nutzen die Neigung via Beta (Neigung vor/zurück) oder Beschleunigung
-    // beta: -180 bis 180 Grad (Neigung des Handys nach vorne/hinten)
     let beta = event.accelerationIncludingGravity ? event.accelerationIncludingGravity.y : 0;
     
     let targetGas = 0;
     let targetBrake = 0;
 
-    // Da man beim Laufen stark wackelt, nehmen wir einen etwas größeren Toleranzbereich
-    // Neigst du das Handy nach vorne (Gas):
+    // Filter-Logik fürs Laufen / Neigen
     if (beta > 2.0) {
       targetGas = Math.min((beta - 2.0) / 7.0, 1.0);
-    } 
-    // Neigst du es nach hinten (Bremse):
-    else if (beta < -2.0) {
+    } else if (beta < -2.0) {
       targetBrake = Math.min((Math.abs(beta) - 2.0) / 7.0, 1.0);
     }
 
-    // Glättung (Filter gegen das Herumspringen beim schnellen Bewegen/Laufen)
+    // Sanfte Glättung gegen das Herumspringen
     smoothedGas += (targetGas - smoothedGas) * 0.3;
     smoothedBrake += (targetBrake - smoothedBrake) * 0.3;
 
@@ -182,18 +187,29 @@ label {
     gasSlider.dispatchEvent(new Event('input'));
     brakeSlider.dispatchEvent(new Event('input'));
 
-    // Tachonadel direkt mitsteuern (-90 Grad = 0, 90 Grad = Vollgas)
+    // Tachonadel aktualisieren
     updateTacho(smoothedGas - smoothedBrake);
+
+    // Motorsound anpassen
+    updateEngineSound(smoothedGas, smoothedBrake);
   }
 
   function updateTacho(value) {
-    // value von -1 (Vollbremsung) bis +1 (Vollgas)
     const needle = document.getElementById('needle');
     if (needle) {
-      // 0 bis 180 Grad Drehung für den Tacho
       let angle = -90 + (value * 90); 
       needle.setAttribute('transform', `rotate(${angle} 200 200)`);
     }
+  }
+
+  function updateEngineSound(gas, brake) {
+    if (!audioCtx || !engineOscillator) return;
+    
+    // Frequenz steigt mit Gas, sinkt bei Bremse
+    let baseFreq = 50 + (gas * 250) - (brake * 30);
+    if (baseFreq < 40) baseFreq = 40;
+    
+    engineOscillator.frequency.setTargetAtTime(baseFreq, audioCtx.currentTime, 0.05);
   }
 </script>
 </body>
