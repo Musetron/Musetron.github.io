@@ -115,7 +115,21 @@ label {
 </div>
 
 <script>
+  // Audio-Context initialisieren beim Klick
+  let audioCtx = null;
+
   function initMotionSensors() {
+    // Audio / Web Audio Kontext starten
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    } catch(e) {
+      console.log("AudioContext nicht unterstützt");
+    }
+
+    // Bewegungssensoren freigeben (iOS & Android)
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
       DeviceMotionEvent.requestPermission().then(response => {
         if (response === 'granted') {
@@ -134,27 +148,52 @@ label {
 
   document.getElementById('unlockAudio').addEventListener('click', initMotionSensors);
 
+  let smoothedGas = 0;
+  let smoothedBrake = 0;
+
   function handleMotion(event) {
-    let accel = event.accelerationIncludingGravity.y || 0;
+    // Wir nutzen die Neigung via Beta (Neigung vor/zurück) oder Beschleunigung
+    // beta: -180 bis 180 Grad (Neigung des Handys nach vorne/hinten)
+    let beta = event.accelerationIncludingGravity ? event.accelerationIncludingGravity.y : 0;
+    
+    let targetGas = 0;
+    let targetBrake = 0;
+
+    // Da man beim Laufen stark wackelt, nehmen wir einen etwas größeren Toleranzbereich
+    // Neigst du das Handy nach vorne (Gas):
+    if (beta > 2.0) {
+      targetGas = Math.min((beta - 2.0) / 7.0, 1.0);
+    } 
+    // Neigst du es nach hinten (Bremse):
+    else if (beta < -2.0) {
+      targetBrake = Math.min((Math.abs(beta) - 2.0) / 7.0, 1.0);
+    }
+
+    // Glättung (Filter gegen das Herumspringen beim schnellen Bewegen/Laufen)
+    smoothedGas += (targetGas - smoothedGas) * 0.3;
+    smoothedBrake += (targetBrake - smoothedBrake) * 0.3;
 
     const gasSlider = document.getElementById('gasSlider');
     const brakeSlider = document.getElementById('brakeSlider');
 
-    if (accel > 1.0) {
-      let gasValue = Math.min((accel - 1) / 9.81, 1);
-      gasSlider.value = gasValue;
-      brakeSlider.value = 0;
-    } else if (accel < -1.0) {
-      let brakeValue = Math.min((Math.abs(accel) - 1) / 9.81, 1);
-      brakeSlider.value = brakeValue;
-      gasSlider.value = 0;
-    } else {
-      gasSlider.value = 0;
-      brakeSlider.value = 0;
-    }
+    gasSlider.value = smoothedGas;
+    brakeSlider.value = smoothedBrake;
 
     gasSlider.dispatchEvent(new Event('input'));
     brakeSlider.dispatchEvent(new Event('input'));
+
+    // Tachonadel direkt mitsteuern (-90 Grad = 0, 90 Grad = Vollgas)
+    updateTacho(smoothedGas - smoothedBrake);
+  }
+
+  function updateTacho(value) {
+    // value von -1 (Vollbremsung) bis +1 (Vollgas)
+    const needle = document.getElementById('needle');
+    if (needle) {
+      // 0 bis 180 Grad Drehung für den Tacho
+      let angle = -90 + (value * 90); 
+      needle.setAttribute('transform', `rotate(${angle} 200 200)`);
+    }
   }
 </script>
 </body>
