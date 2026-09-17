@@ -1,262 +1,161 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Serielles Rauschen (-9 Semitones) + Auto-Gas & Bremse</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f2f5;
-        }
-        .card {
-            background: white;
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            text-align: center;
-            max-width: 400px;
-            width: 100%;
-        }
-        button {
-            background-color: #28a745;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.2s;
-            width: 100%;
-        }
-        button:hover {
-            background-color: #218838;
-        }
-        button.stop {
-            background-color: #dc3545;
-        }
-        button.stop:hover {
-            background-color: #a71d2a;
-        }
-        p {
-            color: #666;
-            margin-bottom: 10px;
-        }
-        .info {
-            font-size: 14px;
-            color: #444;
-            margin-bottom: 10px;
-            background: #f8f9fa;
-            padding: 8px;
-            border-radius: 4px;
-        }
-        #freqDisplay, #vibDisplay, #volDisplay, #brakeDisplay {
-            font-weight: bold;
-            color: #007bff;
-        }
-        #brakeDisplay {
-            color: #dc3545;
-        }
-    </style>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<style>
+@charset "utf-8";
+html, body {
+  margin: 0px;
+  padding: 0px;
+  width: 100%;
+  height: 100%;
+  background-color: rgb(18, 18, 18);
+  color: rgb(170, 170, 170);
+  font-family: Arial, sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+h1 {
+  font-size: 2em;
+  color: rgb(170, 170, 170);
+  margin: 0px;
+  text-align: center;
+}
+.pedal-container {
+  display: flex;
+  justify-content: space-between;
+  width: 400px;
+  margin-top: 40px;
+}
+.slider-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+input[type="range"].vertical {
+  appearance: slider-vertical;
+  width: 40px;
+  height: 150px;
+  background: rgb(51, 51, 51);
+  border-radius: 10px;
+  accent-color: rgb(170, 170, 170);
+  cursor: grab;
+  margin-bottom: 10px;
+}
+label {
+  color: rgb(170, 170, 170);
+}
+.tacho-container {
+  width: 400px;
+  height: 200px;
+  position: relative;
+  margin-top: 20px;
+}
+.tacho-bg {
+  position: absolute;
+  bottom: 0px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  height: auto;
+  z-index: 1;
+}
+.tacho {
+  position: absolute;
+  bottom: 0px;
+  left: 0px;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+#needle {
+  stroke: rgb(255, 0, 0);
+}
+#needle circle {
+  fill: rgb(255, 0, 0);
+}
+#unlockAudio {
+  position: fixed;
+  inset: 0px;
+  background: rgb(0, 0, 0);
+  color: white;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  cursor: pointer;
+}
+</style>
+<title>Racing Car</title>
 </head>
 <body>
-
-    <div class="card">
-        <h2>Auto-Gas & Bremse Klangfeld</h2>
-        <p>Zentrum: <span id="freqDisplay">1516</span> Hz | Aktuell: <span id="currentFreq">1516</span> Hz</p>
-        <div class="info">Vibrato-Geschwindigkeit: <span id="vibDisplay">12.0</span> Hz</div>
-        <div class="info">Automatisches Gas (Lautstärke): <span id="volDisplay">0.00</span></div>
-        <div class="info">Automatische Bremse (Dämpfung): <span id="brakeDisplay">1.00</span></div>
-        <button id="toggleBtn" onclick="toggleSound()">Sound einschalten</button>
+<div id="unlockAudio">Start</div>
+<h1>Racing Car</h1>
+<div class="tacho-container">
+    <img src="https://i.ibb.co/7dc4fnhT/speedometer-PNG36.png" alt="Tacho" class="tacho-bg">
+    <svg class="tacho" viewBox="0 0 400 200">
+        <line id="needle" x1="200" y1="200" x2="200" y2="40" stroke="#ff0000" stroke-width="6" stroke-linecap="round" transform="rotate(-90 200 200)"></line>
+        <circle cx="200" cy="200" r="8" fill="#ff0000"></circle>
+    </svg>
+</div>
+<div class="pedal-container" id="sliderUI">
+    <div class="slider-container">
+        <input type="range" id="brakeSlider" class="vertical" min="0" max="1" step="0.001" value="0">
+        <label>Brake</label>
     </div>
+    <div class="slider-container">
+        <input type="range" id="gasSlider" class="vertical" min="0" max="1" step="0.001" value="0">
+        <label>Gas</label>
+    </div>
+</div>
 
-    <script>
-        let audioCtx = null;
-        let noiseSource = null;
-        let biquadFilter = null;
-        let noiseGain = null;
-        
-        let oscillator = null;
-        let sineGain = null;
-
-        let vibratoLFO = null;
-        let vibratoGain = null;
-        
-        let masterGain = null;
-        let isPlaying = false;
-        let modulationInterval = null;
-
-        // -9 Semitones Transponierungsfaktor: 2^(-9/12) ≈ 0.5946
-        const transpositionFactor = Math.pow(2, -9 / 12);
-        const baseFreq = Math.round(2550 * transpositionFactor); // ca. 1516 Hz
-
-        // Funktion für die Bewegungserfassung (Auto-Gas & Bremse)
-        function handleMotion(event) {
-            if (!isPlaying || !masterGain || !audioCtx || !biquadFilter) return;
-
-            // Beschleunigung auf der X-Achse (oder kombiniert)
-            const accX = event.acceleration.x || event.accelerationIncludingGravity.x || 0;
-            const absAcc = Math.abs(accX);
-
-            // Totzone, um leichtes Zittern zu ignorieren
-            const deadzone = 0.5;
-            let motionIntensity = 0;
-
-            if (absAcc > deadzone) {
-                motionIntensity = Math.min(Math.max((absAcc - deadzone) / 4.0, 0), 1.0);
-            }
-
-            // --- AUTOMATISCHES GAS ---
-            // Je schneller die Bewegung, desto höher das Ziel-Gain (Lautstärke)
-            const targetVol = motionIntensity;
-            masterGain.gain.setTargetAtTime(targetVol, audioCtx.currentTime, 0.08);
-
-            // --- AUTOMATISCHE BREMSE ---
-            // Wenn keine Bewegung da ist (motionIntensity ~ 0), greift die Bremse (Q-Faktor sinkt, Sound wird gedämpft/breiter).
-            // Bei starker Bewegung öffnet die Bremse (Q-Faktor steigt, Sound wird scharf und prägnant).
-            const targetQ = 4 + (motionIntensity * 14); // Q-Faktor skaliert von 4 (bremst/gedämpft) bis 18 (volles Gas)
-            biquadFilter.Q.setTargetAtTime(targetQ, audioCtx.currentTime, 0.1);
-
-            // UI aktualisieren
-            document.getElementById('volDisplay').textContent = targetVol.toFixed(2);
-            document.getElementById('brakeDisplay').textContent = (1.0 - motionIntensity).toFixed(2);
+<script>
+  function initMotionSensors() {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().then(response => {
+        if (response === 'granted') {
+          window.addEventListener('devicemotion', handleMotion);
         }
+      }).catch(console.error);
+    } else {
+      window.addEventListener('devicemotion', handleMotion);
+    }
+    
+    const unlockOverlay = document.getElementById('unlockAudio');
+    if (unlockOverlay) {
+      unlockOverlay.style.display = 'none';
+    }
+  }
 
-        async function toggleSound() {
-            const btn = document.getElementById('toggleBtn');
-            const currentFreqDisplay = document.getElementById('currentFreq');
-            const vibDisplay = document.getElementById('vibDisplay');
-            const volDisplay = document.getElementById('volDisplay');
-            const brakeDisplay = document.getElementById('brakeDisplay');
+  document.getElementById('unlockAudio').addEventListener('click', initMotionSensors);
 
-            document.getElementById('freqDisplay').textContent = baseFreq;
+  function handleMotion(event) {
+    let accel = event.accelerationIncludingGravity.y || 0;
 
-            if (!isPlaying) {
-                if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-                    try {
-                        const response = await DeviceMotionEvent.requestPermission();
-                        if (response !== 'granted') {
-                            alert("Zugriff auf Bewegungssensoren wurde verweigert!");
-                            return;
-                        }
-                    } catch (e) {
-                        console.error(e);
-                    }
-                }
+    const gasSlider = document.getElementById('gasSlider');
+    const brakeSlider = document.getElementById('brakeSlider');
 
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (accel > 1.0) {
+      let gasValue = Math.min((accel - 1) / 9.81, 1);
+      gasSlider.value = gasValue;
+      brakeSlider.value = 0;
+    } else if (accel < -1.0) {
+      let brakeValue = Math.min((Math.abs(accel) - 1) / 9.81, 1);
+      brakeSlider.value = brakeValue;
+      gasSlider.value = 0;
+    } else {
+      gasSlider.value = 0;
+      brakeSlider.value = 0;
+    }
 
-                masterGain = audioCtx.createGain();
-                masterGain.gain.setValueAtTime(0, audioCtx.currentTime);
-
-                // --- 1. Gefiltertes Rauschen ---
-                const bufferSize = audioCtx.sampleRate * 2;
-                const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-                const output = noiseBuffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    output[i] = Math.random() * 2 - 1;
-                }
-
-                noiseSource = audioCtx.createBufferSource();
-                noiseSource.buffer = noiseBuffer;
-                noiseSource.loop = true;
-
-                biquadFilter = audioCtx.createBiquadFilter();
-                biquadFilter.type = 'bandpass';
-                biquadFilter.frequency.setValueAtTime(baseFreq, audioCtx.currentTime);
-                biquadFilter.Q.setValueAtTime(4, audioCtx.currentTime); // Startet im abgebremsten Zustand
-
-                noiseGain = audioCtx.createGain();
-                noiseGain.gain.setValueAtTime(0.5, audioCtx.currentTime);
-
-                noiseSource.connect(biquadFilter);
-                biquadFilter.connect(noiseGain);
-                noiseGain.connect(masterGain);
-
-                // --- 2. Präsenter Sinuston (transponiert) ---
-                oscillator = audioCtx.createOscillator();
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(baseFreq, audioCtx.currentTime);
-
-                sineGain = audioCtx.createGain();
-                sineGain.gain.setValueAtTime(0.08, audioCtx.currentTime); 
-
-                oscillator.connect(sineGain);
-                sineGain.connect(masterGain);
-
-                // --- 3. Präsentes Vibrato (LFO) ---
-                vibratoLFO = audioCtx.createOscillator();
-                vibratoLFO.type = 'sine';
-                vibratoLFO.frequency.setValueAtTime(12, audioCtx.currentTime);
-
-                vibratoGain = audioCtx.createGain();
-                vibratoGain.gain.setValueAtTime(35 * transpositionFactor, audioCtx.currentTime); 
-
-                vibratoLFO.connect(vibratoGain);
-                vibratoGain.connect(oscillator.frequency);
-
-                vibratoLFO.start();
-
-                // --- Starten ---
-                masterGain.connect(audioCtx.destination);
-                noiseSource.start();
-                oscillator.start();
-                isPlaying = true;
-
-                window.addEventListener('devicemotion', handleMotion);
-
-                btn.textContent = 'Sound ausschalten';
-                btn.classList.add('stop');
-
-                // --- 4. Modulation ---
-                modulationInterval = setInterval(() => {
-                    if (!audioCtx) return;
-
-                    const randomOffset = (Math.random() - 0.5) * (120 * transpositionFactor);
-                    const targetFreq = Math.round(baseFreq + randomOffset);
-                    const targetVibRate = Math.random() * 5 + 10; 
-
-                    const transitionTime = 0.3;
-                    biquadFilter.frequency.linearRampToValueAtTime(targetFreq, audioCtx.currentTime + transitionTime);
-                    oscillator.frequency.linearRampToValueAtTime(targetFreq, audioCtx.currentTime + transitionTime);
-                    vibratoLFO.frequency.linearRampToValueAtTime(targetVibRate, audioCtx.currentTime + transitionTime);
-
-                    currentFreqDisplay.textContent = targetFreq;
-                    vibDisplay.textContent = targetVibRate.toFixed(1);
-                }, 350);
-
-            } else {
-                window.removeEventListener('devicemotion', handleMotion);
-                clearInterval(modulationInterval);
-
-                masterGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.05);
-                
-                setTimeout(() => {
-                    noiseSource.stop();
-                    noiseSource.disconnect();
-                    oscillator.stop();
-                    oscillator.disconnect();
-                    vibratoLFO.stop();
-                    vibratoLFO.disconnect();
-                    audioCtx.close();
-                    audioCtx = null;
-                    isPlaying = false;
-                    btn.textContent = 'Sound einschalten';
-                    btn.classList.remove('stop');
-                    currentFreqDisplay.textContent = baseFreq;
-                    vibDisplay.textContent = '12.0';
-                    volDisplay.textContent = '0.00';
-                    brakeDisplay.textContent = '1.00';
-                }, 50);
-            }
-        }
-    </script>
-
+    gasSlider.dispatchEvent(new Event('input'));
+    brakeSlider.dispatchEvent(new Event('input'));
+  }
+</script>
 </body>
 </html>
