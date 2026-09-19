@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neural Network - Ultimate Mobile</title>
+    <title>Neural Network - Living Bug</title>
     <style>
         body {
             margin: 0;
-            background-color: #0b0f19;
+            background-color: #05070c;
             color: #ffffff;
             font-family: system-ui, -apple-system, sans-serif;
             overflow: hidden;
@@ -109,7 +109,7 @@
 <body>
 
     <header>
-        <h1>Neural Net</h1>
+        <h1>Neural Bug</h1>
         <div class="controls">
             <button id="toggle-learn-btn" class="active" onclick="toggleLearning()">Lernen</button>
             <button onclick="saveNetwork()">Speichern</button>
@@ -134,6 +134,13 @@
         const webcamPreview = document.getElementById('webcam-preview');
         const previewCtx = webcamPreview.getContext('2d', { willReadFrequently: true });
 
+        // Tier-Hintergrundbild laden
+        const bugImage = new Image();
+        bugImage.crossOrigin = "anonymous";
+        bugImage.src = "https://i.ibb.co/bTdMGgG/Add-Text-09-19-11-18-49.png";
+        let imageLoaded = false;
+        bugImage.onload = () => { imageLoaded = true; };
+
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight - 45;
@@ -149,7 +156,6 @@
         let camera_y = 0.0;
         let is_learning = true;
 
-        // Touch & Maus Tracking für Pan & Zoom
         const activePointers = new Map();
         let initialPinchDist = null;
         let initialZoom = zoom;
@@ -229,7 +235,6 @@
                 cameraActive = true;
                 document.getElementById('cam-status').innerText = "Kamera: Aktiv";
             } catch (err) {
-                console.warn("Kamera blockiert/nicht verfügbar:", err);
                 cameraActive = false;
                 document.getElementById('cam-status').innerText = "Kamera: Demo-Modus";
             }
@@ -253,7 +258,6 @@
                     }
                 }
             } else {
-                // Fallback-Animation falls keine Kamera erlaubt ist, damit sich trotzdem was bewegt
                 let t = Date.now() * 0.003;
                 for (let r = 0; r < 5; r++) {
                     for (let c = 0; c < 5; c++) {
@@ -261,7 +265,6 @@
                         bottom_grid[r][c][2] = Math.floor(Math.abs(Math.cos(t + r - c)) * 9);
                     }
                 }
-                // Zeichne Demo auf Vorschau
                 previewCtx.fillStyle = '#111';
                 previewCtx.fillRect(0, 0, 10, 5);
                 previewCtx.fillStyle = '#38bdf8';
@@ -380,7 +383,7 @@
             camera_y = 0.0;
         }
 
-        // --- STEUERUNG (TOUCH & MOUSE / PINCH-TO-ZOOM) ---
+        // Steuerung (Touch & Maus)
         canvas.addEventListener('pointerdown', e => {
             activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         });
@@ -390,9 +393,6 @@
             activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
             if (activePointers.size === 1) {
-                // Ein Finger / Maus: Verschieben (Pan)
-                const pointers = Array.from(activePointers.values());
-                // Wir nehmen die Bewegung über den Delta-Wert
                 const dx = e.movementX;
                 const dy = e.movementY;
                 if (dx !== undefined && dy !== undefined) {
@@ -400,7 +400,6 @@
                     camera_y -= dy / zoom;
                 }
             } else if (activePointers.size === 2) {
-                // Zwei Finger: Pinch-to-Zoom
                 const pointers = Array.from(activePointers.values());
                 const dist = Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
                 
@@ -432,7 +431,7 @@
             camera_y = (camera_y + (e.clientY - canvas.height / 2) / old_zoom) - (e.clientY - canvas.height / 2) / zoom;
         }, { passive: false });
 
-        // --- HAUPT-RENDERSCHLEIFE ---
+        // Haupt-Renderschleife
         function loop() {
             updateInputFromCamera();
 
@@ -456,6 +455,18 @@
 
             ctx.fillStyle = '#000000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // --- HINTERGRUND-TIER ZEICHNEN ---
+            if (imageLoaded) {
+                ctx.save();
+                ctx.globalAlpha = 0.22; // Dezent im Hintergrund (Wasserzeichen-Effekt)
+                // Wir zentrieren das Tier passend hinter das neuronale Netz
+                let bugWidth = 1400 * zoom;
+                let bugHeight = 1400 * zoom;
+                let bugScreenPos = worldToScreen(600, 0); // Position im Netzwerk
+                ctx.drawImage(bugImage, bugScreenPos.x - bugWidth / 2, bugScreenPos.y - bugHeight / 2, bugWidth, bugHeight);
+                ctx.restore();
+            }
 
             function drawWorldLine(p1, p2, color = '#3c0000', width = 1) {
                 const s1 = worldToScreen(p1[0], p1[1]);
@@ -500,76 +511,4 @@
             }
             all_vertical_layers.push(output_column);
 
-            for (let i = 0; i < all_vertical_layers.length - 1; i++) {
-                let curr_layer = all_vertical_layers[i];
-                let next_layer = all_vertical_layers[i+1];
-                for (let p1 of curr_layer) {
-                    for (let p2 of next_layer) {
-                        let key = JSON.stringify([[p1[0], p1[1], p1[2]], [p2[0], p2[1], p2[2]]]);
-                        if (active_paths.has(key)) drawWorldLine(p1, p2, '#00ff00', 2);
-                        else drawWorldLine(p1, p2, '#3c0000', 1);
-                    }
-                }
-            }
-
-            const fontSize = Math.max(8, Math.floor(RADIUS * 1.2 * zoom));
-            ctx.font = `${fontSize}px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-
-            function drawGridCircles(grid) {
-                for (let row of grid) {
-                    for (let [wx, wy, val] of row) {
-                        const s = worldToScreen(wx, wy);
-                        const scaled_radius = RADIUS * zoom;
-                        if (scaled_radius > 1) {
-                            ctx.beginPath();
-                            ctx.arc(s.x, s.y, scaled_radius, 0, Math.PI * 2);
-                            ctx.fillStyle = '#ffffff';
-                            ctx.fill();
-                            ctx.fillStyle = '#000000';
-                            ctx.fillText(val, s.x, s.y);
-                        }
-                    }
-                }
-            }
-
-            drawGridCircles(top_grid);
-            drawGridCircles(bottom_grid);
-            for (let [wx, wy, val] of right_column) {
-                const s = worldToScreen(wx, wy);
-                const scaled_radius = RADIUS * zoom;
-                if (scaled_radius > 1) {
-                    ctx.beginPath();
-                    ctx.arc(s.x, s.y, scaled_radius, 0, Math.PI * 2);
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fill();
-                    ctx.fillStyle = '#000000';
-                    ctx.fillText(val, s.x, s.y);
-                }
-            }
-            for (let block of hidden_blocks) drawGridCircles(block);
-            for (let [wx, wy, val] of output_column) {
-                const s = worldTest = worldToScreen(wx, wy); // Korrektur
-                const s_x = s ? s.x : 0;
-                const s_y = s ? s.y : 0;
-                // Einfach direkt zeichnen:
-                const sc = worldToScreen(wx, wy);
-                const scaled_radius = RADIUS * zoom;
-                if (scaled_radius > 1) {
-                    ctx.beginPath();
-                    ctx.arc(sc.x, sc.y, scaled_radius, 0, Math.PI * 2);
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fill();
-                    ctx.fillStyle = '#000000';
-                    ctx.fillText(val, sc.x, sc.y);
-                }
-            }
-
-            requestAnimationFrame(loop);
-        }
-
-        requestAnimationFrame(loop);
-    </script>
-</body>
-</html>
+            for (let 
