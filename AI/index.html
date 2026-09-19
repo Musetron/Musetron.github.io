@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neural Network - Ultimate Mobile</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #0b0f19;
+            color: #ffffff;
+            font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            touch-action: none;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        header {
+            background: #111827;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #1f2937;
+            z-index: 10;
+            font-size: 0.8rem;
+        }
+        h1 {
+            font-size: 0.85rem;
+            margin: 0;
+            color: #38bdf8;
+        }
+        .controls {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 5px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.7rem;
+        }
+        button.active {
+            background: #16a34a;
+        }
+        .main-container {
+            display: flex;
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background: #000000;
+            width: 100%;
+            height: 100%;
+        }
+        .sidebar {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(8px);
+            padding: 6px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-items: center;
+            z-index: 5;
+        }
+        #webcam-preview {
+            width: 90px;
+            height: 45px;
+            background: #000;
+            border-radius: 4px;
+            object-fit: cover;
+            border: 1px solid #374151;
+            transform: scaleX(-1);
+        }
+        .video-label {
+            font-size: 0.6rem;
+            color: #9ca3af;
+        }
+        #video-element {
+            display: none;
+        }
+        #status-bar {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            z-index: 5;
+            pointer-events: none;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Neural Net</h1>
+        <div class="controls">
+            <button id="toggle-learn-btn" class="active" onclick="toggleLearning()">Lernen</button>
+            <button onclick="saveNetwork()">Speichern</button>
+            <button onclick="resetCamera()">Reset</button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div id="status-bar">Lerne...</div>
+        <canvas id="netCanvas"></canvas>
+        <div class="sidebar">
+            <span class="video-label" id="cam-status">Kamera: Lädt...</span>
+            <video id="video-element" autoplay playsinline muted></video>
+            <canvas id="webcam-preview" width="10" height="5"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('netCanvas');
+        const ctx = canvas.getContext('2d');
+        const videoElement = document.getElementById('video-element');
+        const webcamPreview = document.getElementById('webcam-preview');
+        const previewCtx = webcamPreview.getContext('2d', { willReadFrequently: true });
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - 45;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        const RADIUS = 10;
+        const SPACING = 40;
+        
+        let zoom = 0.15; 
+        let camera_x = 800.0;
+        let camera_y = 0.0;
+        let is_learning = true;
+
+        // Touch & Maus Tracking für Pan & Zoom
+        const activePointers = new Map();
+        let initialPinchDist = null;
+        let initialZoom = zoom;
+
+        function worldToScreen(wx, wy) {
+            const sx = (wx - camera_x) * zoom + canvas.width / 2;
+            const sy = (wy - camera_y) * zoom + canvas.height / 2;
+            return { x: sx, y: sy };
+        }
+
+        function getGridPositions(startX, startY, rows, cols, randomVals = false) {
+            const positions = [];
+            for (let r = 0; r < rows; r++) {
+                const rowPos = [];
+                for (let c = 0; c < cols; c++) {
+                    const wx = startX + c * SPACING;
+                    const wy = startY + r * SPACING;
+                    const val = randomVals ? Math.floor(Math.random() * 10) : 0;
+                    rowPos.push([wx, wy, val]);
+                }
+                positions.push(rowPos);
+            }
+            return positions;
+        }
+
+        const grid_size = 4 * SPACING;
+        const top_start_x = -grid_size / 2 - 250;
+        const top_start_y = -220;
+        const bottom_start_y = 60;
+        const bottom_start_x = top_start_x;
+
+        const right_start_x = top_start_x + grid_size + 100;
+        const total_height_others = (bottom_start_y + grid_size) - top_start_y;
+        const height_10_circles = 9 * SPACING;
+        const right_start_y = top_start_y + (total_height_others - height_10_circles) / 2;
+
+        const top_grid = getGridPositions(top_start_x, top_start_y, 5, 5, false);
+        const bottom_grid = getGridPositions(bottom_start_x, bottom_start_y, 5, 5, false);
+
+        const right_column = [];
+        for (let i = 0; i < 10; i++) {
+            right_column.push([right_start_x, right_start_y + i * SPACING, i]);
+        }
+
+        const hidden_blocks = [];
+        const hidden_start_x = right_start_x + 180;
+        const hidden_block_width = 9 * SPACING;
+        const hidden_gap = 120;
+        const hidden_start_y = - (9 * SPACING) / 2;
+
+        for (let b = 0; b < 5; b++) {
+            const bx = hidden_start_x + b * (hidden_block_width + hidden_gap);
+            const by = hidden_start_y;
+            hidden_blocks.push(getGridPositions(bx, by, 10, 10, true));
+        }
+
+        const output_start_x = hidden_blocks[4][0][9][0] + 120;
+        const output_height = 5 * SPACING;
+        const last_block_center_y = hidden_start_y + (9 * SPACING) / 2;
+        const output_start_y = last_block_center_y - output_height / 2;
+
+        const output_labels = ["Y", "X", "Z", "-Y", "-X", "-Z"];
+        const output_column = [];
+        for (let i = 0; i < 6; i++) {
+            output_column.push([output_start_x, output_start_y + i * SPACING, output_labels[i]]);
+        }
+
+        let cameraActive = false;
+        async function initCamera() {
+            try {
+                const constraints = {
+                    video: { facingMode: { ideal: "environment" }, width: { ideal: 320 }, height: { ideal: 240 } }
+                };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoElement.srcObject = stream;
+                await videoElement.play();
+                cameraActive = true;
+                document.getElementById('cam-status').innerText = "Kamera: Aktiv";
+            } catch (err) {
+                console.warn("Kamera blockiert/nicht verfügbar:", err);
+                cameraActive = false;
+                document.getElementById('cam-status').innerText = "Kamera: Demo-Modus";
+            }
+        }
+        initCamera();
+
+        function updateInputFromCamera() {
+            if (cameraActive && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+                previewCtx.drawImage(videoElement, 0, 0, 10, 5);
+                const frameData = previewCtx.getImageData(0, 0, 10, 5).data;
+                
+                for (let r = 0; r < 5; r++) {
+                    for (let c = 0; c < 5; c++) {
+                        let idx = (r * 10 + c) * 4;
+                        let gray = (frameData[idx] + frameData[idx+1] + frameData[idx+2]) / 3;
+                        top_grid[r][c][2] = Math.floor((gray / 255.0) * 9);
+
+                        let idxBot = (r * 10 + (c + 5)) * 4;
+                        let grayBot = (frameData[idxBot] + frameData[idxBot+1] + frameData[idxBot+2]) / 3;
+                        bottom_grid[r][c][2] = Math.floor((grayBot / 255.0) * 9);
+                    }
+                }
+            } else {
+                // Fallback-Animation falls keine Kamera erlaubt ist, damit sich trotzdem was bewegt
+                let t = Date.now() * 0.003;
+                for (let r = 0; r < 5; r++) {
+                    for (let c = 0; c < 5; c++) {
+                        top_grid[r][c][2] = Math.floor(Math.abs(Math.sin(t + r + c)) * 9);
+                        bottom_grid[r][c][2] = Math.floor(Math.abs(Math.cos(t + r - c)) * 9);
+                    }
+                }
+                // Zeichne Demo auf Vorschau
+                previewCtx.fillStyle = '#111';
+                previewCtx.fillRect(0, 0, 10, 5);
+                previewCtx.fillStyle = '#38bdf8';
+                previewCtx.fillRect(Math.floor((Math.sin(t)+1)*4), 2, 2, 2);
+            }
+        }
+
+        function evaluateNetwork() {
+            let all_vertical_layers = [right_column];
+            for (let block of hidden_blocks) {
+                for (let c = 0; c < 10; c++) {
+                    let col_nodes = [];
+                    for (let r = 0; r < 10; r++) col_nodes.push(block[r][c]);
+                    all_vertical_layers.push(col_nodes);
+                }
+            }
+            all_vertical_layers.push(output_column);
+
+            let active_paths = new Set();
+            let top_right_col = [];
+            for (let r = 0; r < 5; r++) top_right_col.push(top_grid[r][4]);
+            let bottom_right_col = [];
+            for (let r = 0; r < 5; r++) bottom_right_col.push(bottom_grid[r][4]);
+            let start_nodes = top_right_col.concat(bottom_right_col);
+
+            let max_layer_reached = 0;
+            let reached_output_indices = new Set();
+
+            for (let start_node of start_nodes) {
+                let target_val = start_node[2];
+                let current_layer_nodes = [];
+                let local_initial_paths = [];
+
+                for (let r_node of right_column) {
+                    if (r_node[2] === target_val) {
+                        local_initial_paths.push(JSON.stringify([start_node, r_node]));
+                        if (!current_layer_nodes.includes(r_node)) current_layer_nodes.push(r_node);
+                    }
+                }
+
+                if (current_layer_nodes.length === 0) continue;
+                for (let p of local_initial_paths) active_paths.add(p);
+
+                for (let i = 0; i < all_vertical_layers.length - 1; i++) {
+                    let curr_layer = all_vertical_layers[i];
+                    let next_layer = all_vertical_layers[i + 1];
+                    let next_layer_valid = [];
+                    let local_paths = [];
+                    let is_output_step = (i === all_vertical_layers.length - 2);
+
+                    for (let p1 of current_layer_nodes) {
+                        for (let p2 of next_layer) {
+                            if (is_output_step || p2[2] === target_val) {
+                                local_paths.push(JSON.stringify([p1, p2]));
+                                if (!next_layer_valid.includes(p2)) next_layer_valid.push(p2);
+                            }
+                        }
+                    }
+
+                    if (next_layer_valid.length === 0) break;
+                    max_layer_reached = Math.max(max_layer_reached, i + 1);
+
+                    if (is_output_step) {
+                        for (let p2 of next_layer_valid) {
+                            let outIdx = output_column.indexOf(p2);
+                            if (outIdx !== -1) reached_output_indices.add(outIdx);
+                        }
+                    }
+
+                    for (let p of local_paths) active_paths.add(p);
+                    current_layer_nodes = next_layer_valid;
+                }
+            }
+
+            let num_active_outputs = reached_output_indices.size;
+            let score = max_layer_reached * 50;
+            if (num_active_outputs === 1) score += 200000;
+            else if (num_active_outputs === 0) score -= 20000;
+            else score -= num_active_outputs * 100000;
+
+            return { active_paths, score, num_active_outputs };
+        }
+
+        function saveNetwork() {
+            const data = hidden_blocks.map(block => block.map(row => row.map(node => node[2])));
+            localStorage.setItem("network_state", JSON.stringify(data));
+            alert("Gespeichert!");
+        }
+
+        function loadNetwork() {
+            const saved = localStorage.getItem("network_state");
+            if (!saved) return;
+            try {
+                const data = JSON.parse(saved);
+                data.forEach((blockVals, b_idx) => {
+                    if (b_idx < hidden_blocks.length) {
+                        blockVals.forEach((row, r) => {
+                            row.forEach((val, c) => { hidden_blocks[b_idx][r][c][2] = val; });
+                        });
+                    }
+                });
+            } catch (e) { console.error(e); }
+        }
+        loadNetwork();
+
+        function toggleLearning() {
+            is_learning = !is_learning;
+            const btn = document.getElementById('toggle-learn-btn');
+            btn.innerText = is_learning ? 'Lernen' : 'Aus';
+            btn.className = is_learning ? 'active' : '';
+        }
+
+        function resetCamera() {
+            zoom = 0.15;
+            camera_x = 800.0;
+            camera_y = 0.0;
+        }
+
+        // --- STEUERUNG (TOUCH & MOUSE / PINCH-TO-ZOOM) ---
+        canvas.addEventListener('pointerdown', e => {
+            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        });
+
+        canvas.addEventListener('pointermove', e => {
+            if (!activePointers.has(e.pointerId)) return;
+            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+            if (activePointers.size === 1) {
+                // Ein Finger / Maus: Verschieben (Pan)
+                const pointers = Array.from(activePointers.values());
+                // Wir nehmen die Bewegung über den Delta-Wert
+                const dx = e.movementX;
+                const dy = e.movementY;
+                if (dx !== undefined && dy !== undefined) {
+                    camera_x -= dx / zoom;
+                    camera_y -= dy / zoom;
+                }
+            } else if (activePointers.size === 2) {
+                // Zwei Finger: Pinch-to-Zoom
+                const pointers = Array.from(activePointers.values());
+                const dist = Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
+                
+                if (!initialPinchDist) {
+                    initialPinchDist = dist;
+                    initialZoom = zoom;
+                } else {
+                    const factor = dist / initialPinchDist;
+                    zoom = Math.max(0.02, Math.min(initialZoom * factor, 5.0));
+                }
+            }
+        });
+
+        const removePointer = e => {
+            activePointers.delete(e.pointerId);
+            if (activePointers.size < 2) {
+                initialPinchDist = null;
+            }
+        };
+        canvas.addEventListener('pointerup', removePointer);
+        canvas.addEventListener('pointercancel', removePointer);
+
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            const old_zoom = zoom;
+            if (e.deltaY < 0) zoom *= 1.15; else zoom /= 1.15;
+            zoom = Math.max(0.02, Math.min(zoom, 5.0));
+            camera_x = (camera_x + (e.clientX - canvas.width / 2) / old_zoom) - (e.clientX - canvas.width / 2) / zoom;
+            camera_y = (camera_y + (e.clientY - canvas.height / 2) / old_zoom) - (e.clientY - canvas.height / 2) / zoom;
+        }, { passive: false });
+
+        // --- HAUPT-RENDERSCHLEIFE ---
+        function loop() {
+            updateInputFromCamera();
+
+            if (is_learning) {
+                let evalOld = evaluateNetwork();
+                let b_idx = Math.floor(Math.random() * hidden_blocks.length);
+                let r_idx = Math.floor(Math.random() * 10);
+                let c_idx = Math.floor(Math.random() * 10);
+                let old_val = hidden_blocks[b_idx][r_idx][c_idx][2];
+                let new_val = Math.floor(Math.random() * 10);
+
+                if (old_val !== new_val) {
+                    hidden_blocks[b_idx][r_idx][c_idx][2] = new_val;
+                    let evalNew = evaluateNetwork();
+                    if (evalNew.score < evalOld.score) hidden_blocks[b_idx][r_idx][c_idx][2] = old_val;
+                }
+            }
+
+            let { active_paths, _, num_active_outputs } = evaluateNetwork();
+            document.getElementById('status-bar').innerText = `Lernen: ${is_learning ? 'AN' : 'AUS'} | Out: ${num_active_outputs}/6 | Zoom: ${Math.round(zoom*100)}%`;
+
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            function drawWorldLine(p1, p2, color = '#3c0000', width = 1) {
+                const s1 = worldToScreen(p1[0], p1[1]);
+                const s2 = worldToScreen(p2[0], p2[1]);
+                ctx.beginPath();
+                ctx.moveTo(s1.x, s1.y);
+                ctx.lineTo(s2.x, s2.y);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = Math.max(1, width * zoom);
+                ctx.stroke();
+            }
+
+            function drawFullGridLines(grid) {
+                let rows = grid.length, cols = grid[0].length;
+                for (let r = 0; r < rows; r++)
+                    for (let c = 0; c < cols - 1; c++) drawWorldLine(grid[r][c], grid[r][c+1], '#3c0000', 1);
+                for (let c = 0; c < cols; c++)
+                    for (let r = 0; r < rows - 1; r++) drawWorldLine(grid[r][c], grid[r+1][c], '#3c0000', 1);
+            }
+
+            drawFullGridLines(top_grid);
+            drawFullGridLines(bottom_grid);
+
+            let top_right_col = [], bottom_right_col = [];
+            for (let r = 0; r < 5; r++) {
+                top_right_col.push(top_grid[r][4]);
+                bottom_right_col.push(bottom_grid[r][4]);
+            }
+            for (let r_node of top_right_col.concat(bottom_right_col)) {
+                for (let t_node of right_column) drawWorldLine(r_node, t_node, '#3c0000', 1);
+            }
+
+            for (let block of hidden_blocks) drawFullGridLines(block);
+
+            let all_vertical_layers = [right_column];
+            for (let block of hidden_blocks) {
+                for (let c = 0; c < 10; c++) {
+                    let col_nodes = [];
+                    for (let r = 0; r < 10; r++) col_nodes.push(block[r][c]);
+                    all_vertical_layers.push(col_nodes);
+                }
+            }
+            all_vertical_layers.push(output_column);
+
+            for (let i = 0; i < all_vertical_layers.length - 1; i++) {
+                let curr_layer = all_vertical_layers[i];
+                let next_layer = all_vertical_layers[i+1];
+                for (let p1 of curr_layer) {
+                    for (let p2 of next_layer) {
+                        let key = JSON.stringify([[p1[0], p1[1], p1[2]], [p2[0], p2[1], p2[2]]]);
+                        if (active_paths.has(key)) drawWorldLine(p1, p2, '#00ff00', 2);
+                        else drawWorldLine(p1, p2, '#3c0000', 1);
+                    }
+                }
+            }
+
+            const fontSize = Math.max(8, Math.floor(RADIUS * 1.2 * zoom));
+            ctx.font = `${fontSize}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            function drawGridCircles(grid) {
+                for (let row of grid) {
+                    for (let [wx, wy, val] of row) {
+                        const s = worldToScreen(wx, wy);
+                        const scaled_radius = RADIUS * zoom;
+                        if (scaled_radius > 1) {
+                            ctx.beginPath();
+                            ctx.arc(s.x, s.y, scaled_radius, 0, Math.PI * 2);
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fill();
+                            ctx.fillStyle = '#000000';
+                            ctx.fillText(val, s.x, s.y);
+                        }
+                    }
+                }
+            }
+
+            drawGridCircles(top_grid);
+            drawGridCircles(bottom_grid);
+            for (let [wx, wy, val] of right_column) {
+                const s = worldToScreen(wx, wy);
+                const scaled_radius = RADIUS * zoom;
+                if (scaled_radius > 1) {
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, scaled_radius, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+                    ctx.fillStyle = '#000000';
+                    ctx.fillText(val, s.x, s.y);
+                }
+            }
+            for (let block of hidden_blocks) drawGridCircles(block);
+            for (let [wx, wy, val] of output_column) {
+                const s = worldTest = worldToScreen(wx, wy); // Korrektur
+                const s_x = s ? s.x : 0;
+                const s_y = s ? s.y : 0;
+                // Einfach direkt zeichnen:
+                const sc = worldToScreen(wx, wy);
+                const scaled_radius = RADIUS * zoom;
+                if (scaled_radius > 1) {
+                    ctx.beginPath();
+                    ctx.arc(sc.x, sc.y, scaled_radius, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fill();
+                    ctx.fillStyle = '#000000';
+                    ctx.fillText(val, sc.x, sc.y);
+                }
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
