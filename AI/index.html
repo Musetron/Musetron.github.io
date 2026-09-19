@@ -2,531 +2,435 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neural Network - Ultimate Mobile mit IBB.co Bild</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Mobile Neural Network - Bug Edition</title>
     <style>
-        body {
+        body, html {
             margin: 0;
-            background-color: #0b0f19;
-            color: #ffffff;
-            font-family: system-ui, -apple-system, sans-serif;
+            padding: 0;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
+            background-color: #000;
+            font-family: sans-serif;
             touch-action: none;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-        header {
-            background: #111827;
-            padding: 8px 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #1f2937;
-            z-index: 10;
-            font-size: 0.8rem;
-        }
-        h1 {
-            font-size: 0.85rem;
-            margin: 0;
-            color: #38bdf8;
-        }
-        .controls {
-            display: flex;
-            gap: 4px;
-            align-items: center;
-        }
-        button {
-            background: #2563eb;
-            color: white;
-            border: none;
-            padding: 5px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.7rem;
-        }
-        button.active {
-            background: #16a34a;
-        }
-        .main-container {
-            display: flex;
-            flex: 1;
-            position: relative;
-            overflow: hidden;
         }
         canvas {
             display: block;
-            background: #000000;
-            width: 100%;
-            height: 100%;
+            width: 100vw;
+            height: 100vh;
         }
-        .sidebar {
-            position: absolute;
-            bottom: 15px;
-            right: 15px;
-            background: rgba(17, 24, 39, 0.85);
-            backdrop-filter: blur(8px);
-            padding: 6px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            align-items: center;
-            z-index: 5;
-        }
-        #webcam-preview {
-            width: 90px;
-            height: 45px;
-            background: #000;
-            border-radius: 4px;
-            object-fit: cover;
-            border: 1px solid #374151;
-            transform: scaleX(-1);
-        }
-        .video-label {
-            font-size: 0.6rem;
-            color: #9ca3af;
-        }
-        #video-element {
-            display: none;
-        }
-        #status-bar {
+        #ui {
             position: absolute;
             top: 10px;
             left: 10px;
-            background: rgba(0, 0, 0, 0.75);
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.7rem;
-            z-index: 5;
+            color: white;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 8px 12px;
+            border-radius: 8px;
             pointer-events: none;
-            border: 1px solid rgba(255,255,255,0.1);
+        }
+        #webcam-preview {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 100px;
+            height: 50px;
+            border: 1px solid white;
+            border-radius: 4px;
+            object-fit: cover;
+            transform: scaleX(-1);
         }
     </style>
 </head>
 <body>
 
-    <header>
-        <h1>Neural Net</h1>
-        <div class="controls">
-            <button id="toggle-learn-btn" class="active" onclick="toggleLearning()">Lernen</button>
-            <button onclick="saveNetwork()">Speichern</button>
-            <button onclick="resetCamera()">Reset</button>
-        </div>
-    </header>
+    <div id="ui">Lernen: AN | Aktive Outputs: <span id="output-count">0</span></div>
+    <video id="webcam" autoplay playsinline muted style="display:none;"></video>
+    <canvas id="canvas"></canvas>
+    <canvas id="bug-bg" style="display:none;"></canvas>
 
-    <div class="main-container">
-        <div id="status-bar">Lerne...</div>
-        <canvas id="netCanvas"></canvas>
-        <div class="sidebar">
-            <span class="video-label" id="cam-status">Input: IBB Bild</span>
-            <video id="video-element" autoplay playsinline muted></video>
-            <canvas id="webcam-preview" width="10" height="5"></canvas>
-        </div>
-    </div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const videoElement = document.getElementById('webcam');
+const outputCountSpan = document.getElementById('output-count');
 
-    <script>
-        const canvas = document.getElementById('netCanvas');
-        const ctx = canvas.getContext('2d');
-        const videoElement = document.getElementById('video-element');
-        const webcamPreview = document.getElementById('webcam-preview');
-        const previewCtx = webcamPreview.getContext('2d', { willReadFrequently: true });
+let WIDTH = window.innerWidth;
+let HEIGHT = window.innerHeight;
+canvas.width = WIDTH;
+canvas.height = HEIGHT;
 
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight - 45;
+window.addEventListener('resize', () => {
+    WIDTH = window.innerWidth;
+    HEIGHT = window.innerHeight;
+    canvas.width = WIDTH;
+    canvas.height = HEIGHT;
+});
+
+// Kamera- / Transformationsvariablen (für Mobile angepasst)
+let zoom = Math.min(WIDTH, HEIGHT) / 1000;
+let camera_x = 0;
+let camera_y = 0;
+let is_learning = true;
+
+// Touch / Maus Steuerung
+let isDragging = false;
+let lastX = 0, lastY = 0;
+let initialDist = null;
+
+canvas.addEventListener('pointerdown', (e) => {
+    isDragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+});
+
+canvas.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    let dx = e.clientX - lastX;
+    let dy = e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    camera_x -= dx / zoom;
+    camera_y -= dy / zoom;
+});
+
+canvas.addEventListener('pointerup', () => isDragging = false);
+canvas.addEventListener('pointercancel', () => isDragging = false);
+
+// Pinch to Zoom für Smartphones
+canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+        initialDist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+        );
+    }
+});
+
+canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && initialDist !== null) {
+        let currentDist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+        );
+        let factor = currentDist / initialDist;
+        zoom = Math.max(0.1, Math.min(zoom * factor, 5.0));
+        initialDist = currentDist;
+    }
+});
+
+// Käfer-Hintergrundbild laden[span_2](start_span)[span_2](end_span)
+const bugImg = new Image();
+bugImg.src = '1000125857.png'; // Stelle sicher, dass das Bild im selben Ordner liegt
+let bugLoaded = false;
+bugImg.onload = () => { bugLoaded = true; };
+
+// Webcam initialisieren (Smartphone-Rückkamera bevorzugen falls vorhanden)
+navigator.mediaDevices.getUserMedia({ 
+    video: { facingMode: 'environment' }, 
+    audio: false 
+}).then(stream => {
+    videoElement.srcObject = stream;
+    videoElement.play();
+}).catch(err => {
+    console.warn("Kamerazugriff fehlgeschlagen, nutze Fallback:", err);
+});
+
+const offscreenCanvas = document.createElement('canvas');
+offscreenCanvas.width = 10;
+offscreenCanvas.height = 5;
+const offCtx = offscreenCanvas.getContext('2d');
+
+const SPACING = 35;
+const RADIUS = 8;
+
+function world_to_screen(wx, wy) {
+    return {
+        x: (wx - camera_x) * zoom + WIDTH / 2,
+        y: (wy - camera_y) * zoom + HEIGHT / 2
+    };
+}
+
+function get_grid_positions(start_x, start_y, rows, cols, random_vals = false) {
+    let positions = [];
+    for (let r = 0; r < rows; r++) {
+        let row_pos = [];
+        for (let c = 0; c < cols; c++) {
+            let wx = start_x + c * SPACING;
+            let wy = start_y + r * SPACING;
+            let val = random_vals ? Math.floor(Math.random() * 10) : 0;
+            row_pos.push([wx, wy, val]);
         }
-        window.addEventListener('resize', resize);
-        resize();
+        positions.append ? positions.append(row_pos) : positions.push(row_pos);
+    }
+    return positions;
+}
 
-        const RADIUS = 10;
-        const SPACING = 40;
-        
-        let zoom = 0.15; 
-        let camera_x = 800.0;
-        let camera_y = 0.0;
-        let is_learning = true;
+// Layout aufbauen
+let grid_size = 4 * SPACING;
+let top_start_x = -grid_size / 2 - 200;
+let top_start_y = -180;
+let bottom_start_y = 50;
 
-        // --- HIER DEINEN IBB.CO DIREKT-LINK EINFÜGEN ---
-        const staticImage = new Image();
-        staticImage.crossOrigin = "anonymous";
-        staticImage.src = '1000125857.png'; // Trage hier z.B. 'https://i.ibb.co/xxxxx/bild.png' ein
-        let imageLoaded = false;
-        
-        staticImage.onload = () => {
-            imageLoaded = true;
-            document.getElementById('cam-status').innerText = "Input: IBB Aktiv";
-        };
-        staticImage.onerror = () => {
-            document.getElementById('cam-status').innerText = "Fehler beim Laden!";
-            console.error("Bild konnte nicht geladen werden. Bitte prüfe den direkten ibb.co Link.");
-        };
+let top_grid = get_grid_positions(top_start_x, top_start_y, 5, 5, false);
+let bottom_grid = get_grid_positions(top_start_x, bottom_start_y, 5, 5, false);
 
-        // Touch & Maus Tracking für Pan & Zoom
-        const activePointers = new Map();
-        let initialPinchDist = null;
-        let initialZoom = zoom;
+let right_start_x = top_start_x + grid_size + 80;
+let total_height_others = (bottom_start_y + grid_size) - top_start_y;
+let height_10_circles = 9 * SPACING;
+let right_start_y = top_start_y + (total_height_others - height_10_circles) / 2;
 
-        function worldToScreen(wx, wy) {
-            const sx = (wx - camera_x) * zoom + canvas.width / 2;
-            const sy = (wy - camera_y) * zoom + canvas.height / 2;
-            return { x: sx, y: sy };
+let right_column = [];
+for (let i = 0; i < 10; i++) {
+    right_column.push([right_start_x, right_start_y + i * SPACING, i]);
+}
+
+let hidden_blocks = [];
+let hidden_start_x = right_start_x + 140;
+let hidden_block_width = 9 * SPACING;
+let hidden_gap = 100;
+let hidden_start_y = - (9 * SPACING) / 2;
+
+for (let b = 0; b < 5; b++) {
+    let bx = hidden_start_x + b * (hidden_block_width + hidden_gap);
+    hidden_blocks.push(get_grid_positions(bx, hidden_start_y, 10, 10, true));
+}
+
+let output_start_x = hidden_blocks[4][0][9][0] + 100;
+let output_height = 5 * SPACING;
+let last_block_center_y = hidden_start_y + (9 * SPACING) / 2;
+let output_start_y = last_block_center_y - output_height / 2;
+let output_labels = ["Y", "X", "Z", "-Y", "-X", "-Z"];
+let output_column = [];
+for (let i = 0; i < 6; i++) {
+    output_column.push([output_start_x, output_start_y + i * SPACING, output_labels[i]]);
+}
+
+function evaluate_network() {
+    let all_vertical_layers = [right_column];
+    hidden_blocks.forEach(block => {
+        for (let c = 0; c < 10; c++) {
+            let col_nodes = [];
+            for (let r = 0; r < 10; r++) col_nodes.push(block[r][c]);
+            all_vertical_layers.push(col_nodes);
         }
+    });
+    all_vertical_layers.push(output_column);
 
-        function getGridPositions(startX, startY, rows, cols, randomVals = false) {
-            const positions = [];
-            for (let r = 0; r < rows; r++) {
-                const rowPos = [];
-                for (let c = 0; c < cols; c++) {
-                    const wx = startX + c * SPACING;
-                    const wy = startY + r * SPACING;
-                    const val = randomVals ? Math.floor(Math.random() * 10) : 0;
-                    rowPos.push([wx, wy, val]);
-                }
-                positions.push(rowPos);
+    let active_paths = new Set();
+    let top_right_col = [];
+    let bottom_right_col = [];
+    for(let r=0; r<5; r++) {
+        top_right_col.push(top_grid[r][4]);
+        bottom_right_col.push(bottom_grid[r][4]);
+    }
+    let start_nodes = top_right_col.concat(bottom_right_col);
+
+    let max_layer_reached = 0;
+    let reached_output_indices = new Set();
+
+    start_nodes.forEach(start_node => {
+        let target_val = start_node[2];
+        let current_layer_nodes = [];
+        let local_initial_paths = [];
+
+        right_column.forEach(r_node => {
+            if (r_node[2] === target_val) {
+                local_initial_paths.push(JSON.stringify([start_node, r_node]));
+                if (!current_layer_nodes.includes(r_node)) current_layer_nodes.push(r_node);
             }
-            return positions;
-        }
+        });
 
-        const grid_size = 4 * SPACING;
-        const top_start_x = -grid_size / 2 - 250;
-        const top_start_y = -220;
-        const bottom_start_y = 60;
-        const bottom_start_x = top_start_x;
+        if (current_layer_nodes.length === 0) return;
+        local_initial_paths.forEach(p => active_paths.add(p));
 
-        const right_start_x = top_start_x + grid_size + 100;
-        const total_height_others = (bottom_start_y + grid_size) - top_start_y;
-        const height_10_circles = 9 * SPACING;
-        const right_start_y = top_start_y + (total_height_others - height_10_circles) / 2;
+        for (let i = 0; i < all_vertical_layers.length - 1; i++) {
+            let next_layer = all_vertical_layers[i+1];
+            let next_layer_valid = [];
+            let local_paths = [];
+            let is_output_step = (i === all_vertical_layers.length - 2);
 
-        const top_grid = getGridPositions(top_start_x, top_start_y, 5, 5, false);
-        const bottom_grid = getGridPositions(bottom_start_x, bottom_start_y, 5, 5, false);
-
-        const right_column = [];
-        for (let i = 0; i < 10; i++) {
-            right_column.push([right_start_x, right_start_y + i * SPACING, i]);
-        }
-
-        const hidden_blocks = [];
-        const hidden_start_x = right_start_x + 180;
-        const hidden_block_width = 9 * SPACING;
-        const hidden_gap = 120;
-        const hidden_start_y = - (9 * SPACING) / 2;
-
-        for (let b = 0; b < 5; b++) {
-            const bx = hidden_start_x + b * (hidden_block_width + hidden_gap);
-            const by = hidden_start_y;
-            hidden_blocks.push(getGridPositions(bx, by, 10, 10, true));
-        }
-
-        const output_start_x = hidden_blocks[4][0][9][0] + 120;
-        const output_height = 5 * SPACING;
-        const last_block_center_y = hidden_start_y + (9 * SPACING) / 2;
-        const output_start_y = last_block_center_y - output_height / 2;
-
-        const output_labels = ["Y", "X", "Z", "-Y", "-X", "-Z"];
-        const output_column = [];
-        for (let i = 0; i < 6; i++) {
-            output_column.push([output_start_x, output_start_y + i * SPACING, output_labels[i]]);
-        }
-
-        function updateInputFromImage() {
-            if (imageLoaded) {
-                previewCtx.drawImage(staticImage, 0, 0, 10, 5);
-                const frameData = previewCtx.getImageData(0, 0, 10, 5).data;
-                
-                for (let r = 0; r < 5; r++) {
-                    for (let c = 0; c < 5; c++) {
-                        let idx = (r * 10 + c) * 4;
-                        let gray = (frameData[idx] + frameData[idx+1] + frameData[idx+2]) / 3;
-                        top_grid[r][c][2] = Math.floor((gray / 255.0) * 9);
-
-                        let idxBot = (r * 10 + (c + 5)) * 4;
-                        let grayBot = (frameData[idxBot] + frameData[idxBot+1] + frameData[idxBot+2]) / 3;
-                        bottom_grid[r][c][2] = Math.floor((grayBot / 255.0) * 9);
-                    }
-                }
-            }
-        }
-
-        function evaluateNetwork() {
-            let all_vertical_layers = [right_column];
-            for (let block of hidden_blocks) {
-                for (let c = 0; c < 10; c++) {
-                    let col_nodes = [];
-                    for (let r = 0; r < 10; r++) col_nodes.push(block[r][c]);
-                    all_vertical_layers.push(col_nodes);
-                }
-            }
-            all_vertical_layers.push(output_column);
-
-            let active_paths = new Set();
-            let top_right_col = [];
-            for (let r = 0; r < 5; r++) top_right_col.push(top_grid[r][4]);
-            let bottom_right_col = [];
-            for (let r = 0; r < 5; r++) bottom_right_col.push(bottom_grid[r][4]);
-            let start_nodes = top_right_col.concat(bottom_right_col);
-
-            let max_layer_reached = 0;
-            let reached_output_indices = new Set();
-
-            for (let start_node of start_nodes) {
-                let target_val = start_node[2];
-                let current_layer_nodes = [];
-                let local_initial_paths = [];
-
-                for (let r_node of right_column) {
-                    if (r_node[2] === target_val) {
-                        local_initial_paths.push(JSON.stringify([start_node, r_node]));
-                        if (!current_layer_nodes.includes(r_node)) current_layer_nodes.push(r_node);
-                    }
-                }
-
-                if (current_layer_nodes.length === 0) continue;
-                for (let p of local_initial_paths) active_paths.add(p);
-
-                for (let i = 0; i < all_vertical_layers.length - 1; i++) {
-                    let curr_layer = all_vertical_layers[i];
-                    let next_layer = all_vertical_layers[i + 1];
-                    let next_layer_valid = [];
-                    let local_paths = [];
-                    let is_output_step = (i === all_vertical_layers.length - 2);
-
-                    for (let p1 of current_layer_nodes) {
-                        for (let p2 of next_layer) {
-                            if (is_output_step || p2[2] === target_val) {
-                                local_paths.push(JSON.stringify([p1, p2]));
-                                if (!next_layer_valid.includes(p2)) next_layer_valid.push(p2);
-                            }
-                        }
-                    }
-
-                    if (next_layer_valid.length === 0) break;
-                    max_layer_reached = Math.max(max_layer_reached, i + 1);
-
-                    if (is_output_step) {
-                        for (let p2 of next_layer_valid) {
-                            let outIdx = output_column.indexOf(p2);
-                            if (outIdx !== -1) reached_output_indices.add(outIdx);
-                        }
-                    }
-
-                    for (let p of local_paths) active_paths.add(p);
-                    current_layer_nodes = next_layer_valid;
-                }
-            }
-
-            let num_active_outputs = reached_output_indices.size;
-            let score = max_layer_reached * 50;
-            if (num_active_outputs === 1) score += 200000;
-            else if (num_active_outputs === 0) score -= 20000;
-            else score -= num_active_outputs * 100000;
-
-            return { active_paths, score, num_active_outputs };
-        }
-
-        function saveNetwork() {
-            const data = hidden_blocks.map(block => block.map(row => row.map(node => node[2])));
-            localStorage.setItem("network_state", JSON.stringify(data));
-            alert("Gespeichert!");
-        }
-
-        function loadNetwork() {
-            const saved = localStorage.getItem("network_state");
-            if (!saved) return;
-            try {
-                const data = JSON.parse(saved);
-                data.forEach((blockVals, b_idx) => {
-                    if (b_idx < hidden_blocks.length) {
-                        blockVals.forEach((row, r) => {
-                            row.forEach((val, c) => { hidden_blocks[b_idx][r][c][2] = val; });
-                        });
+            current_layer_nodes.forEach(p1 => {
+                next_layer.forEach(p2 => {
+                    if (is_output_step || p2[2] === target_val) {
+                        local_paths.push(JSON.stringify([p1, p2]));
+                        if (!next_layer_valid.includes(p2)) next_layer_valid.push(p2);
                     }
                 });
-            } catch (e) { console.error(e); }
+            });
+
+            if (next_layer_valid.length === 0) break;
+            max_layer_reached = Math.max(max_layer_reached, i + 1);
+
+            if (is_output_step) {
+                next_layer_valid.forEach(p2 => {
+                    let idx = output_column.indexOf(p2);
+                    if (idx !== -1) reached_output_indices.add(idx);
+                });
+            }
+
+            local_paths.forEach(p => active_paths.add(p));
+            current_layer_nodes = next_layer_valid;
         }
-        loadNetwork();
+    });
 
-        function toggleLearning() {
-            is_learning = !is_learning;
-            const btn = document.getElementById('toggle-learn-btn');
-            btn.innerText = is_learning ? 'Lernen' : 'Aus';
-            btn.className = is_learning ? 'active' : '';
-        }
+    let num_active_outputs = reached_output_indices.size;
+    let score = max_layer_reached * 50;
+    if (num_active_outputs === 1) score += 200000;
+    else if (num_active_outputs === 0) score -= 20000;
+    else score -= num_active_outputs * 100000;
 
-        function resetCamera() {
-            zoom = 0.15;
-            camera_x = 800.0;
-            camera_y = 0.0;
-        }
+    return { active_paths, score, num_active_outputs };
+}
 
-        // --- STEUERUNG (TOUCH & MOUSE / PINCH-TO-ZOOM) ---
-        canvas.addEventListener('pointerdown', e => {
-            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        });
-
-        canvas.addEventListener('pointermove', e => {
-            if (!activePointers.has(e.pointerId)) return;
-            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-            if (activePointers.size === 1) {
-                const dx = e.movementX;
-                const dy = e.movementY;
-                if (dx !== undefined && dy !== undefined) {
-                    camera_x -= dx / zoom;
-                    camera_y -= dy / zoom;
-                }
-            } else if (activePointers.size === 2) {
-                const pointers = Array.from(activePointers.values());
-                const dist = Math.hypot(pointers[0].x - pointers[1].x, pointers[0].y - pointers[1].y);
+// Hauptschleife
+function loop() {
+    // Webcam Frame auslesen und ins Raster übertragen
+    if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+        offCtx.drawImage(videoElement, 0, 0, 10, 5);
+        let imgData = offCtx.getImageData(0, 0, 10, 5).data;
+        for (let r = 0; r < 5; r++) {
+            for (let c = 0; c < 5; c++) {
+                let idx = (r * 10 + c) * 4;
+                let gray = (imgData[idx] + imgData[idx+1] + imgData[idx+2]) / 3;
+                top_grid[r][c][2] = Math.floor((gray / 255.0) * 9);
                 
-                if (!initialPinchDist) {
-                    initialPinchDist = dist;
-                    initialZoom = zoom;
-                } else {
-                    const factor = dist / initialPinchDist;
-                    zoom = Math.max(0.02, Math.min(initialZoom * factor, 5.0));
-                }
+                let idx2 = (r * 10 + (c + 5)) * 4;
+                let gray2 = (imgData[idx2] + imgData[idx2+1] + imgData[idx2+2]) / 3;
+                bottom_grid[r][c][2] = Math.floor((gray2 / 255.0) * 9);
             }
-        });
-
-        const removePointer = e => {
-            activePointers.delete(e.pointerId);
-            if (activePointers.size < 2) {
-                initialPinchDist = null;
-            }
-        };
-        canvas.addEventListener('pointerup', removePointer);
-        canvas.addEventListener('pointercancel', removePointer);
-
-        canvas.addEventListener('wheel', e => {
-            e.preventDefault();
-            const old_zoom = zoom;
-            if (e.deltaY < 0) zoom *= 1.15; else zoom /= 1.15;
-            zoom = Math.max(0.02, Math.min(zoom, 5.0));
-            camera_x = (camera_x + (e.clientX - canvas.width / 2) / old_zoom) - (e.clientX - canvas.width / 2) / zoom;
-            camera_y = (camera_y + (e.clientY - canvas.height / 2) / old_zoom) - (e.clientY - canvas.height / 2) / zoom;
-        }, { passive: false });
-
-        // --- HAUPT-RENDERSCHLEIFE ---
-        function loop() {
-            updateInputFromImage();
-
-            if (is_learning) {
-                let evalOld = evaluateNetwork();
-                let b_idx = Math.floor(Math.random() * hidden_blocks.length);
-                let r_idx = Math.floor(Math.random() * 10);
-                let c_idx = Math.floor(Math.random() * 10);
-                let old_val = hidden_blocks[b_idx][r_idx][c_idx][2];
-                let new_val = Math.floor(Math.random() * 10);
-
-                if (old_val !== new_val) {
-                    hidden_blocks[b_idx][r_idx][c_idx][2] = new_val;
-                    let evalNew = evaluateNetwork();
-                    if (evalNew.score < evalOld.score) hidden_blocks[b_idx][r_idx][c_idx][2] = old_val;
-                }
-            }
-
-            let { active_paths, _, num_active_outputs } = evaluateNetwork();
-            document.getElementById('status-bar').innerText = `Lernen: ${is_learning ? 'AN' : 'AUS'} | Out: ${num_active_outputs}/6 | Zoom: ${Math.round(zoom*100)}%`;
-
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            function drawWorldLine(p1, p2, color = '#3c0000', width = 1) {
-                const s1 = worldToScreen(p1[0], p1[1]);
-                const s2 = worldToScreen(p2[0], p2[1]);
-                ctx.beginPath();
-                ctx.moveTo(s1.x, s1.y);
-                ctx.lineTo(s2.x, s2.y);
-                ctx.strokeStyle = color;
-                ctx.lineWidth = Math.max(1, width * zoom);
-                ctx.stroke();
-            }
-
-            function drawFullGridLines(grid) {
-                let rows = grid.length, cols = grid[0].length;
-                for (let r = 0; r < rows; r++)
-                    for (let c = 0; c < cols - 1; c++) drawWorldLine(grid[r][c], grid[r][c+1], '#3c0000', 1);
-                for (let c = 0; c < cols; c++)
-                    for (let r = 0; r < rows - 1; r++) drawWorldLine(grid[r][c], grid[r+1][c], '#3c0000', 1);
-            }
-
-            drawFullGridLines(top_grid);
-            drawFullGridLines(bottom_grid);
-
-            let top_right_col = [], bottom_right_col = [];
-            for (let r = 0; r < 5; r++) {
-                top_right_col.push(top_grid[r][4]);
-                bottom_right_col.push(bottom_grid[r][4]);
-            }
-            for (let r_node of top_right_col.concat(bottom_right_col)) {
-                for (let t_node of right_column) drawWorldLine(r_node, t_node, '#3c0000', 1);
-            }
-
-            for (let block of hidden_blocks) drawFullGridLines(block);
-
-            let all_vertical_layers = [right_column];
-            for (let block of hidden_blocks) {
-                for (let c = 0; c < 10; c++) {
-                    let col_nodes = [];
-                    for (let r = 0; r < 10; r++) col_nodes.push(block[r][c]);
-                    all_vertical_layers.push(col_nodes);
-                }
-            }
-            all_vertical_layers.push(output_column);
-
-            for (let i = 0; i < all_vertical_layers.length - 1; i++) {
-                let curr_layer = all_vertical_layers[i];
-                let next_layer = all_vertical_layers[i+1];
-                for (let p1 of curr_layer) {
-                    for (let p2 of next_layer) {
-                        let key = JSON.stringify([[p1[0], p1[1], p1[2]], [p2[0], p2[1], p2[2]]]);
-                        if (active_paths.has(key)) {
-                            drawWorldLine(p1, p2, '#38bdf8', 2);
-                        }
-                    }
-                }
-            }
-
-            function drawNodes(grid, isOutput = false) {
-                let rows = grid.length, cols = grid[0].length;
-                for (let r = 0; r < rows; r++) {
-                    for (let c = 0; c < cols; c++) {
-                        let node = grid[r][c];
-                        let screenPos = worldToScreen(node[0], node[1]);
-                        
-                        if (screenPos.x < -50 || screenPos.x > canvas.width + 50 || screenPos.y < -50 || screenPos.y > canvas.height + 50) continue;
-
-                        ctx.beginPath();
-                        ctx.arc(screenPos.x, screenPos.y, RADIUS * Math.max(0.4, Math.min(zoom * 2.5, 1.5)), 0, Math.PI * 2);
-                        ctx.fillStyle = isOutput ? '#16a34a' : '#1e293b';
-                        ctx.fill();
-                        ctx.lineWidth = 1.5;
-                        ctx.strokeStyle = isOutput ? '#4ade80' : '#475569';
-                        ctx.stroke();
-
-                        ctx.fillStyle = '#ffffff';
-                        ctx.font = `${Math.max(8, Math.round(10 * zoom * 1.5))}px sans-serif`;
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText(node[2], screenPos.x, screenPos.y);
-                    }
-                }
-            }
-
-            drawNodes(top_grid);
-            drawNodes(bottom_grid);
-            drawNodes(right_column);
-            for (let block of hidden_blocks) drawNodes(block);
-            drawNodes(output_column, true);
-
-            requestAnimationFrame(loop);
         }
+    }
 
-        requestAnimationFrame(loop);
-    </script>
+    // Intelligentes Lernen
+    let evalRes = evaluate_network();
+    if (is_learning) {
+        let old_score = evalRes.score;
+        let b_idx = Math.floor(Math.random() * hidden_blocks.length);
+        let r_idx = Math.floor(Math.random() * 10);
+        let c_idx = Math.floor(Math.random() * 10);
+        let old_val = hidden_blocks[b_idx][r_idx][c_idx][2];
+        let new_val = Math.floor(Math.random() * 10);
+
+        if (old_val !== new_val) {
+            hidden_blocks[b_idx][r_idx][c_idx][2] = new_val;
+            let newEval = evaluate_network();
+            if (newEval.score < old_score) {
+                hidden_blocks[b_idx][r_idx][c_idx][2] = old_val;
+            } else {
+                evalRes = newEval;
+            }
+        }
+    }
+
+    outputCountSpan.innerText = evalRes.num_active_outputs;
+
+    // Zeichnen
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    // Käfer-Hintergrundbild passgenau einzeichnen[span_3](start_span)[span_3](end_span)
+    if (bugLoaded) {
+        ctx.save();
+        // Hier wird der Käfer perfekt auf die Dimensionen des Netzwerks skizziert und zentriert
+        let bugWidth = 1400 * zoom;
+        let bugHeight = 1400 * zoom;
+        let centerPos = world_to_screen(-100, 0);
+        ctx.globalAlpha = 0.25; // Dezenter Hintergrund
+        ctx.drawImage(bugImg, centerPos.x - bugWidth / 2, centerPos.y - bugHeight / 2, bugWidth, bugHeight);
+        ctx.restore();
+    }
+
+    // Linien & Netze zeichnen
+    let all_vertical_layers = [right_column];
+    hidden_blocks.forEach(block => {
+        for (let c = 0; c < 10; c++) {
+            let col_nodes = [];
+            for (let r = 0; r < 10; r++) col_nodes.push(block[r][c]);
+            all_vertical_layers.push(col_nodes);
+        }
+    });
+    all_vertical_layers.push(output_column);
+
+    function drawLine(p1, p2, color, width) {
+        let s1 = world_to_screen(p1[0], p1[1]);
+        let s2 = world_to_screen(p2[0], p2[1]);
+        ctx.beginPath();
+        ctx.moveTo(s1.x, s1.y);
+        ctx.lineTo(s2.x, s2.y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, width * zoom);
+        ctx.stroke();
+    }
+
+    // Raster Linien zeichnen
+    function drawGridLines(grid) {
+        let rows = grid.length;
+        let cols = grid[0].length;
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols - 1; c++) drawLine(grid[r][c], grid[r][c+1], "#3c0000", 1);
+        }
+        for (let c = 0; c < cols; c++) {
+            for (let r = 0; r < rows - 1; r++) drawLine(grid[r][c], grid[r+1][c], "#3c0000", 1);
+        }
+    }
+
+    drawGridLines(top_grid);
+    drawGridLines(bottom_grid);
+    hidden_blocks.forEach(block => drawGridLines(block));
+
+    // Zwischenverbindungen und aktive Pfade
+    for (let i = 0; i < all_vertical_layers.length - 1; i++) {
+        let curr = all_vertical_layers[i];
+        let next = all_vertical_layers[i+1];
+        curr.forEach(p1 => {
+            next.forEach(p2 => {
+                let key = JSON.stringify([p1, p2]);
+                if (evalRes.active_paths.has(key)) {
+                    drawLine(p1, p2, "#00ff00", 2);
+                } else {
+                    drawLine(p1, p2, "#3c0000", 1);
+                }
+            });
+        });
+    }
+
+    // Knoten (Kreise) und Werte zeichnen
+    function drawCircles(grid) {
+        let fontSize = Math.max(8, Math.floor(RADIUS * 1.2 * zoom));
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        grid.forEach(row => {
+            row.forEach(node => {
+                let s = world_to_screen(node[0], node[1]);
+                let r = RADIUS * zoom;
+                if (r > 0) {
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, r, 0, 2 * Math.PI);
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fill();
+                    ctx.fillStyle = "#000000";
+                    ctx.fillText(node[2], s.x, s.y);
+                }
+            });
+        });
+    }
+
+    drawCircles(top_grid);
+    drawCircles(bottom_grid);
+    drawCircles(right_column);
+    hidden_blocks.forEach(block => drawCircles(block));
+    drawCircles(output_column);
+
+    requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+
 </body>
 </html>
