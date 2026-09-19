@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neural Network - Living Bug</title>
+    <title>Neural Bug - Fixed</title>
     <style>
         body {
             margin: 0;
@@ -459,11 +459,10 @@
             // --- HINTERGRUND-TIER ZEICHNEN ---
             if (imageLoaded) {
                 ctx.save();
-                ctx.globalAlpha = 0.22; // Dezent im Hintergrund (Wasserzeichen-Effekt)
-                // Wir zentrieren das Tier passend hinter das neuronale Netz
+                ctx.globalAlpha = 0.22;
                 let bugWidth = 1400 * zoom;
                 let bugHeight = 1400 * zoom;
-                let bugScreenPos = worldToScreen(600, 0); // Position im Netzwerk
+                let bugScreenPos = worldToScreen(600, 0);
                 ctx.drawImage(bugImage, bugScreenPos.x - bugWidth / 2, bugScreenPos.y - bugHeight / 2, bugWidth, bugHeight);
                 ctx.restore();
             }
@@ -511,4 +510,6 @@
             }
             all_vertical_layers.push(output_column);
 
-            for (let 
+            for (let i = 0; i < all_vertical_layers.length - 1; i++) {
+                let curr_layer = all_vertical_layers[i];
+                let next_layer = all_vertical_layer
