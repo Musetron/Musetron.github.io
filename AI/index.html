@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Mobile Neural Network - Bug Edition</title>
+    <title>Mobile Neural Network & Insect Map</title>
     <style>
         body, html {
             margin: 0;
@@ -13,403 +13,483 @@
             overflow: hidden;
             background-color: #000;
             font-family: sans-serif;
+            color: #fff;
             touch-action: none;
         }
         canvas {
             display: block;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
         }
-        #ui {
+        #ui-overlay {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
+            top: 15px;
+            left: 15px;
             font-size: 14px;
             background: rgba(0, 0, 0, 0.6);
             padding: 8px 12px;
             border-radius: 8px;
             pointer-events: none;
-            z-index: 10;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        #video-container {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            width: 110px;
+            height: 80px;
+            border: 2px solid #fff;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #222;
+        }
+        #webcam {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        #insect-container {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            width: 110px;
+            height: 110px;
+            border: 2px solid #fff;
+            border-radius: 6px;
+            background: #111;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        #insect-canvas {
+            width: 100%;
+            height: 100%;
         }
     </style>
 </head>
 <body>
 
-    <div id="ui">Lernen: AN | Aktive Outputs: <span id="output-count">0</span></div>
-    <video id="webcam" autoplay playsinline muted style="display:none;"></video>
+    <div id="ui-overlay">Lernen: <span id="learn-state">AN</span> | Aktive Outputs: <span id="active-out">0</span>/6</div>
+
+    <div id="insect-container">
+        <canvas id="insect-canvas" width="200" height="200"></canvas>
+    </div>
+
+    <div id="video-container">
+        <video id="webcam" autoplay playsinline muted></video>
+    </div>
+
     <canvas id="canvas"></canvas>
+    <video id="hidden-video" autoplay playsinline muted style="display:none;"></video>
+    <canvas id="hidden-cam-canvas" width="10" height="5" style="display:none;"></canvas>
 
-<script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const videoElement = document.getElementById('webcam');
-const outputCountSpan = document.getElementById('output-count');
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
 
-let WIDTH = window.innerWidth;
-let HEIGHT = window.innerHeight;
-canvas.width = WIDTH;
-canvas.height = HEIGHT;
-
-window.addEventListener('resize', () => {
-    WIDTH = window.innerWidth;
-    HEIGHT = window.innerHeight;
-    canvas.width = WIDTH;
-    canvas.height = HEIGHT;
-});
-
-// Perfekter initialer Zoom & Zentrierung für den Käfer
-let zoom = Math.min(WIDTH, HEIGHT) / 750;
-let camera_x = 0;
-let camera_y = 0;
-let is_learning = true;
-
-// Touch / Maus Steuerung zum Verschieben & Zoomen
-let isDragging = false;
-let lastX = 0, lastY = 0;
-let initialDist = null;
-
-canvas.addEventListener('pointerdown', (e) => {
-    isDragging = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
-});
-
-canvas.addEventListener('pointermove', (e) => {
-    if (!isDragging) return;
-    let dx = e.clientX - lastX;
-    let dy = e.clientY - lastY;
-    lastX = e.clientX;
-    lastY = e.clientY;
-    camera_x -= dx / zoom;
-    camera_y -= dy / zoom;
-});
-
-canvas.addEventListener('pointerup', () => isDragging = false);
-canvas.addEventListener('pointercancel', () => isDragging = false);
-
-canvas.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 2) {
-        initialDist = Math.hypot(
-            e.touches[0].clientX - e.touches[1].clientX,
-            e.touches[0].clientY - e.touches[1].clientY
-        );
-    }
-});
-
-canvas.addEventListener('touchmove', (e) => {
-    if (e.touches.length === 2 && initialDist !== null) {
-        let currentDist = Math.hypot(
-            e.touches[0].clientX - e.touches[1].clientX,
-            e.touches[0].clientY - e.touches[1].clientY
-        );
-        let factor = currentDist / initialDist;
-        zoom = Math.max(0.1, Math.min(zoom * factor, 5.0));
-        initialDist = currentDist;
-    }
-});
-
-// Käfer-Hintergrundbild laden[span_0](start_span)[span_0](end_span)
-const bugImg = new Image();
-bugImg.src = '1000125857.png'; 
-let bugLoaded = false;
-bugImg.onload = () => { bugLoaded = true; };
-
-// Webcam initialisieren (Rückkamera)
-navigator.mediaDevices.getUserMedia({ 
-    video: { facingMode: 'environment' }, 
-    audio: false 
-}).then(stream => {
-    videoElement.srcObject = stream;
-    videoElement.play();
-}).catch(err => {
-    console.warn("Kamerazugriff fehlgeschlagen:", err);
-});
-
-const offscreenCanvas = document.createElement('canvas');
-offscreenCanvas.width = 10;
-offscreenCanvas.height = 5;
-const offCtx = offscreenCanvas.getContext('2d');
-
-const SPACING = 24;
-const RADIUS = 6;
-
-function world_to_screen(wx, wy) {
-    return {
-        x: (wx - camera_x) * zoom + WIDTH / 2,
-        y: (wy - camera_y) * zoom + HEIGHT / 2
-    };
-}
-
-function get_grid_positions(start_x, start_y, rows, cols, random_vals = false) {
-    let positions = [];
-    for (let r = 0; r < rows; r++) {
-        let row_pos = [];
-        for (let c = 0; c < cols; c++) {
-            let wx = start_x + c * SPACING;
-            let wy = start_y + r * SPACING;
-            let val = random_vals ? Math.floor(Math.random() * 10) : 0;
-            row_pos.push([wx, wy, val]);
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
         }
-        positions.push(row_pos);
-    }
-    return positions;
-}
+        window.addEventListener('resize', resize);
+        resize();
 
-// --- EXAKTE ANPASSUNG AN DIE KÄFER-ANATOMIE ---
-// Augen liegen links (Input Grids)
-let top_start_x = -320;
-let top_start_y = -85;
-let bottom_start_y = 15;
+        // Kamera & Layout Variablen
+        let zoom = 0.6, camera_x = 0, camera_y = 0;
+        let isDragging = false, lastX = 0, lastY = 0;
+        let touchStartDist = 0;
 
-let top_grid = get_grid_positions(top_start_x, top_start_y, 5, 5, false);
-let bottom_grid = get_grid_positions(top_start_x, bottom_start_y, 5, 5, false);
+        const SPACING = 40, RADIUS = 10;
+        let isLearning = true;
 
-let right_start_x = top_start_x + (5 * SPACING) + 20;
-let right_start_y = -55;
+        // Touch & Maus Steuerung für Mobile & Desktop
+        canvas.addEventListener('pointerdown', e => {
+            isDragging = true;
+            lastX = e.clientX;
+            lastY = e.clientY;
+        });
+        canvas.addEventListener('pointermove', e => {
+            if (!isDragging) return;
+            camera_x -= (e.clientX - lastX) / zoom;
+            camera_y -= (e.clientY - lastY) / zoom;
+            lastX = e.clientX;
+            lastY = e.clientY;
+        });
+        canvas.addEventListener('pointerup', () => isDragging = false);
+        canvas.addEventListener('pointercancel', () => isDragging = false);
 
-let right_column = [];
-for (let i = 0; i < 10; i++) {
-    right_column.push([right_start_x, right_start_y + i * SPACING, i]);
-}
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            let zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            zoom = Math.max(0.05, Math.min(zoom * zoomFactor, 10.0));
+        }, { passive: false });
 
-// Körper (Hidden Layers im Rumpf des Käfers)
-let hidden_blocks = [];
-let hidden_start_x = right_start_x + 35;
-let hidden_block_width = 9 * SPACING;
-let hidden_gap = 25;
-let hidden_start_y = -108;
-
-for (let b = 0; b < 5; b++) {
-    let bx = hidden_start_x + b * (hidden_block_width + hidden_gap);
-    hidden_blocks.push(get_grid_positions(bx, hidden_start_y, 10, 10, true));
-}
-
-// Hintern (Output Layer am rechten Ende des Käfers)
-let last_block_end_x = hidden_blocks[4][0][9][0];
-let output_start_x = last_block_end_x + 35;
-let output_start_y = -35;
-let output_labels = ["Y", "X", "Z", "-Y", "-X", "-Z"];
-
-let output_column = [];
-for (let i = 0; i < 6; i++) {
-    output_column.push([output_start_x, output_start_y + i * SPACING, output_labels[i]]);
-}
-
-function evaluate_network() {
-    let all_vertical_layers = [right_column];
-    hidden_blocks.forEach(block => {
-        for (let c = 0; c < 10; c++) {
-            let col_nodes = [];
-            for (let r = 0; r < 10; r++) col_nodes.push(block[r][c]);
-            all_vertical_layers.push(col_nodes);
-        }
-    });
-    all_vertical_layers.push(output_column);
-
-    let active_paths = new Set();
-    let top_right_col = [];
-    let bottom_right_col = [];
-    for(let r=0; r<5; r++) {
-        top_right_col.push(top_grid[r][4]);
-        bottom_right_col.push(bottom_grid[r][4]);
-    }
-    let start_nodes = top_right_col.concat(bottom_right_col);
-
-    let max_layer_reached = 0;
-    let reached_output_indices = new Set();
-
-    start_nodes.forEach(start_node => {
-        let target_val = start_node[2];
-        let current_layer_nodes = [];
-        let local_initial_paths = [];
-
-        right_column.forEach(r_node => {
-            if (r_node[2] === target_val) {
-                local_initial_paths.push(JSON.stringify([start_node, r_node]));
-                if (!current_layer_nodes.includes(r_node)) current_layer_nodes.push(r_node);
+        // Multitouch Pinch-Zoom für Smartphones
+        canvas.addEventListener('touchmove', e => {
+            if (e.touches.length === 2) {
+                let dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+                if (touchStartDist) {
+                    let zoomFactor = dist / touchStartDist;
+                    zoom = Math.max(0.05, Math.min(zoom * zoomFactor, 10.0));
+                }
+                touchStartDist = dist;
             }
         });
+        canvas.addEventListener('touchend', () => { touchStartDist = 0; });
 
-        if (current_layer_nodes.length === 0) return;
-        local_initial_paths.forEach(p => active_paths.add(p));
+        function worldToScreen(wx, wy) {
+            return {
+                x: (wx - camera_x) * zoom + canvas.width / 2,
+                y: (wy - camera_y) * zoom + canvas.height / 2
+            };
+        }
 
-        for (let i = 0; i < all_vertical_layers.length - 1; i++) {
-            let next_layer = all_vertical_layers[i+1];
-            let next_layer_valid = [];
-            let local_paths = [];
-            let is_output_step = (i === all_vertical_layers.length - 2);
+        function createGrid(startX, startY, rows, cols, randomVals = false) {
+            let grid = [];
+            for (let r = 0; r < rows; r++) {
+                let row = [];
+                for (let c = 0; c < cols; c++) {
+                    row.push([startX + c * SPACING, startY + r * SPACING, randomVals ? Math.floor(Math.random() * 10) : 0]);
+                }
+                grid.push(row);
+            }
+            return grid;
+        }
 
-            current_layer_nodes.forEach(p1 => {
-                next_layer.forEach(p2 => {
-                    if (is_output_step || p2[2] === target_val) {
-                        local_paths.push(JSON.stringify([p1, p2]));
-                        if (!next_layer_valid.includes(p2)) next_layer_valid.push(p2);
+        const gridSize = 4 * SPACING;
+        const top_start_x = -gridSize / 2 - 250;
+        const top_start_y = -220;
+        const bottom_start_y = 60;
+
+        let top_grid = createGrid(top_start_x, top_start_y, 5, 5, false);
+        let bottom_grid = createGrid(top_start_x, bottom_start_y, 5, 5, false);
+
+        const right_start_x = top_start_x + gridSize + 100;
+        const total_height_others = (bottom_start_y + gridSize) - top_start_y;
+        const right_start_y = top_start_y + (total_height_others - (9 * SPACING)) / 2;
+
+        let right_column = [];
+        for (let i = 0; i < 10; i++) right_column.push([right_start_x, right_start_y + i * SPACING, i]);
+
+        let hidden_blocks = [];
+        let hidden_start_x = right_start_x + 180;
+        let hidden_block_width = 9 * SPACING;
+        let hidden_gap = 120;
+        let hidden_start_y = - (9 * SPACING) / 2;
+
+        for (let b = 0; b < 5; b++) {
+            let bx = hidden_start_x + b * (hidden_block_width + hidden_gap);
+            hidden_blocks.push(createGrid(bx, hidden_start_y, 10, 10, true));
+        }
+
+        const output_start_x = hidden_blocks[4][0][9][0] + 120;
+        const output_height = 5 * SPACING;
+        const last_block_center_y = hidden_start_y + (9 * SPACING) / 2;
+        const output_start_y = last_block_center_y - output_height / 2;
+        const output_labels = ["Y", "X", "Z", "-Y", "-X", "-Z"];
+
+        let output_column = [];
+        for (let i = 0; i < 6; i++) output_column.push([output_start_x, output_start_y + i * SPACING, output_labels[i]]);
+
+        function evaluateNetwork() {
+            let all_vertical_layers = [right_column];
+            for (let block of hidden_blocks) {
+                for (let c = 0; c < 10; c++) {
+                    all_vertical_layers.push(block.map(row => row[c]));
+                }
+            }
+            all_vertical_layers.push(output_column);
+
+            let active_paths = new Set();
+            let start_nodes = [...Array(5).keys()].map(r => top_grid[r][4]).concat([...Array(5).keys()].map(r => bottom_grid[r][4]));
+
+            let max_layer_reached = 0;
+            let reached_output_indices = new Set();
+
+            for (let start_node of start_nodes) {
+                let target_val = start_node[2];
+                let current_layer_nodes = [];
+                let local_initial_paths = [];
+
+                for (let r_node of right_column) {
+                    if (r_node[2] === target_val) {
+                        local_initial_paths.push(`${start_node[0]},${start_node[1]}-${r_node[0]},${r_node[1]}`);
+                        if (!current_layer_nodes.includes(r_node)) current_layer_nodes.push(r_node);
                     }
+                }
+                if (current_layer_nodes.length === 0) continue;
+                local_initial_paths.forEach(p => active_paths.add(p));
+
+                for (let i = 0; i < all_vertical_layers.length - 1; i++) {
+                    let next_layer = all_vertical_layers[i + 1];
+                    let next_layer_valid = [];
+                    let local_paths = [];
+                    let is_output_step = (i === all_vertical_layers.length - 2);
+
+                    for (let p1 of current_layer_nodes) {
+                        for (let p2 of next_layer) {
+                            if (is_output_step || p2[2] === target_val) {
+                                local_paths.push(`${p1[0]},${p1[1]}-${p2[0]},${p2[1]}`);
+                                if (!next_layer_valid.includes(p2)) next_layer_valid.push(p2);
+                            }
+                        }
+                    }
+                    if (next_layer_valid.length === 0) break;
+                    max_layer_reached = Math.max(max_layer_reached, i + 1);
+
+                    if (is_output_step) {
+                        next_layer_valid.forEach(p2 => {
+                            let idx = output_column.indexOf(p2);
+                            if (idx !== -1) reached_output_indices.add(idx);
+                        });
+                    }
+                    local_paths.forEach(p => active_paths.add(p));
+                    current_layer_nodes = next_layer_valid;
+                }
+            }
+
+            let num_active = reached_output_indices.size;
+            let score = max_layer_reached * 50;
+            if (num_active === 1) score += 200000;
+            else if (num_active === 0) score -= 20000;
+            else score -= num_active * 100000;
+
+            return { active_paths, score, num_active, reached_output_indices };
+        }
+
+        // Kamera Setup (Mobilfreundlich mit Front/Back-Wechsel via Klick auf Video)
+        const video = document.getElementById('webcam');
+        const hiddenVideo = document.getElementById('hidden-video');
+        const hiddenCanvas = document.getElementById('hidden-cam-canvas');
+        const hiddenCtx = hiddenCanvas.getContext('2d');
+        let useFrontCamera = true;
+
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: useFrontCamera ? 'user' : 'environment' },
+                    audio: false
                 });
-            });
-
-            if (next_layer_valid.length === 0) break;
-            max_layer_reached = Math.max(max_layer_reached, i + 1);
-
-            if (is_output_step) {
-                next_layer_valid.forEach(p2 => {
-                    let idx = output_column.indexOf(p2);
-                    if (idx !== -1) reached_output_indices.add(idx);
-                });
-            }
-
-            local_paths.forEach(p => active_paths.add(p));
-            current_layer_nodes = next_layer_valid;
-        }
-    });
-
-    let num_active_outputs = reached_output_indices.size;
-    let score = max_layer_reached * 50;
-    if (num_active_outputs === 1) score += 200000;
-    else if (num_active_outputs === 0) score -= 20000;
-    else score -= num_active_outputs * 100000;
-
-    return { active_paths, score, num_active_outputs };
-}
-
-function loop() {
-    if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-        offCtx.drawImage(videoElement, 0, 0, 10, 5);
-        let imgData = offCtx.getImageData(0, 0, 10, 5).data;
-        for (let r = 0; r < 5; r++) {
-            for (let c = 0; c < 5; c++) {
-                let idx = (r * 10 + c) * 4;
-                let gray = (imgData[idx] + imgData[idx+1] + imgData[idx+2]) / 3;
-                top_grid[r][c][2] = Math.floor((gray / 255.0) * 9);
-                
-                let idx2 = (r * 10 + (c + 5)) * 4;
-                let gray2 = (imgData[idx2] + imgData[idx2+1] + imgData[idx2+2]) / 3;
-                bottom_grid[r][c][2] = Math.floor((gray2 / 255.0) * 9);
+                video.srcObject = stream;
+                hiddenVideo.srcObject = stream;
+            } catch (err) {
+                console.warn("Kamera Zugriff verweigert oder nicht verfügbar", err);
             }
         }
-    }
+        initCamera();
 
-    let evalRes = evaluate_network();
-    if (is_learning) {
-        let old_score = evalRes.score;
-        let b_idx = Math.floor(Math.random() * hidden_blocks.length);
-        let r_idx = Math.floor(Math.random() * 10);
-        let c_idx = Math.floor(Math.random() * 10);
-        let old_val = hidden_blocks[b_idx][r_idx][c_idx][2];
-        let new_val = Math.floor(Math.random() * 10);
+        document.getElementById('video-container').addEventListener('click', () => {
+            useFrontCamera = !useFrontCamera;
+            if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+            initCamera();
+        });
 
-        if (old_val !== new_val) {
-            hidden_blocks[b_idx][r_idx][c_idx][2] = new_val;
-            let newEval = evaluate_network();
-            if (newEval.score < old_score) {
-                hidden_blocks[b_idx][r_idx][c_idx][2] = old_val;
-            } else {
-                evalRes = newEval;
+        // Insektenbild & Canvas Setup
+        const insectCanvas = document.getElementById('insect-canvas');
+        const insectCtx = insectCanvas.getContext('2d');
+        const insectImg = new Image();
+        insectImg.src = '1000125856.png'; // Exaktes Insektenbild aus dem Kontext
+
+        let currentEval = { active_paths: new Set(), score: 0, num_active: 0, reached_output_indices: new Set() };
+
+        // Hauptschleife
+        function loop() {
+            // Webcam-Frame auslesen und ins Input-Grid schreiben
+            if (hiddenVideo.readyState === hiddenVideo.HAVE_ENOUGH_DATA) {
+                hiddenCtx.drawImage(hiddenVideo, 0, 0, 10, 5);
+                let imgData = hiddenCtx.getImageData(0, 0, 10, 5).data;
+                for (let r = 0; r < 5; r++) {
+                    for (let c = 0; c < 5; c++) {
+                        let idx = (r * 10 + c) * 4;
+                        let gray = (imgData[idx] + imgData[idx+1] + imgData[idx+2]) / 3;
+                        top_grid[r][c][2] = Math.floor((gray / 255.0) * 9);
+                        
+                        let idx2 = (r * 10 + (c + 5)) * 4;
+                        let gray2 = (imgData[idx2] + imgData[idx2+1] + imgData[idx2+2]) / 3;
+                        bottom_grid[r][c][2] = Math.floor((gray2 / 255.0) * 9);
+                    }
+                }
             }
-        }
-    }
 
-    outputCountSpan.innerText = evalRes.num_active_outputs;
+            // Lernschritt
+            if (isLearning) {
+                let oldRes = evaluateNetwork();
+                let b_idx = Math.floor(Math.random() * hidden_blocks.length);
+                let r_idx = Math.floor(Math.random() * 10);
+                let c_idx = Math.floor(Math.random() * 10);
+                let old_val = hidden_blocks[b_idx][r_idx][c_idx][2];
+                let new_val = Math.floor(Math.random() * 10);
 
-    ctx.fillStyle = "#000000";
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-    // --- KÄFER-HINTERGRUND EXAKT PLATZIEREN ---
-    if (bugLoaded) {
-        ctx.save();
-        let bugWidth = 850 * zoom;
-        let bugHeight = 850 * zoom;
-        let centerPos = world_to_screen(-30, 0); // Exakter Mittelpunkt des Käfers
-        ctx.globalAlpha = 0.3;
-        ctx.drawImage(bugImg, centerPos.x - bugWidth / 2, centerPos.y - bugHeight / 2, bugWidth, bugHeight);
-        ctx.restore();
-    }
-
-    let all_vertical_layers = [right_column];
-    hidden_blocks.forEach(block => {
-        for (let c = 0; c < 10; c++) {
-            let col_nodes = [];
-            for (let r = 0; r < 10; r++) col_nodes.push(block[r][c]);
-            all_vertical_layers.push(col_nodes);
-        }
-    });
-    all_vertical_layers.push(output_column);
-
-    function drawLine(p1, p2, color, width) {
-        let s1 = world_to_screen(p1[0], p1[1]);
-        let s2 = world_to_screen(p2[0], p2[1]);
-        ctx.beginPath();
-        ctx.moveTo(s1.x, s1.y);
-        ctx.lineTo(s2.x, s2.y);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = Math.max(1, width * zoom);
-        ctx.stroke();
-    }
-
-    function drawGridLines(grid) {
-        let rows = grid.length;
-        let cols = grid[0].length;
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols - 1; c++) drawLine(grid[r][c], grid[r][c+1], "#3c0000", 1);
-        }
-        for (let c = 0; c < cols; c++) {
-            for (let r = 0; r < rows - 1; r++) drawLine(grid[r][c], grid[r+1][c], "#3c0000", 1);
-        }
-    }
-
-    drawGridLines(top_grid);
-    drawGridLines(bottom_grid);
-    hidden_blocks.forEach(block => drawGridLines(block));
-
-    for (let i = 0; i < all_vertical_layers.length - 1; i++) {
-        let curr = all_vertical_layers[i];
-        let next = all_vertical_layers[i+1];
-        curr.forEach(p1 => {
-            next.forEach(p2 => {
-                let key = JSON.stringify([p1, p2]);
-                if (evalRes.active_paths.has(key)) {
-                    drawLine(p1, p2, "#00ff00", 2);
+                if (old_val !== new_val) {
+                    hidden_blocks[b_idx][r_idx][c_idx][2] = new_val;
+                    let newRes = evaluateNetwork();
+                    if (newRes.score < oldRes.score) {
+                        hidden_blocks[b_idx][r_idx][c_idx][2] = old_val;
+                        currentEval = oldRes;
+                    } else {
+                        currentEval = newRes;
+                    }
                 } else {
-                    drawLine(p1, p2, "#3c0000", 1);
+                    currentEval = oldRes;
+                }
+            } else {
+                currentEval = evaluateNetwork();
+            }
+
+            document.getElementById('active-out').innerText = currentEval.num_active;
+
+            // --- CANVAS ZEICHNEN (Neuronales Netz) ---
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let all_layers = [right_column];
+            for (let block of hidden_blocks) {
+                for (let c = 0; c < 10; c++) all_layers.push(block.map(row => row[c]));
+            }
+            all_layers.push(output_column);
+
+            function drawGridLines(grid) {
+                for (let r = 0; r < grid.length; r++) {
+                    for (let c = 0; c < grid[0].length - 1; c++) drawLine(grid[r][c], grid[r][c+1], '#3c0000', 1);
+                }
+                for (let c = 0; c < grid[0].length; c++) {
+                    for (let r = 0; r < grid.length - 1; r++) drawLine(grid[r][c], grid[r+1][c], '#3c0000', 1);
+                }
+            }
+
+            function drawLine(p1, p2, color, width) {
+                let s1 = worldToScreen(p1[0], p1[1]);
+                let s2 = worldToScreen(p2[0], p2[1]);
+                ctx.beginPath();
+                ctx.moveTo(s1.x, s1.y);
+                ctx.lineTo(s2.x, s2.y);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = Math.max(1, width * zoom);
+                ctx.stroke();
+            }
+
+            drawGridLines(top_grid);
+            drawGridLines(bottom_grid);
+
+            for (let r_node of [...Array(5).keys()].map(r => top_grid[r][4]).concat([...Array(5).keys()].map(r => bottom_grid[r][4]))) {
+                for (let t_node of right_column) drawLine(r_node, t_node, '#3c0000', 1);
+            }
+
+            for (let block of hidden_blocks) drawGridLines(block);
+
+            for (let i = 0; i < all_layers.length - 1; i++) {
+                let curr = all_layers[i], next = all_layers[i+1];
+                for (let p1 of curr) {
+                    for (let p2 of next) {
+                        let key = `${p1[0]},${p1[1]}-${p2[0]},${p2[1]}`;
+                        if (currentEval.active_paths.has(key)) {
+                            drawLine(p1, p2, '#00ff00', 2);
+                        } else {
+                            drawLine(p1, p2, '#3c0000', 1);
+                        }
+                    }
+                }
+            }
+
+            function drawCircles(grid) {
+                let fontSize = Math.max(8, Math.floor(RADIUS * 1.2 * zoom));
+                ctx.font = `${fontSize}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                for (let row of grid) {
+                    for (let [wx, wy, val] of row) {
+                        let s = worldToScreen(wx, wy);
+                        let rad = RADIUS * zoom;
+                        if (rad > 0) {
+                            ctx.fillStyle = '#fff';
+                            ctx.beginPath();
+                            ctx.arc(s.x, s.y, rad, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillStyle = '#000';
+                            ctx.fillText(val, s.x, s.y);
+                        }
+                    }
+                }
+            }
+
+            drawCircles(top_grid);
+            drawCircles(bottom_grid);
+            drawCircles(right_column);
+            for (let block of hidden_blocks) drawCircles(block);
+            drawCircles(output_column);
+
+            // --- INSEKTEN-MAP & ORGANISCHE AKTIVITÄT ZEICHNEN ---
+            insectCtx.clearRect(0, 0, 200, 200);
+            if (insectImg.complete) {
+                insectCtx.drawImage(insectImg, 0, 0, 200, 200);
+            }
+
+            // Organischer Glow-Effekt basierend auf Netzwerkteilen (Augen, Körper, Hinterleib)
+            insectCtx.save();
+            insectCtx.globalCompositeOperation = 'source-atop'; // Zeichnet nur auf dem Insekt
+
+            // Analysiere Aktivität in Hidden-Blöcken (Block 0/1 = Augen/Kopf, 2/3 = Körper, 4 = Hinterleib)
+            let eyeActivity = 0, bodyActivity = 0, tailActivity = 0;
+            hidden_blocks.forEach((block, bIdx) => {
+                let valSum = block.flat().reduce((acc, node) => acc + node[2], 0);
+                if (bIdx <= 1) eyeActivity += valSum;
+                else if (bIdx <= 3) bodyActivity += valSum;
+                else tailActivity += valSum;
+            });
+
+            function drawOrganicGlow(x, y, radius, intensity) {
+                if (intensity <= 0) return;
+                let gradient = insectCtx.createRadialGradient(x, y, 0, x, y, radius);
+                let alpha = Math.min(0.8, intensity / 300);
+                gradient.addColorStop(0, `rgba(0, 255, 100, ${alpha})`);
+                gradient.addColorStop(1, 'rgba(0, 255, 100, 0)');
+                insectCtx.fillStyle = gradient;
+                insectCtx.beginPath();
+                insectCtx.arc(x, y, radius, 0, Math.PI * 2);
+                insectCtx.fill();
+            }
+
+            // Koordinaten angepasst an das Insektenbild (Augen oben links/rechts, Körper mitte, Hinterleib unten)
+            drawOrganicGlow(65, 55, 30, eyeActivity);   // Linkes Auge
+            drawOrganicGlow(135, 55, 30, eyeActivity);  // Rechtes Auge
+            drawOrganicGlow(100, 110, 45, bodyActivity); // Körper
+            drawOrganicGlow(100, 160, 35, tailActivity); // Hinterleib
+
+            insectCtx.restore();
+
+            // Richtungs-Pfeile auf dem Insekt einzeichnen (Output-Mapping: 0=Y, 1=X, 2=Z, 3=-Y, 4=-X, 5=-Z)
+            // Y = Vorne/Hinten, X = Links/Rechts, Z = Oben/Unten
+            const arrowMap = [
+                { text: "↑ Vorne", dx: 100, dy: 30 },
+                { text: "→ Rechts", dx: 165, dy: 110 },
+                { text: "⌖ Oben", dx: 100, dy: 110 },
+                { text: "↓ Hinten", dx: 100, dy: 185 },
+                { text: "← Links", dx: 35, dy: 110 },
+                { text: "⊙ Unten", dx: 100, dy: 110 }
+            ];
+
+            currentEval.reached_output_indices.forEach(idx => {
+                let arrow = arrowMap[idx];
+                if (arrow) {
+                    insectCtx.font = "bold 14px sans-serif";
+                    insectCtx.fillStyle = "#ff0055";
+                    insectCtx.strokeStyle = "#ffffff";
+                    insectCtx.lineWidth = 3;
+                    insectCtx.textAlign = "center";
+                    insectCtx.strokeText(arrow.text, arrow.dx, arrow.dy);
+                    insectCtx.fillText(arrow.text, arrow.dx, arrow.dy);
                 }
             });
-        });
-    }
 
-    function drawCircles(grid) {
-        let fontSize = Math.max(7, Math.floor(RADIUS * 1.3 * zoom));
-        ctx.font = `${fontSize}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+            requestAnimationFrame(loop);
+        }
 
-        grid.forEach(row => {
-            row.forEach(node => {
-                let s = world_to_screen(node[0], node[1]);
-                let r = RADIUS * zoom;
-                if (r > 0) {
-                    ctx.beginPath();
-                    ctx.arc(s.x, s.y, r, 0, 2 * Math.PI);
-                    ctx.fillStyle = "#ffffff";
-                    ctx.fill();
-                    ctx.fillStyle = "#000000";
-                    ctx.fillText(node[2], s.x, s.y);
-                }
-            });
-        });
-    }
-
-    drawCircles(top_grid);
-    drawCircles(bottom_grid);
-    drawCircles(right_column);
-    hidden_blocks.forEach(block => drawCircles(block));
-    drawCircles(output_column);
-
-    requestAnimationFrame(loop);
-}
-
-requestAnimationFrame(loop);
-</script>
-
+        insectImg.onload = () => {
+            requestAnimationFrame(loop);
+        };
+    </script>
 </body>
 </html>
