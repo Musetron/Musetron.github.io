@@ -30,17 +30,7 @@
             padding: 8px 12px;
             border-radius: 8px;
             pointer-events: none;
-        }
-        #webcam-preview {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            width: 100px;
-            height: 50px;
-            border: 1px solid white;
-            border-radius: 4px;
-            object-fit: cover;
-            transform: scaleX(-1);
+            z-index: 10;
         }
     </style>
 </head>
@@ -49,7 +39,6 @@
     <div id="ui">Lernen: AN | Aktive Outputs: <span id="output-count">0</span></div>
     <video id="webcam" autoplay playsinline muted style="display:none;"></video>
     <canvas id="canvas"></canvas>
-    <canvas id="bug-bg" style="display:none;"></canvas>
 
 <script>
 const canvas = document.getElementById('canvas');
@@ -69,13 +58,13 @@ window.addEventListener('resize', () => {
     canvas.height = HEIGHT;
 });
 
-// Kamera- / Transformationsvariablen (für Mobile angepasst)
-let zoom = Math.min(WIDTH, HEIGHT) / 1000;
+// Perfekter initialer Zoom & Zentrierung für den Käfer
+let zoom = Math.min(WIDTH, HEIGHT) / 750;
 let camera_x = 0;
 let camera_y = 0;
 let is_learning = true;
 
-// Touch / Maus Steuerung
+// Touch / Maus Steuerung zum Verschieben & Zoomen
 let isDragging = false;
 let lastX = 0, lastY = 0;
 let initialDist = null;
@@ -99,7 +88,6 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerup', () => isDragging = false);
 canvas.addEventListener('pointercancel', () => isDragging = false);
 
-// Pinch to Zoom für Smartphones
 canvas.addEventListener('touchstart', (e) => {
     if (e.touches.length === 2) {
         initialDist = Math.hypot(
@@ -121,13 +109,13 @@ canvas.addEventListener('touchmove', (e) => {
     }
 });
 
-// Käfer-Hintergrundbild laden[span_2](start_span)[span_2](end_span)
+// Käfer-Hintergrundbild laden[span_0](start_span)[span_0](end_span)
 const bugImg = new Image();
-bugImg.src = '1000125857.png'; // Stelle sicher, dass das Bild im selben Ordner liegt
+bugImg.src = '1000125857.png'; 
 let bugLoaded = false;
 bugImg.onload = () => { bugLoaded = true; };
 
-// Webcam initialisieren (Smartphone-Rückkamera bevorzugen falls vorhanden)
+// Webcam initialisieren (Rückkamera)
 navigator.mediaDevices.getUserMedia({ 
     video: { facingMode: 'environment' }, 
     audio: false 
@@ -135,7 +123,7 @@ navigator.mediaDevices.getUserMedia({
     videoElement.srcObject = stream;
     videoElement.play();
 }).catch(err => {
-    console.warn("Kamerazugriff fehlgeschlagen, nutze Fallback:", err);
+    console.warn("Kamerazugriff fehlgeschlagen:", err);
 });
 
 const offscreenCanvas = document.createElement('canvas');
@@ -143,8 +131,8 @@ offscreenCanvas.width = 10;
 offscreenCanvas.height = 5;
 const offCtx = offscreenCanvas.getContext('2d');
 
-const SPACING = 35;
-const RADIUS = 8;
+const SPACING = 24;
+const RADIUS = 6;
 
 function world_to_screen(wx, wy) {
     return {
@@ -163,46 +151,46 @@ function get_grid_positions(start_x, start_y, rows, cols, random_vals = false) {
             let val = random_vals ? Math.floor(Math.random() * 10) : 0;
             row_pos.push([wx, wy, val]);
         }
-        positions.append ? positions.append(row_pos) : positions.push(row_pos);
+        positions.push(row_pos);
     }
     return positions;
 }
 
-// Layout aufbauen
-let grid_size = 4 * SPACING;
-let top_start_x = -grid_size / 2 - 200;
-let top_start_y = -180;
-let bottom_start_y = 50;
+// --- EXAKTE ANPASSUNG AN DIE KÄFER-ANATOMIE ---
+// Augen liegen links (Input Grids)
+let top_start_x = -320;
+let top_start_y = -85;
+let bottom_start_y = 15;
 
 let top_grid = get_grid_positions(top_start_x, top_start_y, 5, 5, false);
 let bottom_grid = get_grid_positions(top_start_x, bottom_start_y, 5, 5, false);
 
-let right_start_x = top_start_x + grid_size + 80;
-let total_height_others = (bottom_start_y + grid_size) - top_start_y;
-let height_10_circles = 9 * SPACING;
-let right_start_y = top_start_y + (total_height_others - height_10_circles) / 2;
+let right_start_x = top_start_x + (5 * SPACING) + 20;
+let right_start_y = -55;
 
 let right_column = [];
 for (let i = 0; i < 10; i++) {
     right_column.push([right_start_x, right_start_y + i * SPACING, i]);
 }
 
+// Körper (Hidden Layers im Rumpf des Käfers)
 let hidden_blocks = [];
-let hidden_start_x = right_start_x + 140;
+let hidden_start_x = right_start_x + 35;
 let hidden_block_width = 9 * SPACING;
-let hidden_gap = 100;
-let hidden_start_y = - (9 * SPACING) / 2;
+let hidden_gap = 25;
+let hidden_start_y = -108;
 
 for (let b = 0; b < 5; b++) {
     let bx = hidden_start_x + b * (hidden_block_width + hidden_gap);
     hidden_blocks.push(get_grid_positions(bx, hidden_start_y, 10, 10, true));
 }
 
-let output_start_x = hidden_blocks[4][0][9][0] + 100;
-let output_height = 5 * SPACING;
-let last_block_center_y = hidden_start_y + (9 * SPACING) / 2;
-let output_start_y = last_block_center_y - output_height / 2;
+// Hintern (Output Layer am rechten Ende des Käfers)
+let last_block_end_x = hidden_blocks[4][0][9][0];
+let output_start_x = last_block_end_x + 35;
+let output_start_y = -35;
 let output_labels = ["Y", "X", "Z", "-Y", "-X", "-Z"];
+
 let output_column = [];
 for (let i = 0; i < 6; i++) {
     output_column.push([output_start_x, output_start_y + i * SPACING, output_labels[i]]);
@@ -285,9 +273,7 @@ function evaluate_network() {
     return { active_paths, score, num_active_outputs };
 }
 
-// Hauptschleife
 function loop() {
-    // Webcam Frame auslesen und ins Raster übertragen
     if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
         offCtx.drawImage(videoElement, 0, 0, 10, 5);
         let imgData = offCtx.getImageData(0, 0, 10, 5).data;
@@ -304,7 +290,6 @@ function loop() {
         }
     }
 
-    // Intelligentes Lernen
     let evalRes = evaluate_network();
     if (is_learning) {
         let old_score = evalRes.score;
@@ -327,23 +312,20 @@ function loop() {
 
     outputCountSpan.innerText = evalRes.num_active_outputs;
 
-    // Zeichnen
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-    // Käfer-Hintergrundbild passgenau einzeichnen[span_3](start_span)[span_3](end_span)
+    // --- KÄFER-HINTERGRUND EXAKT PLATZIEREN ---
     if (bugLoaded) {
         ctx.save();
-        // Hier wird der Käfer perfekt auf die Dimensionen des Netzwerks skizziert und zentriert
-        let bugWidth = 1400 * zoom;
-        let bugHeight = 1400 * zoom;
-        let centerPos = world_to_screen(-100, 0);
-        ctx.globalAlpha = 0.25; // Dezenter Hintergrund
+        let bugWidth = 850 * zoom;
+        let bugHeight = 850 * zoom;
+        let centerPos = world_to_screen(-30, 0); // Exakter Mittelpunkt des Käfers
+        ctx.globalAlpha = 0.3;
         ctx.drawImage(bugImg, centerPos.x - bugWidth / 2, centerPos.y - bugHeight / 2, bugWidth, bugHeight);
         ctx.restore();
     }
 
-    // Linien & Netze zeichnen
     let all_vertical_layers = [right_column];
     hidden_blocks.forEach(block => {
         for (let c = 0; c < 10; c++) {
@@ -365,7 +347,6 @@ function loop() {
         ctx.stroke();
     }
 
-    // Raster Linien zeichnen
     function drawGridLines(grid) {
         let rows = grid.length;
         let cols = grid[0].length;
@@ -381,7 +362,6 @@ function loop() {
     drawGridLines(bottom_grid);
     hidden_blocks.forEach(block => drawGridLines(block));
 
-    // Zwischenverbindungen und aktive Pfade
     for (let i = 0; i < all_vertical_layers.length - 1; i++) {
         let curr = all_vertical_layers[i];
         let next = all_vertical_layers[i+1];
@@ -397,9 +377,8 @@ function loop() {
         });
     }
 
-    // Knoten (Kreise) und Werte zeichnen
     function drawCircles(grid) {
-        let fontSize = Math.max(8, Math.floor(RADIUS * 1.2 * zoom));
+        let fontSize = Math.max(7, Math.floor(RADIUS * 1.3 * zoom));
         ctx.font = `${fontSize}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
