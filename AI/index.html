@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neural Bug - Fixed</title>
+    <title>Neural Network - Ultimate Mobile mit IBB.co Bild</title>
     <style>
         body {
             margin: 0;
-            background-color: #05070c;
+            background-color: #0b0f19;
             color: #ffffff;
             font-family: system-ui, -apple-system, sans-serif;
             overflow: hidden;
@@ -109,7 +109,7 @@
 <body>
 
     <header>
-        <h1>Neural Bug</h1>
+        <h1>Neural Net</h1>
         <div class="controls">
             <button id="toggle-learn-btn" class="active" onclick="toggleLearning()">Lernen</button>
             <button onclick="saveNetwork()">Speichern</button>
@@ -121,7 +121,7 @@
         <div id="status-bar">Lerne...</div>
         <canvas id="netCanvas"></canvas>
         <div class="sidebar">
-            <span class="video-label" id="cam-status">Kamera: Lädt...</span>
+            <span class="video-label" id="cam-status">Input: IBB Bild</span>
             <video id="video-element" autoplay playsinline muted></video>
             <canvas id="webcam-preview" width="10" height="5"></canvas>
         </div>
@@ -133,13 +133,6 @@
         const videoElement = document.getElementById('video-element');
         const webcamPreview = document.getElementById('webcam-preview');
         const previewCtx = webcamPreview.getContext('2d', { willReadFrequently: true });
-
-        // Tier-Hintergrundbild laden
-        const bugImage = new Image();
-        bugImage.crossOrigin = "anonymous";
-        bugImage.src = "https://i.ibb.co/bTdMGgG/Add-Text-09-19-11-18-49.png";
-        let imageLoaded = false;
-        bugImage.onload = () => { imageLoaded = true; };
 
         function resize() {
             canvas.width = window.innerWidth;
@@ -156,6 +149,22 @@
         let camera_y = 0.0;
         let is_learning = true;
 
+        // --- HIER DEINEN IBB.CO DIREKT-LINK EINFÜGEN ---
+        const staticImage = new Image();
+        staticImage.crossOrigin = "anonymous";
+        staticImage.src = '1000125857.png'; // Trage hier z.B. 'https://i.ibb.co/xxxxx/bild.png' ein
+        let imageLoaded = false;
+        
+        staticImage.onload = () => {
+            imageLoaded = true;
+            document.getElementById('cam-status').innerText = "Input: IBB Aktiv";
+        };
+        staticImage.onerror = () => {
+            document.getElementById('cam-status').innerText = "Fehler beim Laden!";
+            console.error("Bild konnte nicht geladen werden. Bitte prüfe den direkten ibb.co Link.");
+        };
+
+        // Touch & Maus Tracking für Pan & Zoom
         const activePointers = new Map();
         let initialPinchDist = null;
         let initialZoom = zoom;
@@ -223,27 +232,9 @@
             output_column.push([output_start_x, output_start_y + i * SPACING, output_labels[i]]);
         }
 
-        let cameraActive = false;
-        async function initCamera() {
-            try {
-                const constraints = {
-                    video: { facingMode: { ideal: "environment" }, width: { ideal: 320 }, height: { ideal: 240 } }
-                };
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                videoElement.srcObject = stream;
-                await videoElement.play();
-                cameraActive = true;
-                document.getElementById('cam-status').innerText = "Kamera: Aktiv";
-            } catch (err) {
-                cameraActive = false;
-                document.getElementById('cam-status').innerText = "Kamera: Demo-Modus";
-            }
-        }
-        initCamera();
-
-        function updateInputFromCamera() {
-            if (cameraActive && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-                previewCtx.drawImage(videoElement, 0, 0, 10, 5);
+        function updateInputFromImage() {
+            if (imageLoaded) {
+                previewCtx.drawImage(staticImage, 0, 0, 10, 5);
                 const frameData = previewCtx.getImageData(0, 0, 10, 5).data;
                 
                 for (let r = 0; r < 5; r++) {
@@ -257,18 +248,6 @@
                         bottom_grid[r][c][2] = Math.floor((grayBot / 255.0) * 9);
                     }
                 }
-            } else {
-                let t = Date.now() * 0.003;
-                for (let r = 0; r < 5; r++) {
-                    for (let c = 0; c < 5; c++) {
-                        top_grid[r][c][2] = Math.floor(Math.abs(Math.sin(t + r + c)) * 9);
-                        bottom_grid[r][c][2] = Math.floor(Math.abs(Math.cos(t + r - c)) * 9);
-                    }
-                }
-                previewCtx.fillStyle = '#111';
-                previewCtx.fillRect(0, 0, 10, 5);
-                previewCtx.fillStyle = '#38bdf8';
-                previewCtx.fillRect(Math.floor((Math.sin(t)+1)*4), 2, 2, 2);
             }
         }
 
@@ -383,7 +362,7 @@
             camera_y = 0.0;
         }
 
-        // Steuerung (Touch & Maus)
+        // --- STEUERUNG (TOUCH & MOUSE / PINCH-TO-ZOOM) ---
         canvas.addEventListener('pointerdown', e => {
             activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         });
@@ -431,9 +410,9 @@
             camera_y = (camera_y + (e.clientY - canvas.height / 2) / old_zoom) - (e.clientY - canvas.height / 2) / zoom;
         }, { passive: false });
 
-        // Haupt-Renderschleife
+        // --- HAUPT-RENDERSCHLEIFE ---
         function loop() {
-            updateInputFromCamera();
+            updateInputFromImage();
 
             if (is_learning) {
                 let evalOld = evaluateNetwork();
@@ -455,17 +434,6 @@
 
             ctx.fillStyle = '#000000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // --- HINTERGRUND-TIER ZEICHNEN ---
-            if (imageLoaded) {
-                ctx.save();
-                ctx.globalAlpha = 0.22;
-                let bugWidth = 1400 * zoom;
-                let bugHeight = 1400 * zoom;
-                let bugScreenPos = worldToScreen(600, 0);
-                ctx.drawImage(bugImage, bugScreenPos.x - bugWidth / 2, bugScreenPos.y - bugHeight / 2, bugWidth, bugHeight);
-                ctx.restore();
-            }
 
             function drawWorldLine(p1, p2, color = '#3c0000', width = 1) {
                 const s1 = worldToScreen(p1[0], p1[1]);
@@ -512,4 +480,53 @@
 
             for (let i = 0; i < all_vertical_layers.length - 1; i++) {
                 let curr_layer = all_vertical_layers[i];
-                let next_layer = all_vertical_layer
+                let next_layer = all_vertical_layers[i+1];
+                for (let p1 of curr_layer) {
+                    for (let p2 of next_layer) {
+                        let key = JSON.stringify([[p1[0], p1[1], p1[2]], [p2[0], p2[1], p2[2]]]);
+                        if (active_paths.has(key)) {
+                            drawWorldLine(p1, p2, '#38bdf8', 2);
+                        }
+                    }
+                }
+            }
+
+            function drawNodes(grid, isOutput = false) {
+                let rows = grid.length, cols = grid[0].length;
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        let node = grid[r][c];
+                        let screenPos = worldToScreen(node[0], node[1]);
+                        
+                        if (screenPos.x < -50 || screenPos.x > canvas.width + 50 || screenPos.y < -50 || screenPos.y > canvas.height + 50) continue;
+
+                        ctx.beginPath();
+                        ctx.arc(screenPos.x, screenPos.y, RADIUS * Math.max(0.4, Math.min(zoom * 2.5, 1.5)), 0, Math.PI * 2);
+                        ctx.fillStyle = isOutput ? '#16a34a' : '#1e293b';
+                        ctx.fill();
+                        ctx.lineWidth = 1.5;
+                        ctx.strokeStyle = isOutput ? '#4ade80' : '#475569';
+                        ctx.stroke();
+
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = `${Math.max(8, Math.round(10 * zoom * 1.5))}px sans-serif`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(node[2], screenPos.x, screenPos.y);
+                    }
+                }
+            }
+
+            drawNodes(top_grid);
+            drawNodes(bottom_grid);
+            drawNodes(right_column);
+            for (let block of hidden_blocks) drawNodes(block);
+            drawNodes(output_column, true);
+
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
