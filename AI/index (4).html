@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#050505">
+<title>Insekten-Neuronales Netzwerk</title>
+<style>
+  :root{
+    --bg:#030303; --panel:rgba(13,13,15,.88); --line:#3a0000; --green:#39ff88;
+    --white:#f7f7f7; --muted:#a7a7aa; --red:#ff3150;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--white);
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  body{touch-action:none}
+  #app{position:fixed;inset:0;background:#000}
+  #network{position:absolute;inset:0;width:100%;height:100%;display:block;background:#000}
+  #hud{
+    position:absolute;left:max(12px,env(safe-area-inset-left));top:max(12px,env(safe-area-inset-top));
+    display:flex;align-items:center;gap:8px;z-index:10;pointer-events:none;
+    font-size:13px
+  }
+  .pill{background:rgba(10,10,12,.78);border:1px solid rgba(255,255,255,.12);border-radius:999px;
+    padding:8px 11px;backdrop-filter:blur(12px);box-shadow:0 5px 25px #0008}
+  #statusDot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#777;margin-right:6px}
+  #statusDot.on{background:var(--green);box-shadow:0 0 12px var(--green)}
+  #controls{
+    position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);
+    display:flex;gap:8px;z-index:20;padding:8px;border-radius:18px;
+    background:rgba(10,10,12,.82);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(18px);
+    box-shadow:0 10px 40px #000b
+  }
+  button{
+    appearance:none;border:1px solid rgba(255,255,255,.13);background:#17171a;color:#fff;
+    border-radius:12px;padding:10px 13px;font:600 13px system-ui;cursor:pointer
+  }
+  button:active{transform:scale(.96)} button.primary{background:#f5f5f5;color:#050505}
+  #side{
+    position:absolute;right:max(12px,env(safe-area-inset-right));top:max(12px,env(safe-area-inset-top));
+    width:min(330px,42vw);max-height:calc(100% - 100px);z-index:12;display:flex;flex-direction:column;gap:10px;
+    pointer-events:none
+  }
+  .card{pointer-events:auto;background:rgba(10,10,12,.82);border:1px solid rgba(255,255,255,.11);
+    border-radius:18px;padding:12px;backdrop-filter:blur(18px);box-shadow:0 10px 40px #0009}
+  .card h3{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#d8d8dc}
+  #insectWrap{position:relative;display:flex;justify-content:center;align-items:center;min-height:190px}
+  #insect{width:100%;max-height:43vh;object-fit:contain;display:block;border-radius:12px}
+  #insectOverlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  #directions{display:flex;justify-content:space-around;gap:6px;min-height:50px;align-items:center}
+  .dir{font-size:11px;color:#777;text-align:center;transition:.18s}
+  .dir.active{color:#fff;text-shadow:0 0 12px var(--green);font-weight:800}
+  .arrow{font-size:24px;line-height:1}
+  #cameraCard{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(74px,calc(74px + env(safe-area-inset-bottom)));
+    width:min(220px,38vw);z-index:15}
+  #video{display:block;width:100%;aspect-ratio:2/1;object-fit:cover;border-radius:12px;background:#050505;transform:scaleX(-1)}
+  #camCanvas{display:none}
+  .camTitle{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;font-size:11px;color:#bbb}
+  #permission{font-size:11px;color:#aaa;line-height:1.35;margin-top:7px}
+  #legend{display:flex;gap:8px;flex-wrap:wrap;color:#999;font-size:10px}
+  .legendItem{display:flex;align-items:center;gap:4px}.sw{width:9px;height:9px;border-radius:50%}
+  #toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:50;
+    background:rgba(15,15,18,.94);border:1px solid #333;border-radius:16px;padding:13px 16px;
+    font-size:13px;opacity:0;pointer-events:none;transition:.2s;max-width:90%;text-align:center}
+  #toast.show{opacity:1}
+  @media(max-width:700px){
+    #side{top:auto;bottom:calc(82px + env(safe-area-inset-bottom));left:10px;right:10px;width:auto;
+      max-height:none;flex-direction:row;align-items:stretch;pointer-events:none}
+    #side .card{flex:1;min-width:0}
+    #insectCard{display:block}
+    #insectWrap{min-height:145px}
+    #insect{max-height:24vh}
+    #directionCard{display:block}
+    #cameraCard{width:38vw;max-width:190px;bottom:calc(82px + env(safe-area-inset-bottom));right:10px}
+    #cameraCard{transform:translateY(calc(-1 * min(26vh,190px) - 8px))}
+    #controls{max-width:96vw;overflow:auto}
+    button{padding:10px 11px}
+  }
+  @media(max-width:480px){
+    #side{bottom:calc(80px + env(safe-area-inset-bottom));}
+    #insectWrap{min-height:120px}
+    #directionCard{display:none}
+    #cameraCard{width:43vw}
+    #cameraCard{transform:none}
+    #legend{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="network"></canvas>
+
+  <div id="hud">
+    <div class="pill"><span id="statusDot"></span><span id="status">Kamera wartet …</span></div>
+    <div class="pill" id="outputStatus">Outputs: 0 / 5</div>
+  </div>
+
+  <div id="side">
+    <div class="card" id="insectCard">
+      <h3>Insektenkarte · neuronale Aktivität</h3>
+      <div id="insectWrap">
+        <img id="insect" src="käfer.png" alt="Käfer">
+        <canvas id="insectOverlay"></canvas>
+      </div>
+      <div id="legend">
+        <div class="legendItem"><span class="sw" style="background:#39ff88"></span>aktive Wege</div>
+        <div class="legendItem"><span class="sw" style="background:#fff"></span>Insekt</div>
+      </div>
+    </div>
+    <div class="card" id="directionCard">
+      <h3>Bewegungs-Output (5 Richtungen)</h3>
+      <div id="directions">
+        <div class="dir" data-dir="Y"><div class="arrow">●</div>vorne</div>
+        <div class="dir" data-dir="X"><div class="arrow">→</div>rechts</div>
+        <div class="dir" data-dir="-Y"><div class="arrow">↘</div>hinten</div>
+        <div class="dir" data-dir="-X"><div class="arrow">←</div>links</div>
+        <div class="dir" data-dir="Z"><div class="arrow">↑</div>oben</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="cameraCard" class="card">
+    <div class="camTitle"><span>HANDYKAMERA</span><span id="camRes">10 × 5</span></div>
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="camCanvas" width="10" height="5"></canvas>
+    <div id="permission">Tippe auf „Kamera“, um die Kamera-Freigabe zu starten.</div>
+  </div>
+
+  <div id="controls">
+    <button class="primary" id="cameraBtn">Kamera</button>
+    <button id="learnBtn">Lernen: AN</button>
+    <button id="saveBtn">Speichern</button>
+    <button id="loadBtn">Laden</button>
+    <button id="resetViewBtn">Ansicht</button>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+const RADIUS=10, SPACING=40;
+let zoom=.75, cameraX=300, cameraY=0;
+let isLearning=true;
+const outputLabels=["Y","X","-Y","-X","Z"]; // Genau 5 Ausgänge
+const hiddenBlocks=[];
+const topGrid=[], bottomGrid=[], rightColumn=[], outputColumn=[];
+
+function getGridPositions(startX,startY,rows,cols,randomVals=false){
+  const a=[];
+  for(let r=0;r<rows;r++){
+    const row=[];
+    for(let c=0;c<cols;c++){
+      row.push({x:startX+c*SPACING,y:startY+r*SPACING,val:randomVals?Math.floor(Math.random()*10):0});
+    }
+    a.push(row);
+  }
+  return a;
+}
+const gridSize=4*SPACING;
+const topStartX=-gridSize/2-250, topStartY=-220;
+const bottomStartY=60, bottomStartX=topStartX;
+const rightStartX=topStartX+gridSize+100;
+const totalHeightOthers=(bottomStartY+gridSize)-topStartY;
+const height10=9*SPACING;
+const rightStartY=topStartY+(totalHeightOthers-height10)/2;
+
+for(const row of getGridPositions(topStartX,topStartY,5,5,false)) topGrid.push(row);
+for(const row of getGridPositions(bottomStartX,bottomStartY,5,5,false)) bottomGrid.push(row);
+for(let i=0;i<10;i++) rightColumn.push({x:rightStartX,y:rightStartY+i*SPACING,val:i});
+
+const hiddenStartX=rightStartX+180, hiddenBlockWidth=9*SPACING, hiddenGap=120;
+const hiddenStartY=-(9*SPACING)/2;
+for(let b=0;b<5;b++){
+  hiddenBlocks.push(getGridPositions(hiddenStartX+b*(hiddenBlockWidth+hiddenGap),hiddenStartY,10,10,true));
+}
+const outputStartX=hiddenBlocks[4][0][9].x+120;
+const outputHeight=4*SPACING;
+const lastBlockCenterY=hiddenStartY+(9*SPACING)/2;
+const outputStartY=lastBlockCenterY-outputHeight/2;
+for(let i=0;i<5;i++) outputColumn.push({x:outputStartX,y:outputStartY+i*SPACING,val:outputLabels[i]});
+
+function nodeKey(n){return `${n.x},${n.y},${n.val}`}
+
+function evaluateNetwork(){
+  const allVerticalLayers=[rightColumn];
+  for(const block of hiddenBlocks){
+    for(let c=0;c<10;c++){
+      const col=[];
+      for(let r=0;r<10;r++) col.push(block[r][c]);
+      allVerticalLayers.push(col);
+    }
+  }
+  allVerticalLayers.push(outputColumn);
+
+  const activePaths=new Set();
+  const topRightCol=topGrid.map(r=>r[4]);
+  const bottomRightCol=bottomGrid.map(r=>r[4]);
+  const startNodes=topRightCol.concat(bottomRightCol);
+  let maxLayerReached=0;
+  const reachedOutputIndices=new Set();
+  const outputVotes=new Array(outputColumn.length).fill(0);
+
+  for(const startNode of startNodes){
+    const targetVal=startNode.val;
+    let currentLayerNodes=[];
+    const initial=[];
+    for(const rn of rightColumn){
+      if(rn.val===targetVal){
+        initial.push([startNode,rn]);
+        if(!currentLayerNodes.includes(rn)) currentLayerNodes.push(rn);
+      }
+    }
+    if(!currentLayerNodes.length) continue;
+    for(const [a,b] of initial) activePaths.add(nodeKey(a)+"|"+nodeKey(b));
+
+    for(let i=0;i<allVerticalLayers.length-1;i++){
+      const curr=allVerticalLayers[i], next=allVerticalLayers[i+1];
+      const nextValid=[], local=[];
+      const isOutputStep=(i===allVerticalLayers.length-2);
+
+      for(const p1 of currentLayerNodes){
+        for(const p2 of next){
+          let allowed=false;
+          if(isOutputStep){
+            // Exakte 2er-Gruppierung: 1&2=Y, 3&4=X, 5&6=-Y, 7&8=-X, 9&0=Z
+            let mappedIndex = Math.floor((targetVal % 10) / 2);
+            if(mappedIndex > 4) mappedIndex = 4;
+            allowed=(outputColumn.indexOf(p2)===mappedIndex);
+          }else{
+            allowed=(p2.val===targetVal);
+          }
+          if(allowed){
+            local.push([p1,p2]);
+            if(!nextValid.includes(p2)) nextValid.push(p2);
+          }
+        }
+      }
+      if(!nextValid.length) break;
+      maxLayerReached=Math.max(maxLayerReached,i+1);
+      if(isOutputStep){
+        for(const p2 of nextValid){
+          const idx=outputColumn.indexOf(p2);
+          if(idx>=0){ reachedOutputIndices.add(idx); outputVotes[idx]++; }
+        }
+      }
+      for(const [a,b] of local) activePaths.add(nodeKey(a)+"|"+nodeKey(b));
+      currentLayerNodes=nextValid;
+    }
+  }
+
+  let winner=-1, best=-1;
+  outputVotes.forEach((v,i)=>{
+    if(v>best){best=v;winner=i;}
+  });
+  const rawWinner=(winner>=0 && best>0)?winner:-1;
+
+  const num=reachedOutputIndices.size;
+  let score=maxLayerReached*50;
+  if(num===1) score+=200000;
+  else if(num===0) score-=20000;
+  else score-=num*100000;
+  if(rawWinner>=0) score+=outputVotes[rawWinner]*10;
+  return {activePaths,score,num,reachedOutputIndices,allVerticalLayers,outputVotes,rawWinner};
+}
+
+const STORAGE="insect_neural_network_state_v4";
+function saveNetwork(show=true){
+  const data=hiddenBlocks.map(block=>block.map(row=>row.map(n=>n.val)));
+  localStorage.setItem(STORAGE,JSON.stringify(data));
+  if(show) showToast("Netzwerk gespeichert.");
+}
+function loadNetwork(show=true){
+  const raw=localStorage.getItem(STORAGE);
+  if(!raw){if(show)showToast("Noch kein gespeicherter Zustand.");return;}
+  try{
+    const data=JSON.parse(raw);
+    data.forEach((block,b)=>block.forEach((row,r)=>row.forEach((v,c)=>{
+      if(hiddenBlocks[b]?.[r]?.[c]) hiddenBlocks[b][r][c].val=Number(v)||0;
+    })));
+    if(show)showToast("Netzwerk geladen.");
+  }catch(e){showToast("Speicherstand konnte nicht gelesen werden.");}
+}
+loadNetwork(false);
+
+function showToast(text){
+  const t=document.getElementById("toast");
+  t.textContent=text;
+  t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),2500);
+}
+
+const video=document.getElementById("video");
+const camCanvas=document.getElementById("camCanvas");
+const camCtx=camCanvas.getContext("2d",{willReadFrequently:true});
+let cameraStream=null, cameraOK=false;
+async function startCamera(){
+  try{
+    if(cameraStream) cameraStream.getTracks().forEach(t=>t.stop());
+    cameraStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},
+      audio:false
+    });
+    video.srcObject=cameraStream;
+    await video.play();
+    cameraOK=true;
+    document.getElementById("permission").textContent="Live. Das Bild wird auf 10×5 Zellen reduziert.";
+    document.getElementById("statusDot").classList.add("on");
+    document.getElementById("status").textContent="Kamera aktiv";
+  }catch(e){
+    cameraOK=false;
+    document.getElementById("status").textContent="Kamera nicht gestartet";
+    document.getElementById("statusDot").classList.remove("on");
+    document.getElementById("permission").textContent="Kamerazugriff verweigert oder nicht verfügbar.";
+    showToast("Bitte Kamerazugriff erlauben.");
+  }
+}
+document.getElementById("cameraBtn").onclick=startCamera;
+
+function updateCameraGrid(){
+  if(!cameraOK || video.readyState<2 || video.videoWidth===0) return;
+  camCtx.save();
+  camCtx.translate(10,0); camCtx.scale(-1,1);
+  camCtx.drawImage(video,0,0,10,5);
+  camCtx.restore();
+  const d=camCtx.getImageData(0,0,10,5).data;
+  for(let r=0;r<5;r++) for(let c=0;c<5;c++){
+    const i=(r*10+c)*4;
+    const gray=(.299*d[i]+.587*d[i+1]+.114*d[i+2]);
+    topGrid[r][c].val=Math.floor((gray/255)*9);
+  }
+  for(let r=0;r<5;r++) for(let c=0;c<5;c++){
+    const i=(r*10+(c+5))*4;
+    const gray=(.299*d[i]+.587*d[i+1]+.114*d[i+2]);
+    bottomGrid[r][c].val=Math.floor((gray/255)*9);
+  }
+}
+
+let activePaths=new Set();
+let lastAutoSave=performance.now();
+let stableOutputIndex=-1;
+
+function updateStableOutput(ev){
+  stableOutputIndex = ev.rawWinner;
+}
+
+function learnStep(){
+  for(let trial=0; trial<20; trial++){
+    const old=evaluateNetwork();
+    if(isLearning){
+      const b=Math.floor(Math.random()*hiddenBlocks.length);
+      const r=Math.floor(Math.random()*10), c=Math.floor(Math.random()*10);
+      const oldVal=hiddenBlocks[b][r][c].val;
+      const newVal=Math.floor(Math.random()*10);
+      if(oldVal!==newVal){
+        hiddenBlocks[b][r][c].val=newVal;
+        const neu=evaluateNetwork();
+        if(neu.score<old.score){
+          hiddenBlocks[b][r][c].val=oldVal;
+          activePaths=old.activePaths;
+        }else activePaths=neu.activePaths;
+      }else activePaths=old.activePaths;
+    }else activePaths=old.activePaths;
+  }
+  if(performance.now()-lastAutoSave>5000){saveNetwork(false);lastAutoSave=performance.now();}
+}
+
+const canvas=document.getElementById("network"), ctx=canvas.getContext("2d");
+let dpr=1;
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  canvas.width=Math.floor(innerWidth*dpr); canvas.height=Math.floor(innerHeight*dpr);
+  canvas.style.width=innerWidth+"px"; canvas.style.height=innerHeight+"px";
+}
+addEventListener("resize",resize); resize();
+
+function worldToScreen(x,y){
+  return [(x-cameraX)*zoom+innerWidth/2,(y-cameraY)*zoom+innerHeight/2];
+}
+function drawLine(a,b,active=false){
+  const [x1,y1]=worldToScreen(a.x,a.y),[x2,y2]=worldToScreen(b.x,b.y);
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+  ctx.lineWidth=Math.max(1,(active?2:1)*zoom);
+  ctx.strokeStyle=active?"rgba(57,255,136,.88)":"rgba(90,0,0,.72)";
+  ctx.stroke();
+}
+function drawGridLines(grid){
+  for(let r=0;r<grid.length;r++)for(let c=0;c<grid[r].length-1;c++)drawLine(grid[r][c],grid[r][c+1]);
+  for(let c=0;c<grid[0].length;c++)for(let r=0;r<grid.length-1;r++)drawLine(grid[r][c],grid[r+1][c]);
+}
+function drawNode(n){
+  const [x,y]=worldToScreen(n.x,n.y),rad=RADIUS*zoom;
+  if(rad<.5)return;
+  ctx.beginPath();ctx.arc(x,y,rad,0,Math.PI*2);ctx.fillStyle="#fff";ctx.fill();
+  if(rad>5){
+    ctx.fillStyle="#000";ctx.font=`${Math.max(8,12*zoom)}px system-ui`;ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(String(n.val),x,y);
+  }
+}
+function drawGridNodes(grid){grid.forEach(row=>row.forEach(drawNode));}
+
+function renderNetwork(){
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,innerWidth,innerHeight);
+  ctx.fillStyle="#000";ctx.fillRect(0,0,innerWidth,innerHeight);
+
+  drawGridLines(topGrid); drawGridLines(bottomGrid);
+  const tr=topGrid.map(r=>r[4]), br=bottomGrid.map(r=>r[4]);
+  for(const n of tr.concat(br))for(const t of rightColumn)drawLine(n,t);
+  for(const b of hiddenBlocks)drawGridLines(b);
+
+  const ev=evaluateNetwork();
+  updateStableOutput(ev);
+  activePaths=ev.activePaths;
+  const layers=ev.allVerticalLayers;
+  for(let i=0;i<layers.length-1;i++){
+    for(const p1 of layers[i])for(const p2 of layers[i+1]){
+      drawLine(p1,p2,activePaths.has(nodeKey(p1)+"|"+nodeKey(p2)));
+    }
+  }
+  drawGridNodes(topGrid);drawGridNodes(bottomGrid);
+  rightColumn.forEach(drawNode);hiddenBlocks.forEach(drawGridNodes);outputColumn.forEach(drawNode);
+
+  const stableText=stableOutputIndex>=0 ? ` · aktiv: ${outputLabels[stableOutputIndex]}` : " · wartet";
+  document.getElementById("outputStatus").textContent=`Outputs: ${ev.num} / 5${stableText}`;
+  drawDirections();
+}
+
+function drawDirections(){
+  document.querySelectorAll(".dir").forEach(el=>{
+    const dir=el.getAttribute("data-dir");
+    let activeIdx=-1;
+    if(dir==="Y") activeIdx=0;
+    if(dir==="X") activeIdx=1;
+    if(dir==="-Y") activeIdx=2;
+    if(dir==="-X") activeIdx=3;
+    if(dir==="Z") activeIdx=4;
+    
+    if(stableOutputIndex===activeIdx){
+      el.classList.add("active");
+    }else{
+      el.classList.remove("active");
+    }
+  });
+}
+
+let isDragging=false, startX=0, startY=0;
+canvas.addEventListener("pointerdown",e=>{
+  isDragging=true; startX=e.clientX; startY=e.clientY;
+});
+canvas.addEventListener("pointermove",e=>{
+  if(!isDragging)return;
+  cameraX-=(e.clientX-startX)/zoom;
+  cameraY-=(e.clientY-startY)/zoom;
+  startX=e.clientX; startY=e.clientY;
+});
+canvas.addEventListener("pointerup",()=>isDragging=false);
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const zoomFactor=e.deltaY<0?1.1:0.9;
+  zoom=Math.max(0.2,Math.min(2.5,zoom*zoomFactor));
+},{passive:false});
+
+document.getElementById("learnBtn").onclick=()=>{
+  isLearning=!isLearning;
+  document.getElementById("learnBtn").textContent=isLearning?"Lernen: AN":"Lernen: AUS";
+};
+document.getElementById("saveBtn").onclick=()=>saveNetwork(true);
+document.getElementById("loadBtn").onclick=()=>loadNetwork(true);
+document.getElementById("resetViewBtn").onclick=()=>{
+  zoom=.75; cameraX=300; cameraY=0;
+};
+
+function loop(){
+  updateCameraGrid();
+  learnStep();
+  renderNetwork();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
