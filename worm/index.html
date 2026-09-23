@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>C. elegans - Neural Network Controller & Simulation</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      touch-action: none;
+      background: #111;
+      font-family: monospace;
+      user-select: none;
+    }
+
+    #canvas { 
+      display: block;
+      filter: blur(1px);
+      width: 100vw;
+      height: 100vh;
+      cursor: grab;
+    }
+
+    #canvas:active {
+      cursor: grabbing;
+    }
+
+    #brain-hud {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      width: 280px;
+      height: 280px;
+      background: rgba(15, 15, 20, 0.85);
+      border: 1px solid #33ffaa44;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(51, 255, 170, 0.1);
+      overflow: hidden;
+      backdrop-filter: blur(5px);
+      pointer-events: auto;
+    }
+
+    #brain-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #brain-info {
+      position: absolute;
+      bottom: 8px;
+      left: 10px;
+      right: 10px;
+      color: #00ffcc;
+      font-size: 11px;
+      pointer-events: none;
+      display: flex;
+      justify-content: space-between;
+      text-shadow: 0 0 4px #000;
+    }
+
+    .act-tag {
+      padding: 2px 4px;
+      border-radius: 3px;
+      background: rgba(0,0,0,0.5);
+    }
+
+    #touch-controls {
+      position: absolute;
+      left: 15px;
+      top: 15px;
+      display: flex;
+      gap: 8px;
+      z-index: 20;
+      pointer-events: auto;
+    }
+
+    #touch-controls button {
+      border: 1px solid #555;
+      background: rgba(15, 15, 20, 0.88);
+      color: #fff;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font: 12px monospace;
+      min-height: 42px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #touch-controls button.active {
+      border-color: #00ffcc;
+      box-shadow: 0 0 10px rgba(0,255,204,0.25);
+    }
+
+    #instructions {
+      position: absolute;
+      bottom: 15px;
+      left: 15px;
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 11px;
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      line-height: 1.5;
+    }
+  </style>
+
+  <!-- Three.js & Zubehör -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+</head>
+<body>
+
+  <canvas id="canvas"></canvas>
+
+  <div id="instructions">
+    🟢 <b>Linksklick:</b> Futter setzen/löschen<br>
+    🔴 <b>Rechtsklick:</b> Gefahr setzen/löschen<br>
+    🔍 <b>Mausrad / Pinch:</b> Zoom<br>
+    🖐️ <b>Mittlere Taste / Space+Drag / 2-Finger:</b> Pan
+  </div>
+
+  <div id="touch-controls">
+    <button id="touch-food" type="button">🟢 Futter</button>
+    <button id="touch-threat" type="button">🔴 Gefahr</button>
+    <button id="touch-follow" type="button">🎯 Wurm folgen</button>
+  </div>
+
+  <div id="brain-hud">
+    <div id="brain-canvas"></div>
+    <div id="brain-info">
+      <span id="state-sens" class="act-tag" style="color:#ffff00">SENS: 0%</span>
+      <span id="state-proc" class="act-tag" style="color:#0099ff">PROC: 0%</span>
+      <span id="state-mot" class="act-tag" style="color:#00ff55">MOT: 0%</span>
+    </div>
+  </div>
+
+<script>
+// ==========================================
+// 1. NEURONALER ZUSTAND & UMGEBUNG
+// ==========================================
+const brainActivity = {
+  sensory: 0.1,    // Gelb (Sensoren)
+  processing: 0.1, // Blau (Interneuronen)
+  motor: 0.1       // Grün (Muskeln)
+};
+
+const foodNodes = [];   // Grünes Futter {x, y, radius: 8}
+const threatNodes = []; // Rote Gefahren {x, y, radius: 10}
+
+let stressLevel = 0;    // 0.0 bis 1.0 (Skaliert Hektik)
+let panicMode = false;   // True bei direkter Körperberührung mit Rot
+
+// ==========================================
+// PAN & ZOOM KONTROLLE
+// ==========================================
+const camera = {
+  x: 0,
+  y: 0,
+  zoom: 1.0,
+  minZoom: 0.3,
+  maxZoom: 4.0
+};
+
+let isPanning = false;
+let startPanMouse = { x: 0, y: 0 };
+let isSpacePressed = false;
+
+window.addEventListener('keydown', e => { if (e.code === 'Space') isSpacePressed = true; });
+window.addEventListener('keyup', e => { if (e.code === 'Space') isSpacePressed = false; });
+
+// Umrechnung Bildschirmkoordinaten -> Weltkoordinaten
+function screenToWorld(screenX, screenY) {
+  return {
+    x: (screenX - camera.x) / camera.zoom,
+    y: (screenY - camera.y) / camera.zoom
+  };
+}
+
+// ==========================================
+// 2. THREE.JS 3D-GEHIRN (HUD Oben Rechts)
+// ==========================================
+const hudContainer = document.getElementById('brain-canvas');
+const brainScene = new THREE.Scene();
+
+const brainCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+const brainRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+brainRenderer.setSize(280, 280);
+hudContainer.appendChild(brainRenderer.domElement);
+
+const brainControls = new THREE.OrbitControls(brainCamera, brainRenderer.domElement);
+brainControls.enableDamping = true;
+brainControls.autoRotate = true;
+brainControls.autoRotateSpeed = 1.5;
+
+brainScene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(1, 2, 1);
+brainScene.add(dirLight);
+
+const baseColors = {
+  motor: new THREE.Color(0x00cc44),
+  processing: new THREE.Color(0x0066ff),
+  sensory: new THREE.Color(0xffff00)
+};
+
+let brainGeometryRef = null;
+let originalNormDists = [];
+
+function createFallbackBrain() {
+  const geo = new THREE.IcosahedronGeometry(2, 3);
+  const mat = new THREE.MeshStandardMaterial({ wireframe: true, color: 0x00ffcc });
+  const mesh = new THREE.Mesh(geo, mat);
+  brainScene.add(mesh);
+  brainCamera.position.z = 5;
+}
+
+const loader = new THREE.OBJLoader();
+loader.load(
+  'https://raw.githubusercontent.com/Musetron/Musetron.github.io/refs/heads/main/worm/brain.obj',
+  function (object) {
+    const box = new THREE.Box3().setFromObject(object);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    object.position.sub(center);
+
+    object.traverse(child => {
+      if (child.isMesh) {
+        const geometry = child.geometry;
+        brainGeometryRef = geometry;
+        const posAttr = geometry.attributes.position;
+        const colorArr = new Float32Array(posAttr.count * 3);
+
+        let maxRadius = 0;
+        for (let i = 0; i < posAttr.count; i++) {
+          const dist = Math.hypot(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+          if (dist > maxRadius) maxRadius = dist;
+        }
+
+        for (let i = 0; i < posAttr.count; i++) {
+          const dist = Math.hypot(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+          originalNormDists.push(dist / maxRadius);
+        }
+
+        geometry.setAttribute('color', new THREE.BufferAttribute(colorArr, 3));
+        child.material = new THREE.MeshStandardMaterial({
+          vertexColors: true,
+          roughness: 0.3,
+          metalness: 0.1,
+          wireframe: false
+        });
+      }
+    });
+
+    brainScene.add(object);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    brainCamera.position.z = maxDim * 1.8;
+  },
+  undefined,
+  function (error) {
+    console.warn("brain.obj konnte nicht geladen werden.", error);
+    createFallbackBrain();
+  }
+);
+
+function lerpColor(colorA, colorB, t) {
+  return new THREE.Color().copy(colorA).lerp(colorB, Math.min(Math.max(t, 0), 1));
+}
+
+function updateBrainGlow() {
+  if (!brainGeometryRef || originalNormDists.length === 0) return;
+
+  const colorAttr = brainGeometryRef.attributes.color;
+  const count = originalNormDists.length;
+
+  for (let i = 0; i < count; i++) {
+    const normDist = originalNormDists[i];
+    
+    let baseColor = new THREE.Color();
+    let activity = 0;
+
+    if (normDist < 0.4) {
+      baseColor.copy(baseColors.motor);
+      activity = brainActivity.motor;
+    } else if (normDist < 0.7) {
+      const t = (normDist - 0.4) / 0.3;
+      baseColor = lerpColor(baseColors.motor, baseColors.processing, t);
+      activity = brainActivity.motor * (1 - t) + brainActivity.processing * t;
+    } else {
+      const t = (normDist - 0.7) / 0.3;
+      baseColor = lerpColor(baseColors.processing, baseColors.sensory, t);
+      activity = brainActivity.processing * (1 - t) + brainActivity.sensory * t;
+    }
+
+    if (stressLevel > 0.3) {
+      baseColor.lerp(new THREE.Color(0xff0033), stressLevel * 0.7);
+    }
+
+    const intensity = 0.15 + (activity * 1.8);
+
+    colorAttr.setXYZ(
+      i,
+      Math.min(1.0, baseColor.r * intensity),
+      Math.min(1.0, baseColor.g * intensity),
+      Math.min(1.0, baseColor.b * intensity)
+    );
+  }
+  colorAttr.needsUpdate = true;
+
+  document.getElementById('state-sens').innerText = `SENS: ${Math.round(brainActivity.sensory * 100)}%`;
+  document.getElementById('state-proc').innerText = `PROC: ${Math.round(brainActivity.processing * 100)}%`;
+  document.getElementById('state-mot').innerText = `MOT: ${Math.round(brainActivity.motor * 100)}%`;
+}
+
+// ==========================================
+// 3. WURM SIMULATION (Canvas 2D + KI & Pan/Zoom)
+// ==========================================
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const wormImg = new Image();
+wormImg.src = "https://raw.githubusercontent.com/Musetron/Musetron.github.io/refs/heads/main/worm/worm.png";
+const SEGMENTS = 25;
+let skeleton = [];
+let segmentLength = 20;
+
+let wavePhase = 0;
+let burstPulse = 0;
+
+wormImg.onload = () => {
+  segmentLength = wormImg.width / SEGMENTS;
+  for (let i = 0; i < SEGMENTS; i++) {
+    skeleton.push({ 
+      x: canvas.width / 2 - i * segmentLength, 
+      y: canvas.height / 2,
+      vx: 0, 
+      vy: 0 
+    });
+  }
+  animate();
+};
+
+const tip = { x: canvas.width / 2, y: canvas.height / 2 };
+
+function random(min, max) { return Math.random() * (max - min) + min; }
+
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+// ==========================================
+// INPUT HANDLING (Maus, Touch, Pan & Zoom)
+// ==========================================
+
+// ZOOM MIT MAUSRAD
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+  const newZoom = Math.min(Math.max(camera.zoom * zoomFactor, camera.minZoom), camera.maxZoom);
+
+  // Focus auf Mausposition beim Zoomen
+  camera.x = e.clientX - (e.clientX - camera.x) * (newZoom / camera.zoom);
+  camera.y = e.clientY - (e.clientY - camera.y) * (newZoom / camera.zoom);
+  camera.zoom = newZoom;
+}, { passive: false });
+
+// PAN & INTERAKTION MIT MAUS
+let dragStartPos = { x: 0, y: 0 };
+let isDragging = false;
+
+canvas.addEventListener('mousedown', (e) => {
+  dragStartPos = { x: e.clientX, y: e.clientY };
+  isDragging = false;
+
+  if (e.button === 1 || isSpacePressed) { // Mittlere Maustaste oder Space
+    isPanning = true;
+    startPanMouse = { x: e.clientX - camera.x, y: e.clientY - camera.y };
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (Math.hypot(e.clientX - dragStartPos.x, e.clientY - dragStartPos.y) > 5) {
+    isDragging = true;
+  }
+
+  if (isPanning) {
+    camera.x = e.clientX - startPanMouse.x;
+    camera.y = e.clientY - startPanMouse.y;
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (isPanning) {
+    isPanning = false;
+    return;
+  }
+
+  // Klick-Aktion nur wenn nicht gezogen wurde
+  if (!isDragging) {
+    const worldPos = screenToWorld(e.clientX, e.clientY);
+
+    if (e.button === 0) { // Linksklick (Grün)
+      const existingIndex = foodNodes.findIndex(f => Math.hypot(f.x - worldPos.x, f.y - worldPos.y) < 22 / camera.zoom);
+      if (existingIndex !== -1) {
+        foodNodes.splice(existingIndex, 1);
+      } else {
+        foodNodes.push({ x: worldPos.x, y: worldPos.y, radius: 8 });
+      }
+    } else if (e.button === 2) { // Rechtsklick (Rot)
+      const existingIndex = threatNodes.findIndex(t => Math.hypot(t.x - worldPos.x, t.y - worldPos.y) < 22 / camera.zoom);
+      if (existingIndex !== -1) {
+        threatNodes.splice(existingIndex, 1);
+      } else {
+        threatNodes.push({ x: worldPos.x, y: worldPos.y, radius: 10 });
+      }
+    }
+  }
+});
+
+// TOUCH-PAN & PINCH-ZOOM STEUERUNG
+let initialPinchDist = null;
+let initialZoom = 1;
+let touchPanStart = null;
+let touchMoved = false;
+let touchAction = 'food';
+
+function updateTouchButtons() {
+  document.getElementById('touch-food').classList.toggle('active', touchAction === 'food');
+  document.getElementById('touch-threat').classList.toggle('active', touchAction === 'threat');
+}
+
+document.getElementById('touch-food').addEventListener('click', () => {
+  touchAction = 'food';
+  updateTouchButtons();
+});
+
+document.getElementById('touch-threat').addEventListener('click', () => {
+  touchAction = 'threat';
+  updateTouchButtons();
+});
+
+let followWorm = false;
+document.getElementById('touch-follow').addEventListener('click', () => {
+  followWorm = !followWorm;
+  document.getElementById('touch-follow').classList.toggle('active', followWorm);
+  if (followWorm && skeleton.length) {
+    camera.x = canvas.width / 2 - skeleton[0].x * camera.zoom;
+    camera.y = canvas.height / 2 - skeleton[0].y * camera.zoom;
+  }
+});
+
+updateTouchButtons();
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    dragStartPos = { x: t.clientX, y: t.clientY };
+    touchPanStart = { x: t.clientX - camera.x, y: t.clientY - camera.y };
+    touchMoved = false;
+    isDragging = false;
+  } else if (e.touches.length === 2) {
+    initialPinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    initialZoom = camera.zoom;
+    touchPanStart = null;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+
+  if (e.touches.length === 1 && touchPanStart) {
+    const t = e.touches[0];
+    const moved = Math.hypot(t.clientX - dragStartPos.x, t.clientY - dragStartPos.y);
+
+    if (moved > 8) {
+      touchMoved = true;
+      camera.x = t.clientX - touchPanStart.x;
+      camera.y = t.clientY - touchPanStart.y;
+    }
+  } else if (e.touches.length === 2 && initialPinchDist) {
+    const currentDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const zoomFactor = currentDist / initialPinchDist;
+
+    const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const newZoom = Math.min(Math.max(initialZoom * zoomFactor, camera.minZoom), camera.maxZoom);
+
+    camera.x = centerX - (centerX - camera.x) * (newZoom / camera.zoom);
+    camera.y = centerY - (centerY - camera.y) * (newZoom / camera.zoom);
+    camera.zoom = newZoom;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  e.preventDefault();
+
+  // One-finger tap = place/remove the currently selected point.
+  if (e.touches.length === 0 && !touchMoved && dragStartPos) {
+    const worldPos = screenToWorld(dragStartPos.x, dragStartPos.y);
+    const nodes = touchAction === 'food' ? foodNodes : threatNodes;
+    const radius = touchAction === 'food' ? 8 : 10;
+    const hitRadius = 28 / camera.zoom;
+
+    const existingIndex = nodes.findIndex(n =>
+      Math.hypot(n.x - worldPos.x, n.y - worldPos.y) < hitRadius
+    );
+
+    if (existingIndex !== -1) {
+      nodes.splice(existingIndex, 1);
+    } else {
+      nodes.push({ x: worldPos.x, y: worldPos.y, radius });
+    }
+  }
+
+  if (e.touches.length < 2) initialPinchDist = null;
+  if (e.touches.length === 0) touchPanStart = null;
+}, { passive: false });
+
+
+// INTELLIGENTE ZIEL- / FLUCHTFINDUNG
+function evaluateBehaviorTarget() {
+  if (skeleton.length === 0) return getNextRandomTarget();
+
+  const head = skeleton[0];
+
+  let nearestThreat = null;
+  let minThreatDist = Infinity;
+  threatNodes.forEach(t => {
+    const d = Math.hypot(head.x - t.x, head.y - t.y);
+    if (d < minThreatDist) {
+      minThreatDist = d;
+      nearestThreat = t;
+    }
+  });
+
+  if (nearestThreat && minThreatDist < 350) {
+    const escapeAngle = Math.atan2(head.y - nearestThreat.y, head.x - nearestThreat.x);
+    const escapeDist = panicMode ? 250 : 150;
+    
+    let targetX = head.x + Math.cos(escapeAngle) * escapeDist + random(-40, 40);
+    let targetY = head.y + Math.sin(escapeAngle) * escapeDist + random(-40, 40);
+
+    return { x: targetX, y: targetY };
+  }
+
+  let nearestFood = null;
+  let minFoodDist = Infinity;
+  foodNodes.forEach(f => {
+    const d = Math.hypot(head.x - f.x, head.y - f.y);
+    if (d < minFoodDist) {
+      minFoodDist = d;
+      nearestFood = f;
+    }
+  });
+
+  if (nearestFood) {
+    const angle = Math.atan2(nearestFood.y - head.y, nearestFood.x - head.x);
+    const offsetAngle = angle + random(-0.3, 0.3);
+    const step = Math.min(minFoodDist, 100);
+
+    return {
+      x: head.x + Math.cos(offsetAngle) * step,
+      y: head.y + Math.sin(offsetAngle) * step
+    };
+  }
+
+  return getNextRandomTarget();
+}
+
+function getNextRandomTarget() {
+  let x = tip.x + random(-150, 150);
+  let y = tip.y + random(-150, 150);
+  return { x, y };
+}
+
+function triggerNeuralCascade(intensity = 1.0) {
+  brainActivity.sensory = Math.min(1.0, brainActivity.sensory + 0.6 * intensity);
+  setTimeout(() => { brainActivity.processing = Math.min(1.0, brainActivity.processing + 0.5 * intensity); }, 100);
+  setTimeout(() => { brainActivity.motor = Math.min(1.0, brainActivity.motor + 0.7 * intensity); }, 200);
+}
+
+function moveTo(x, y, duration = null) {
+  return new Promise(resolve => {
+    const startX = tip.x;
+    const startY = tip.y;
+    const distance = Math.hypot(x - startX, y - startY);
+    
+    const speedFactor = 1.0 + stressLevel * 2.5;
+    if (!duration) duration = Math.max(250, (distance * random(2.5, 4.0)) / speedFactor);
+
+    let startTime = null;
+    triggerNeuralCascade(1.0 + stressLevel);
+
+    function animateTip(time) {
+      if (!startTime) startTime = time;
+      let t = (time - startTime) / duration;
+      if (t > 1) t = 1;
+
+      const ease = Math.pow(t, 1.2 - stressLevel * 0.5);
+
+      let tipX = startX + (x - startX) * ease;
+      let tipY = startY + (y - startY) * ease;
+
+      const searchWobble = Math.sin(t * Math.PI * (12 + stressLevel * 20)) * (1 - t) * (6 + stressLevel * 10);
+      const angleToTarget = Math.atan2(y - startY, x - startX);
+      tipX += Math.cos(angleToTarget + Math.PI / 2) * searchWobble;
+      tipY += Math.sin(angleToTarget + Math.PI / 2) * searchWobble;
+
+      tip.x = tipX;
+      tip.y = tipY;
+
+      if (t < 1 && !panicMode) requestAnimationFrame(animateTip);
+      else resolve();
+    }
+    requestAnimationFrame(animateTip);
+  });
+}
+
+async function microPause(duration) {
+  const pauseStart = performance.now();
+  const effectiveDuration = duration / (1 + stressLevel * 3);
+
+  while (performance.now() - pauseStart < effectiveDuration) {
+    if (Math.random() < 0.2 + stressLevel * 0.5) {
+      tip.x += random(-1.2, 1.2) * (1 + stressLevel * 3);
+      tip.y += random(-1.2, 1.2) * (1 + stressLevel * 3);
+    }
+    await new Promise(r => requestAnimationFrame(r));
+  }
+}
+
+async function loopMarker() {
+  while (true) {
+    const { x, y } = evaluateBehaviorTarget();
+    await moveTo(x, y);
+    await microPause(random(200, 800));
+  }
+}
+loopMarker();
+
+function getCatmullRomPoint(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  const x = 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
+  const y = 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
+  return { x, y };
+}
+
+function normalizeAngle(angle) {
+  while (angle > Math.PI) angle -= Math.PI * 2;
+  while (angle < -Math.PI) angle += Math.PI * 2;
+  return angle;
+}
+
+// ----------------------------------------------------
+// DYNAMISCHE STRUKTUR, STRESS & KOLLISIONS-LOGIK
+// ----------------------------------------------------
+function updateSkeleton() {
+  if (skeleton.length === 0) return;
+
+  const head = skeleton[0];
+
+  let minThreatDist = Infinity;
+  panicMode = false;
+
+  for (let i = foodNodes.length - 1; i >= 0; i--) {
+    const f = foodNodes[i];
+    const dist = Math.hypot(head.x - f.x, head.y - f.y);
+    if (dist < 18) {
+      foodNodes.splice(i, 1);
+      brainActivity.sensory = 1.0;
+      brainActivity.motor = 0.9;
+    }
+  }
+
+  threatNodes.forEach(t => {
+    skeleton.forEach((seg) => {
+      const dist = Math.hypot(seg.x - t.x, seg.y - t.y);
+      if (dist < minThreatDist) minThreatDist = dist;
+
+      if (dist < t.radius + 10) {
+        panicMode = true;
+      }
+    });
+  });
+
+  if (minThreatDist < 300) {
+    const targetStress = Math.pow(1.0 - (minThreatDist / 300), 1.5);
+    stressLevel += (targetStress - stressLevel) * 0.1;
+  } else {
+    stressLevel *= 0.95;
+  }
+
+  if (panicMode) stressLevel = 1.0;
+
+  let dx = tip.x - head.x;
+  let dy = tip.y - head.y;
+  let distToTip = Math.hypot(dx, dy);
+  
+  if (distToTip > 2) {
+    burstPulse = Math.min(1.0, burstPulse + 0.15 + stressLevel * 0.2);
+  } else {
+    burstPulse *= 0.82;
+  }
+
+  const headSpeed = 0.18 + stressLevel * 0.25;
+  head.x += dx * headSpeed;
+  head.y += dy * headSpeed;
+
+  wavePhase += 0.03 + burstPulse * 0.08 + stressLevel * 0.15;
+
+  const maxAngleDiff = 0.22 + stressLevel * 0.15;
+
+  for (let i = 1; i < SEGMENTS; i++) {
+    let prev = skeleton[i - 1];
+    let seg = skeleton[i];
+
+    let sdx = seg.x - prev.x;
+    let sdy = seg.y - prev.y;
+    let currentAngle = Math.atan2(sdy, sdx);
+
+    let parentAngle = currentAngle;
+    if (i > 1) {
+      let pPrev = skeleton[i - 2];
+      parentAngle = Math.atan2(prev.y - pPrev.y, prev.x - pPrev.x);
+    } else {
+      parentAngle = Math.atan2(head.y - tip.y, head.x - tip.x);
+    }
+
+    let tailDamping = Math.exp(-i * (0.14 - stressLevel * 0.05)); 
+    
+    let rawSine = Math.sin(wavePhase - i * (0.4 + stressLevel * 0.1));
+    let sharpSine = Math.sign(rawSine) * Math.pow(Math.abs(rawSine), 0.7);
+    
+    let muscleNoise = (Math.random() - 0.5) * (0.04 + stressLevel * 0.35);
+    
+    let waveAmp = 0.22 + stressLevel * 0.28;
+    let wave = (sharpSine * waveAmp + muscleNoise) * tailDamping * (brainActivity.motor + 0.1 + stressLevel);
+    let targetAngle = parentAngle + wave;
+
+    let angleDiff = normalizeAngle(targetAngle - parentAngle);
+    if (Math.abs(angleDiff) > maxAngleDiff) {
+      targetAngle = parentAngle + Math.sign(angleDiff) * maxAngleDiff;
+    }
+
+    let friction = (0.5 + (1 - burstPulse) * 0.35) / (1 + stressLevel);
+    
+    seg.vx = (seg.vx || 0) * (1 - friction) + Math.cos(targetAngle) * (0.2 + burstPulse * 0.5 + stressLevel * 0.8);
+    seg.vy = (seg.vy || 0) * (1 - friction) + Math.sin(targetAngle) * (0.2 + burstPulse * 0.5 + stressLevel * 0.8);
+
+    seg.x += seg.vx;
+    seg.y += seg.vy;
+
+    sdx = seg.x - prev.x;
+    sdy = seg.y - prev.y;
+    let dist = Math.hypot(sdx, sdy);
+    if (dist > 0) {
+      let diff = dist - segmentLength;
+      seg.x -= (sdx / dist) * diff;
+      seg.y -= (sdy / dist) * diff;
+    }
+  }
+}
+
+function drawNodes() {
+  foodNodes.forEach(f => {
+    ctx.save();
+    ctx.shadowColor = '#00ff66';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#00ff66';
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  threatNodes.forEach(t => {
+    const pulse = Math.sin(performance.now() * 0.008) * 3;
+    ctx.save();
+    ctx.shadowColor = '#ff0044';
+    ctx.shadowBlur = 15 + pulse;
+    ctx.fillStyle = '#ff0044';
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, t.radius + pulse * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+function drawWorm() {
+  if (followWorm && skeleton.length) {
+    camera.x += (canvas.width / 2 - skeleton[0].x * camera.zoom - camera.x) * 0.18;
+    camera.y += (canvas.height / 2 - skeleton[0].y * camera.zoom - camera.y) * 0.18;
+  }
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // KAMERA-TRANSFORMATION ANWENDEN (Pan & Zoom)
+  ctx.save();
+  ctx.translate(camera.x, camera.y);
+  ctx.scale(camera.zoom, camera.zoom);
+
+  drawNodes();
+
+  if (skeleton.length >= SEGMENTS) {
+    const imgH = wormImg.height;
+    const steps = wormImg.width;
+    for (let i = 0; i < steps; i++) {
+      const t = i / steps * (SEGMENTS - 3) + 1;
+      const seg = Math.floor(t);
+      const localT = t - seg;
+      const p0 = skeleton[Math.max(seg - 1, 0)];
+      const p1 = skeleton[seg];
+      const p2 = skeleton[Math.min(seg + 1, SEGMENTS - 1)];
+      const p3 = skeleton[Math.min(seg + 2, SEGMENTS - 1)];
+      const pos = getCatmullRomPoint(p0, p1, p2, p3, localT);
+
+      const nextT = Math.min(localT + 0.01, 1);
+      const nextPos = getCatmullRomPoint(p0, p1, p2, p3, nextT);
+      const angle = Math.atan2(nextPos.y - pos.y, nextPos.x - pos.x);
+
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      ctx.rotate(angle);
+      ctx.drawImage(wormImg, i, 0, 1, imgH, 0, -imgH / 2, 1, imgH);
+      ctx.restore();
+    }
+  }
+
+  ctx.restore(); // Kamera-Transformation zurücksetzen
+}
+
+// ==========================================
+// 4. MAIN ANIMATION LOOP
+// ==========================================
+function animate() {
+  updateSkeleton();
+  drawWorm();
+
+  brainActivity.sensory *= 0.94;
+  brainActivity.processing *= 0.95;
+  brainActivity.motor *= 0.95;
+
+  updateBrainGlow();
+  
+  brainControls.update();
+  brainRenderer.render(brainScene, brainCamera);
+
+  requestAnimationFrame(animate);
+}
+</script>
+</body>
+</html>
