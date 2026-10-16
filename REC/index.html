@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio-Recorder & Ogg Export</title>
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --card-bg: #131b2e;
+      --accent-red: #ef4444;
+      --accent-red-hover: #dc2626;
+      --accent-blue: #3b82f6;
+      --accent-blue-hover: #2563eb;
+      --text-main: #f8fafc;
+      --text-muted: #64748b;
+      --wave-color: #38bdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .app-container {
+      background-color: var(--card-bg);
+      width: 100%;
+      max-width: 480px;
+      height: 100%;
+      max-height: 680px;
+      padding: 28px;
+      border-radius: 28px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid #1e293b;
+    }
+
+    .header {
+      text-align: center;
+    }
+
+    .time-display {
+      font-family: monospace;
+      font-size: 2rem;
+      font-weight: 600;
+      letter-spacing: 2px;
+      margin-bottom: 4px;
+      color: var(--text-main);
+    }
+
+    .hint {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Waveform Container mit zentrierter Nadel */
+    .waveform-wrapper {
+      position: relative;
+      width: 100%;
+      height: 200px;
+      background: #070a12;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid #1e293b;
+      cursor: grab;
+    }
+
+    .waveform-wrapper:active {
+      cursor: grabbing;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .center-needle {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 100%;
+      background: var(--accent-red);
+      pointer-events: none;
+      box-shadow: 0 0 10px var(--accent-red);
+      z-index: 5;
+    }
+
+    /* Zentraler Knopf & Steuerung */
+    .center-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .rec-button {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: var(--accent-red);
+      border: 5px solid #451a1a;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 25px rgba(239, 68, 68, 0.4);
+      transition: transform 0.1s ease, background-color 0.2s, box-shadow 0.2s;
+      outline: none;
+      touch-action: manipulation;
+    }
+
+    .rec-button:hover {
+      background: var(--accent-red-hover);
+    }
+
+    .rec-button:active, .rec-button.recording {
+      transform: scale(0.92);
+      box-shadow: 0 0 45px rgba(239, 68, 68, 0.8);
+    }
+
+    .rec-icon {
+      width: 30px;
+      height: 30px;
+      background: white;
+      border-radius: 50%;
+      transition: border-radius 0.2s, width 0.2s, height 0.2s;
+    }
+
+    .rec-button.recording .rec-icon {
+      border-radius: 6px;
+      width: 22px;
+      height: 22px;
+    }
+
+    .status-text {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      height: 20px;
+    }
+
+    .secondary-controls {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      width: 100%;
+      border-top: 1px solid #1e293b;
+      padding-top: 16px;
+    }
+
+    .text-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: color 0.2s;
+      padding: 6px 12px;
+      border-radius: 8px;
+    }
+
+    .text-btn:hover {
+      color: var(--text-main);
+      background: #1e293b;
+    }
+
+    .text-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+      background: none;
+    }
+
+    .text-btn.export {
+      color: var(--accent-blue);
+    }
+    .text-btn.export:hover {
+      color: #60a5fa;
+      background: rgba(59, 130, 246, 0.1);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <div class="header">
+      <div class="time-display" id="timeDisplay">00:00.0</div>
+      <div class="hint" id="hintText">Gedrückt halten zum Aufnehmen</div>
+    </div>
+
+    <!-- Interaktives Waveform mit zentrierter Nadel -->
+    <div class="waveform-wrapper" id="waveWrapper">
+      <div class="center-needle"></div>
+      <canvas id="waveformCanvas"></canvas>
+    </div>
+
+    <!-- Zentraler Aufnahmeknopf -->
+    <div class="center-section">
+      <button class="rec-button" id="recBtn">
+        <div class="rec-icon"></div>
+      </button>
+      <div class="status-text" id="statusText">Bereit</div>
+      
+      <div class="secondary-controls">
+        <button class="text-btn" id="playBtn" disabled>▶ Abspielen</button>
+        <button class="text-btn export" id="exportBtn" disabled>💾 Als Ogg exportieren</button>
+        <button class="text-btn" id="clearBtn" disabled>Löschen</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let audioCtx;
+    let micStream;
+    let micSource;
+    let scriptProcessor;
+
+    // Unendlicher Chunk-Speicher für die Aufnahme
+    const CHUNK_SIZE = 65536;
+    let audioChunks = [new Float32Array(CHUNK_SIZE)];
+    let totalSamples = 0;
+    let sampleRate = 44100;
+
+    let isRecording = false;
+    let isPlaying = false;
+    let playheadSample = 0;
+    let playAudioSource = null;
+    let playStartTime = 0;
+    let playOffsetSec = 0;
+
+    const recBtn = document.getElementById('recBtn');
+    const waveWrapper = document.getElementById('waveWrapper');
+    const canvas = document.getElementById('waveformCanvas');
+    const ctx = canvas.getContext('2d');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const hintText = document.getElementById('hintText');
+    const statusText = document.getElementById('statusText');
+    const playBtn = document.getElementById('playBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    function resizeCanvas() {
+      canvas.width = waveWrapper.clientWidth * window.devicePixelRatio;
+      canvas.height = waveWrapper.clientHeight * window.devicePixelRatio;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function getSample(index) {
+      if (index < 0 || index >= totalSamples) return 0;
+      const chunkIdx = Math.floor(index / CHUNK_SIZE);
+      const innerIdx = index % CHUNK_SIZE;
+      return audioChunks[chunkIdx][innerIdx];
+    }
+
+    function setSample(index, value) {
+      const chunkIdx = Math.floor(index / CHUNK_SIZE);
+      while (audioChunks.length <= chunkIdx) {
+        audioChunks.push(new Float32Array(CHUNK_SIZE));
+      }
+      const innerIdx = index % CHUNK_SIZE;
+      audioChunks[chunkIdx][innerIdx] = value;
+    }
+
+    async function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        sampleRate = audioCtx.sampleRate;
+      }
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+      if (!micStream) {
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          micSource = audioCtx.createMediaStreamSource(micStream);
+          
+          scriptProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
+          scriptProcessor.onaudioprocess = (e) => {
+            if (!isRecording) return;
+            const input = e.inputBuffer.getChannelData(0);
+            for (let i = 0; i < input.length; i++) {
+              setSample(playheadSample, input[i]);
+              playheadSample++;
+              if (playheadSample > totalSamples) {
+                totalSamples = playheadSample;
+              }
+            }
+            updateButtons();
+          };
+          micSource.connect(scriptProcessor);
+
+          const nullGain = audioCtx.createGain();
+          nullGain.gain.value = 0;
+          scriptProcessor.connect(nullGain);
+          nullGain.connect(audioCtx.destination);
+        } catch (err) {
+          alert("Mikrofon-Zugriff nicht möglich.");
+        }
+      }
+    }
+
+    async function startRecording() {
+      if (isPlaying) stopPlayback();
+      await initAudio();
+      isRecording = true;
+      recBtn.classList.add('recording');
+      hintText.textContent = "Loslassen zum Pausieren";
+      statusText.textContent = "Aufnahme...";
+    }
+
+    function stopRecording() {
+      if (!isRecording) return;
+      isRecording = false;
+      recBtn.classList.remove('recording');
+      hintText.textContent = "Gedrückt halten zum Aufnehmen";
+      statusText.textContent = "Pausiert";
+      updateButtons();
+    }
+
+    recBtn.addEventListener('mousedown', startRecording);
+    window.addEventListener('mouseup', stopRecording);
+    recBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+    window.addEventListener('touchend', stopRecording);
+
+    // Waveform Loop
+    function draw() {
+      requestAnimationFrame(draw);
+
+      if (isPlaying) {
+        const elapsed = audioCtx.currentTime - playStartTime;
+        const currentSec = playOffsetSec + elapsed;
+        playheadSample = Math.min(totalSamples, Math.floor(currentSec * sampleRate));
+        if (playheadSample >= totalSamples) {
+          stopPlayback();
+        }
+      }
+
+      const w = canvas.width;
+      const h = canvas.height;
+      const centerY = h / 2;
+
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.strokeStyle = "#1e293b";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, centerY);
+      ctx.lineTo(w, centerY);
+      ctx.stroke();
+
+      if (totalSamples === 0) {
+        timeDisplay.textContent = "00:00.0";
+        return;
+      }
+
+      const samplesOnScreen = sampleRate * 4;
+      const pxPerSample = w / samplesOnScreen;
+      const centerPixelX = w / 2;
+
+      ctx.beginPath();
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 2;
+
+      const startSample = playheadSample - Math.floor(samplesOnScreen / 2);
+      const endSample = playheadSample + Math.floor(samplesOnScreen / 2);
+
+      let firstDrawn = false;
+      for (let s = startSample; s < endSample; s += Math.max(1, Math.floor(samplesOnScreen / w))) {
+        const x = centerPixelX + (s - playheadSample) * pxPerSample;
+        if (x >= 0 && x <= w) {
+          const val = getSample(s);
+          const y = centerY + val * (h / 2 - 10);
+          if (!firstDrawn) {
+            ctx.moveTo(x, y);
+            firstDrawn = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+      }
+      ctx.stroke();
+
+      const currentSec = playheadSample / sampleRate;
+      const m = Math.floor(currentSec / 60).toString().padStart(2, '0');
+      const s = Math.floor(currentSec % 60).toString().padStart(2, '0');
+      const ms = Math.floor((currentSec % 1) * 10);
+      timeDisplay.textContent = `${m}:${s}.${ms}`;
+    }
+    draw();
+
+    // Scrubbing im Waveform-Fenster
+    let isDraggingWave = false;
+    let dragStartX = 0;
+    let dragStartSample = 0;
+
+    waveWrapper.addEventListener('mousedown', (e) => {
+      if (totalSamples === 0) return;
+      if (isPlaying) stopPlayback();
+      isDraggingWave = true;
+      dragStartX = e.clientX;
+      dragStartSample = playheadSample;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDraggingWave) return;
+      const dx = e.clientX - dragStartX;
+      const samplesOnScreen = sampleRate * 4;
+      const pxPerSample = waveWrapper.clientWidth / samplesOnScreen;
+      const sampleDelta = Math.round(-dx / pxPerSample);
+      playheadSample = Math.max(0, Math.min(totalSamples, dragStartSample + sampleDelta));
+    });
+
+    window.addEventListener('mouseup', () => { isDraggingWave = false; });
+
+    waveWrapper.addEventListener('touchstart', (e) => {
+      if (totalSamples === 0) return;
+      if (isPlaying) stopPlayback();
+      isDraggingWave = true;
+      dragStartX = e.touches[0].clientX;
+      dragStartSample = playheadSample;
+    });
+
+    window.addEventListener('touchmove', (e) => {
+      if (!isDraggingWave) return;
+      const dx = e.touches[0].clientX - dragStartX;
+      const samplesOnScreen = sampleRate * 4;
+      const pxPerSample = waveWrapper.clientWidth / samplesOnScreen;
+      const sampleDelta = Math.round(-dx / pxPerSample);
+      playheadSample = Math.max(0, Math.min(totalSamples, dragStartSample + sampleDelta));
+    });
+
+    window.addEventListener('touchend', () => { isDraggingWave = false; });
+
+    // Wiedergabe
+    function startPlayback() {
+      if (totalSamples === 0) return;
+      initAudio();
+
+      if (playheadSample >= totalSamples) playheadSample = 0;
+
+      const buffer = audioCtx.createBuffer(1, totalSamples, sampleRate);
+      const channelData = buffer.getChannelData(0);
+      for (let i = 0; i < totalSamples; i++) {
+        channelData[i] = getSample(i);
+      }
+
+      playAudioSource = audioCtx.createBufferSource();
+      playAudioSource.buffer = buffer;
+      playAudioSource.connect(audioCtx.destination);
+
+      playOffsetSec = playheadSample / sampleRate;
+      playStartTime = audioCtx.currentTime;
+      playAudioSource.start(0, playOffsetSec);
+
+      isPlaying = true;
+      playBtn.textContent = "⏸ Pausieren";
+      statusText.textContent = "Wiedergabe...";
+    }
+
+    function stopPlayback() {
+      if (!isPlaying) return;
+      if (playAudioSource) {
+        try { playAudioSource.stop(); } catch(e){}
+        playAudioSource = null;
+      }
+      isPlaying = false;
+      playBtn.textContent = "▶ Abspielen";
+      statusText.textContent = "Pausiert";
+    }
+
+    playBtn.addEventListener('click', () => {
+      if (isPlaying) stopPlayback();
+      else startPlayback();
+    });
+
+    // Präziser Ogg-Export des tatsächlichen aktuellen Audioinhalts
+    exportBtn.addEventListener('click', async () => {
+      if (totalSamples === 0) return;
+      if (isPlaying) stopPlayback();
+
+      statusText.textContent = "Rendere Ogg...";
+      exportBtn.disabled = true;
+
+      try {
+        // Erstelle einen Offline-Context, um den exakten Audiobuffer zu verarbeiten
+        const offlineCtx = new OfflineAudioContext(1, totalSamples, sampleRate);
+        const buffer = offlineCtx.createBuffer(1, totalSamples, sampleRate);
+        const channelData = buffer.getChannelData(0);
+        for (let i = 0; i < totalSamples; i++) {
+          channelData[i] = getSample(i);
+        }
+
+        const source = offlineCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(offlineCtx.destination);
+        source.start(0);
+
+        const renderedBuffer = await offlineCtx.startRendering();
+
+        // Über MediaStream Destination aufzeichnen, um echtes Ogg/WebM mit Opus-Codecs zu erzeugen
+        const streamDest = audioCtx.createMediaStreamDestination();
+        const liveSource = audioCtx.createBufferSource();
+        liveSource.buffer = renderedBuffer;
+        liveSource.connect(streamDest);
+
+        let options = { mimeType: 'audio/ogg;codecs=opus' };
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          options = { mimeType: 'audio/webm;codecs=opus' };
+        }
+
+        const recorder = new MediaRecorder(streamDest.stream, options);
+        let chunks = [];
+        recorder.ondataavailable = (e) => chunks.push(e.data);
+        
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: options.mimeType.includes('ogg') ? 'audio/ogg' : 'audio/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          a.download = "bearbeitete-aufnahme.ogg";
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }, 100);
+
+          statusText.textContent = "Exportiert!";
+          exportBtn.disabled = false;
+        };
+
+        recorder.start();
+        liveSource.start(0);
+        
+        // Nach Ablauf der Audiodauer stoppen
+        setTimeout(() => {
+          if (recorder.state === 'recording') {
+            recorder.stop();
+          }
+        }, (totalSamples / sampleRate) * 1000 + 200);
+
+      } catch (err) {
+        console.error(err);
+        statusText.textContent = "Fehler beim Export";
+        exportBtn.disabled = false;
+      }
+    });
+
+    // Sicherheitsabfrage beim Löschen
+    clearBtn.addEventListener('click', () => {
+      if (isPlaying) stopPlayback();
+      
+      if (confirm("Möchtest du die gesamte Aufnahme wirklich unwiderruflich löschen?")) {
+        audioChunks = [new Float32Array(CHUNK_SIZE)];
+        totalSamples = 0;
+        playheadSample = 0;
+        updateButtons();
+        statusText.textContent = "Gelöscht";
+      }
+    });
+
+    function updateButtons() {
+      const hasData = totalSamples > 0;
+      playBtn.disabled = !hasData;
+      exportBtn.disabled = !hasData;
+      clearBtn.disabled = !hasData;
+    }
+  </script>
+</body>
+</html>
