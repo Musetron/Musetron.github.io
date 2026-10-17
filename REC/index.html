@@ -228,10 +228,10 @@
     let micSource;
     let processorNode;
 
-    const CHUNK_SIZE = 65536;
+    const CHUNK_SIZE = 131072;
     let audioChunks = [new Float32Array(CHUNK_SIZE)];
     let totalSamples = 0;
-    let sampleRate = 8000; 
+    let sampleRate = 44100; 
     let currentWriteSample = 0;
     let db = null;
     let dbReady = false;
@@ -248,8 +248,8 @@
     const specCanvas = document.createElement('canvas');
     const specCtx = specCanvas.getContext('2d', { willReadFrequently: true });
     let lastRenderedCol = 0;
-    const hopSize = 64; 
-    const numBins = 64;  
+    const hopSize = 128; 
+    const numBins = 96;  
 
     const recBtn = document.getElementById('recBtn');
     const waveWrapper = document.getElementById('waveWrapper');
@@ -342,7 +342,7 @@
       const tx = db.transaction(['segments', 'meta'], 'readwrite');
       const store = tx.objectStore('segments');
       store.clear();
-      const segSize = 16384;
+      const segSize = 32768;
       for (let i = 0; i < totalSamples; i += segSize) {
         const len = Math.min(segSize, totalSamples - i);
         const chunkData = new Float32Array(len);
@@ -354,16 +354,24 @@
 
     async function initAudio() {
       if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 });
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
         if (totalSamples === 0) sampleRate = audioCtx.sampleRate;
       }
       if (audioCtx.state === 'suspended') await audioCtx.resume();
       if (!micStream) {
         try {
-          micStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 8000, channelCount: 1 } });
+          micStream = await navigator.mediaDevices.getUserMedia({ 
+          	audio: { 
+          		channelCount: 1,
+          		echoCancellation: true,
+          		noiseSuppression: true,
+          		autoGainControl: true
+          	} 
+          });
+          sampleRate = audioCtx.sampleRate;
           micSource = audioCtx.createMediaStreamSource(micStream);
           
-          processorNode = audioCtx.createScriptProcessor(512, 1, 1);
+          processorNode = audioCtx.createScriptProcessor(2048, 1, 1);
           processorNode.onaudioprocess = (e) => {
             if (!isRecording) return;
             const input = e.inputBuffer.getChannelData(0);
@@ -445,9 +453,6 @@
 
     function getHeatmapColor(val) {
       val = Math.max(0, Math.min(1, val));
-      val += (Math.random() - 0.5) * 0.08;
-      val = Math.max(0, Math.min(1, val));
-
       let r = 0, g = 0, b = 0;
       if (val < 0.2) {
         const t = val * 5;
@@ -470,8 +475,7 @@
       return [r, g, b];
     }
 
-    // Höhere Sensibilität (mag * 28), damit das Spektrogramm immer gut sichtbar bleibt
-    function getFrequencyMagnitude(centerSample, freqNorm, windowSize = 16) {
+    function getFrequencyMagnitude(centerSample, freqNorm, windowSize = 32) {
       let real = 0, imag = 0;
       const halfWin = Math.floor(windowSize / 2);
       const start = centerSample - halfWin;
@@ -485,7 +489,7 @@
         imag -= sampleVal * win * Math.sin(angle);
       }
       const mag = Math.sqrt(real * real + imag * imag) / windowSize;
-      return Math.min(1, mag * 28);
+      return Math.min(1, mag * 22);
     }
 
     function updateLiveSpectrogram() {
@@ -510,8 +514,8 @@
       for (let c = lastRenderedCol; c < targetCols; c++) {
         const centerSample = c * hopSize;
         for (let b = 0; b < numBins; b++) {
-          const freqNorm = ((numBins - 1 - b) / numBins) * 0.45;
-          const mag = getFrequencyMagnitude(centerSample, freqNorm, 16);
+          const freqNorm = ((numBins - 1 - b) / numBins) * 0.48;
+          const mag = getFrequencyMagnitude(centerSample, freqNorm, 32);
           const rgb = getHeatmapColor(mag);
           specCtx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
           specCtx.fillRect(c, b, 1, 1);
@@ -532,8 +536,8 @@
       for (let c = 0; c < numCols; c++) {
         const centerSample = c * hopSize;
         for (let b = 0; b < numBins; b++) {
-          const freqNorm = ((numBins - 1 - b) / numBins) * 0.45;
-          const mag = getFrequencyMagnitude(centerSample, freqNorm, 16);
+          const freqNorm = ((numBins - 1 - b) / numBins) * 0.48;
+          const mag = getFrequencyMagnitude(centerSample, freqNorm, 32);
           const rgb = getHeatmapColor(mag);
           
           const idx = (b * numCols + c) * 4;
@@ -578,15 +582,16 @@
       const colSpan = endCol - startCol;
 
       try {
-        ctx.imageSmoothingEnabled = false;
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(
           specCanvas,
           Math.round(startCol), 0, Math.max(1, Math.round(colSpan)), numBins,
           0, 0, w, h
         );
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-        for (let y = 0; y < h; y += 3) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+        for (let y = 0; y < h; y += 4) {
           ctx.fillRect(0, y, w, 1);
         }
       } catch (err) {}
@@ -651,7 +656,6 @@
         const source = audioCtx.createBufferSource();
         source.buffer = buffer;
 
-        // Sanfterer Telefon-Filter (weiterer Bereich, damit die Stimme natürlicher klingt)
         const phoneFilter = audioCtx.createBiquadFilter();
         phoneFilter.type = 'bandpass';
         phoneFilter.frequency.setValueAtTime(1400, audioCtx.currentTime);
@@ -664,14 +668,13 @@
         const makeupGain = audioCtx.createGain();
         makeupGain.gain.value = 2.0; 
 
-        // Dezenterer Hall (weniger Anteil)
         const convolver = audioCtx.createConvolver();
         convolver.buffer = createReverbImpulse(audioCtx, 0.6, 3.0);
 
         const dryGain = audioCtx.createGain();
         dryGain.gain.value = 0.9;
         const wetGain = audioCtx.createGain();
-        wetGain.gain.value = 0.12; // Schön dezent
+        wetGain.gain.value = 0.12;
 
         source.connect(phoneFilter);
         phoneFilter.connect(compressor);
@@ -725,7 +728,6 @@
       statusText.textContent = 'Rendere .ogg Datei…';
       exportBtn.disabled = true;
       try {
-        // Ultraschneller, direkter Offline-Render mit minimalem Buffer-Overhead
         const offlineCtx = new OfflineAudioContext(1, totalSamples + sampleRate * 0.4, sampleRate);
         const buffer = offlineCtx.createBuffer(1, totalSamples, sampleRate);
         const channelData = buffer.getChannelData(0);
