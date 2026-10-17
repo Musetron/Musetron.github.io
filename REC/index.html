@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Audio-Recorder & Ogg Export</title>
+  <title>Audio-Recorder & Retro-Telefon (Perfekt & Sichtbar)</title>
   <style>
     :root {
       --bg-color: #0b0f19;
@@ -11,10 +11,8 @@
       --accent-red: #ef4444;
       --accent-red-hover: #dc2626;
       --accent-blue: #3b82f6;
-      --accent-blue-hover: #2563eb;
       --text-main: #f8fafc;
       --text-muted: #64748b;
-      --wave-color: #38bdf8;
     }
 
     * {
@@ -69,16 +67,16 @@
       color: var(--text-muted);
     }
 
-    /* Waveform Container mit zentrierter Nadel */
     .waveform-wrapper {
       position: relative;
       width: 100%;
       height: 200px;
-      background: #070a12;
+      background: #05070c;
       border-radius: 18px;
       overflow: hidden;
       border: 1px solid #1e293b;
       cursor: grab;
+      touch-action: none;
     }
 
     .waveform-wrapper:active {
@@ -104,7 +102,6 @@
       z-index: 5;
     }
 
-    /* Zentraler Knopf & Steuerung */
     .center-section {
       display: flex;
       flex-direction: column;
@@ -125,7 +122,7 @@
       box-shadow: 0 0 25px rgba(239, 68, 68, 0.4);
       transition: transform 0.1s ease, background-color 0.2s, box-shadow 0.2s;
       outline: none;
-      touch-action: manipulation;
+      touch-action: none;
     }
 
     .rec-button:hover {
@@ -206,13 +203,11 @@
       <div class="hint" id="hintText">Gedrückt halten zum Aufnehmen</div>
     </div>
 
-    <!-- Interaktives Waveform mit zentrierter Nadel -->
     <div class="waveform-wrapper" id="waveWrapper">
       <div class="center-needle"></div>
       <canvas id="waveformCanvas"></canvas>
     </div>
 
-    <!-- Zentraler Aufnahmeknopf -->
     <div class="center-section">
       <button class="rec-button" id="recBtn">
         <div class="rec-icon"></div>
@@ -220,7 +215,7 @@
       <div class="status-text" id="statusText">Bereit</div>
       
       <div class="secondary-controls">
-        <button class="text-btn" id="playBtn" disabled>▶ Abspielen</button>
+        <button class="text-btn" id="playBtn" disabled>▶ Abspielen (Telefon-FX)</button>
         <button class="text-btn export" id="exportBtn" disabled>💾 Als Ogg exportieren</button>
         <button class="text-btn" id="clearBtn" disabled>Löschen</button>
       </div>
@@ -231,20 +226,30 @@
     let audioCtx;
     let micStream;
     let micSource;
-    let scriptProcessor;
+    let processorNode;
 
-    // Unendlicher Chunk-Speicher für die Aufnahme
     const CHUNK_SIZE = 65536;
     let audioChunks = [new Float32Array(CHUNK_SIZE)];
     let totalSamples = 0;
-    let sampleRate = 44100;
+    let sampleRate = 8000; 
+    let currentWriteSample = 0;
+    let db = null;
+    let dbReady = false;
+    let restorePromise = null;
 
     let isRecording = false;
     let isPlaying = false;
     let playheadSample = 0;
-    let playAudioSource = null;
+    let activeSourceNodes = [];
     let playStartTime = 0;
     let playOffsetSec = 0;
+    let isDraggingWave = false;
+
+    const specCanvas = document.createElement('canvas');
+    const specCtx = specCanvas.getContext('2d', { willReadFrequently: true });
+    let lastRenderedCol = 0;
+    const hopSize = 64; 
+    const numBins = 64;  
 
     const recBtn = document.getElementById('recBtn');
     const waveWrapper = document.getElementById('waveWrapper');
@@ -258,8 +263,8 @@
     const clearBtn = document.getElementById('clearBtn');
 
     function resizeCanvas() {
-      canvas.width = waveWrapper.clientWidth * window.devicePixelRatio;
-      canvas.height = waveWrapper.clientHeight * window.devicePixelRatio;
+      canvas.width = Math.max(1, Math.round(waveWrapper.clientWidth * window.devicePixelRatio));
+      canvas.height = Math.max(1, Math.round(waveWrapper.clientHeight * window.devicePixelRatio));
     }
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
@@ -268,135 +273,323 @@
       if (index < 0 || index >= totalSamples) return 0;
       const chunkIdx = Math.floor(index / CHUNK_SIZE);
       const innerIdx = index % CHUNK_SIZE;
-      return audioChunks[chunkIdx][innerIdx];
+      return audioChunks[chunkIdx]?.[innerIdx] || 0;
     }
 
     function setSample(index, value) {
       const chunkIdx = Math.floor(index / CHUNK_SIZE);
-      while (audioChunks.length <= chunkIdx) {
-        audioChunks.push(new Float32Array(CHUNK_SIZE));
+      while (audioChunks.length <= chunkIdx) audioChunks.push(new Float32Array(CHUNK_SIZE));
+      audioChunks[chunkIdx][index % CHUNK_SIZE] = value;
+    }
+
+    function openDatabase() {
+      return new Promise((resolve, reject) => {
+        if (!('indexedDB' in window)) return reject(new Error('IndexedDB nicht verfügbar'));
+        const request = indexedDB.open('AudioRecorderFinalV3', 1);
+        request.onupgradeneeded = () => {
+          const database = request.result;
+          if (!database.objectStoreNames.contains('segments')) database.createObjectStore('segments', { keyPath: 'start' });
+          if (!database.objectStoreNames.contains('meta')) database.createObjectStore('meta', { keyPath: 'id' });
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function loadSavedAudio() {
+      try {
+        db = await openDatabase();
+        const all = await new Promise((resolve, reject) => {
+          const tx = db.transaction(['segments', 'meta'], 'readonly');
+          const segmentsReq = tx.objectStore('segments').getAll();
+          const metaReq = tx.objectStore('meta').get('recording');
+          tx.oncomplete = () => resolve({ segments: segmentsReq.result || [], meta: metaReq.result || null });
+          tx.onerror = () => reject(tx.error);
+        });
+        
+        if (all.meta) {
+          if (Number.isFinite(all.meta.sampleRate)) sampleRate = all.meta.sampleRate;
+          if (Number.isFinite(all.meta.totalSamples)) totalSamples = all.meta.totalSamples;
+        }
+
+        audioChunks = [new Float32Array(CHUNK_SIZE)];
+        currentWriteSample = 0;
+        
+        if (all.segments && all.segments.length > 0) {
+          all.segments.sort((a, b) => a.start - b.start);
+          for (const segment of all.segments) {
+            const values = new Float32Array(segment.data);
+            for (let i = 0; i < values.length; i++) setSample(segment.start + i, values[i]);
+            totalSamples = Math.max(totalSamples, segment.start + values.length);
+          }
+          currentWriteSample = totalSamples;
+          playheadSample = totalSamples;
+          buildFullSpectrogram();
+          statusText.textContent = 'Bereit';
+        } else {
+          statusText.textContent = 'Bereit';
+        }
+        updateButtons();
+      } catch (err) {
+        statusText.textContent = 'Bereit';
+      } finally {
+        dbReady = true;
       }
-      const innerIdx = index % CHUNK_SIZE;
-      audioChunks[chunkIdx][innerIdx] = value;
+    }
+
+    function saveAllData() {
+      if (!db || totalSamples === 0) return;
+      const tx = db.transaction(['segments', 'meta'], 'readwrite');
+      const store = tx.objectStore('segments');
+      store.clear();
+      const segSize = 16384;
+      for (let i = 0; i < totalSamples; i += segSize) {
+        const len = Math.min(segSize, totalSamples - i);
+        const chunkData = new Float32Array(len);
+        for (let j = 0; j < len; j++) chunkData[j] = getSample(i + j);
+        store.put({ start: i, data: chunkData.buffer });
+      }
+      tx.objectStore('meta').put({ id: 'recording', totalSamples, sampleRate });
     }
 
     async function initAudio() {
       if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        sampleRate = audioCtx.sampleRate;
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 });
+        if (totalSamples === 0) sampleRate = audioCtx.sampleRate;
       }
       if (audioCtx.state === 'suspended') await audioCtx.resume();
-
       if (!micStream) {
         try {
-          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 8000, channelCount: 1 } });
           micSource = audioCtx.createMediaStreamSource(micStream);
           
-          scriptProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
-          scriptProcessor.onaudioprocess = (e) => {
+          processorNode = audioCtx.createScriptProcessor(512, 1, 1);
+          processorNode.onaudioprocess = (e) => {
             if (!isRecording) return;
             const input = e.inputBuffer.getChannelData(0);
             for (let i = 0; i < input.length; i++) {
-              setSample(playheadSample, input[i]);
-              playheadSample++;
-              if (playheadSample > totalSamples) {
-                totalSamples = playheadSample;
-              }
+              setSample(currentWriteSample, input[i]);
+              currentWriteSample++;
             }
+            totalSamples = Math.max(totalSamples, currentWriteSample);
+            if (!isDraggingWave) playheadSample = currentWriteSample;
+            
+            updateLiveSpectrogram();
             updateButtons();
           };
-          micSource.connect(scriptProcessor);
-
+          
+          micSource.connect(processorNode);
           const nullGain = audioCtx.createGain();
           nullGain.gain.value = 0;
-          scriptProcessor.connect(nullGain);
+          processorNode.connect(nullGain);
           nullGain.connect(audioCtx.destination);
         } catch (err) {
-          alert("Mikrofon-Zugriff nicht möglich.");
+          micStream = null;
+          alert('Mikrofon-Zugriff nicht möglich.');
+          throw err;
         }
       }
     }
 
     async function startRecording() {
+      if (isRecording) return;
       if (isPlaying) stopPlayback();
-      await initAudio();
-      isRecording = true;
-      recBtn.classList.add('recording');
-      hintText.textContent = "Loslassen zum Pausieren";
-      statusText.textContent = "Aufnahme...";
+      try {
+        statusText.textContent = 'Mikrofon startet…';
+        await initAudio();
+        if (!dbReady) await (restorePromise || (restorePromise = loadSavedAudio()));
+        
+        currentWriteSample = playheadSample;
+        isRecording = true;
+        recBtn.classList.add('recording');
+        hintText.textContent = 'Loslassen zum Pausieren';
+        statusText.textContent = 'Aufnahme läuft…';
+      } catch (err) {
+        isRecording = false;
+        recBtn.classList.remove('recording');
+        hintText.textContent = 'Gedrückt halten zum Aufnehmen';
+        statusText.textContent = 'Bereit';
+      }
     }
 
     function stopRecording() {
       if (!isRecording) return;
       isRecording = false;
       recBtn.classList.remove('recording');
-      hintText.textContent = "Gedrückt halten zum Aufnehmen";
-      statusText.textContent = "Pausiert";
+      hintText.textContent = 'Gedrückt halten zum Aufnehmen';
+      statusText.textContent = 'Pausiert';
+      
+      totalSamples = Math.max(totalSamples, currentWriteSample);
+      buildFullSpectrogram();
+      saveAllData();
       updateButtons();
     }
 
-    recBtn.addEventListener('mousedown', startRecording);
-    window.addEventListener('mouseup', stopRecording);
-    recBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
-    window.addEventListener('touchend', stopRecording);
+    let recPointerDown = false;
+    recBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (recPointerDown) return;
+      recPointerDown = true;
+      try { recBtn.setPointerCapture(e.pointerId); } catch (_) {}
+      startRecording();
+    });
+    const releaseRecordPointer = () => {
+      if (!recPointerDown) return;
+      recPointerDown = false;
+      stopRecording();
+    };
+    recBtn.addEventListener('pointerup', releaseRecordPointer);
+    recBtn.addEventListener('pointercancel', releaseRecordPointer);
+    recBtn.addEventListener('lostpointercapture', releaseRecordPointer);
+    window.addEventListener('blur', releaseRecordPointer);
 
-    // Waveform Loop
+    function getHeatmapColor(val) {
+      val = Math.max(0, Math.min(1, val));
+      val += (Math.random() - 0.5) * 0.08;
+      val = Math.max(0, Math.min(1, val));
+
+      let r = 0, g = 0, b = 0;
+      if (val < 0.2) {
+        const t = val * 5;
+        b = Math.floor(t * 200);
+      } else if (val < 0.45) {
+        const t = (val - 0.2) * 4;
+        b = 200;
+        g = Math.floor(t * 220);
+      } else if (val < 0.7) {
+        const t = (val - 0.45) * 4;
+        r = Math.floor(t * 255);
+        g = 220 + Math.floor(t * 35);
+        b = Math.floor((1 - t) * 200);
+      } else {
+        const t = (val - 0.7) * 3.33;
+        r = 255;
+        g = 255 - Math.floor(t * 100);
+        b = Math.floor(t * 50);
+      }
+      return [r, g, b];
+    }
+
+    // Höhere Sensibilität (mag * 28), damit das Spektrogramm immer gut sichtbar bleibt
+    function getFrequencyMagnitude(centerSample, freqNorm, windowSize = 16) {
+      let real = 0, imag = 0;
+      const halfWin = Math.floor(windowSize / 2);
+      const start = centerSample - halfWin;
+      
+      for (let i = 0; i < windowSize; i++) {
+        const sIdx = start + i;
+        const sampleVal = (sIdx >= 0 && sIdx < totalSamples) ? getSample(sIdx) : 0;
+        const win = 0.5 * (1 - Math.cos(2 * Math.PI * i / windowSize));
+        const angle = 2 * Math.PI * freqNorm * i;
+        real += sampleVal * win * Math.cos(angle);
+        imag -= sampleVal * win * Math.sin(angle);
+      }
+      const mag = Math.sqrt(real * real + imag * imag) / windowSize;
+      return Math.min(1, mag * 28);
+    }
+
+    function updateLiveSpectrogram() {
+      const targetCols = Math.ceil(totalSamples / hopSize);
+      if (targetCols <= lastRenderedCol) return;
+
+      if (specCanvas.height !== numBins || specCanvas.width < targetCols) {
+        const oldWidth = specCanvas.width || targetCols;
+        const oldHeight = specCanvas.height || numBins;
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = oldWidth;
+        tempCanvas.height = oldHeight;
+        tempCanvas.getContext('2d').drawImage(specCanvas, 0, 0);
+
+        specCanvas.width = Math.max(oldWidth, targetCols);
+        specCanvas.height = numBins;
+        specCtx.fillStyle = '#05070c';
+        specCtx.fillRect(0, 0, specCanvas.width, specCanvas.height);
+        specCtx.drawImage(tempCanvas, 0, 0);
+      }
+
+      for (let c = lastRenderedCol; c < targetCols; c++) {
+        const centerSample = c * hopSize;
+        for (let b = 0; b < numBins; b++) {
+          const freqNorm = ((numBins - 1 - b) / numBins) * 0.45;
+          const mag = getFrequencyMagnitude(centerSample, freqNorm, 16);
+          const rgb = getHeatmapColor(mag);
+          specCtx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+          specCtx.fillRect(c, b, 1, 1);
+        }
+      }
+      lastRenderedCol = targetCols;
+    }
+
+    function buildFullSpectrogram() {
+      if (totalSamples === 0) return;
+      const numCols = Math.ceil(totalSamples / hopSize);
+      specCanvas.width = numCols;
+      specCanvas.height = numBins;
+      
+      const imgData = specCtx.createImageData(numCols, numBins);
+      const pixels = imgData.data;
+
+      for (let c = 0; c < numCols; c++) {
+        const centerSample = c * hopSize;
+        for (let b = 0; b < numBins; b++) {
+          const freqNorm = ((numBins - 1 - b) / numBins) * 0.45;
+          const mag = getFrequencyMagnitude(centerSample, freqNorm, 16);
+          const rgb = getHeatmapColor(mag);
+          
+          const idx = (b * numCols + c) * 4;
+          pixels[idx]     = rgb[0];
+          pixels[idx + 1] = rgb[1];
+          pixels[idx + 2] = rgb[2];
+          pixels[idx + 3] = 255;
+        }
+      }
+      specCtx.putImageData(imgData, 0, 0);
+      lastRenderedCol = numCols;
+    }
+
     function draw() {
       requestAnimationFrame(draw);
-
-      if (isPlaying) {
+      
+      if (isRecording) {
+        playheadSample = currentWriteSample;
+      } else if (isPlaying && audioCtx) {
         const elapsed = audioCtx.currentTime - playStartTime;
         const currentSec = playOffsetSec + elapsed;
         playheadSample = Math.min(totalSamples, Math.floor(currentSec * sampleRate));
-        if (playheadSample >= totalSamples) {
-          stopPlayback();
-        }
+        if (playheadSample >= totalSamples) stopPlayback();
       }
-
+      
       const w = canvas.width;
       const h = canvas.height;
-      const centerY = h / 2;
-
-      ctx.clearRect(0, 0, w, h);
-
-      ctx.strokeStyle = "#1e293b";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, centerY);
-      ctx.lineTo(w, centerY);
-      ctx.stroke();
+      ctx.fillStyle = '#05070c';
+      ctx.fillRect(0, 0, w, h);
 
       if (totalSamples === 0) {
-        timeDisplay.textContent = "00:00.0";
+        timeDisplay.textContent = '00:00.0';
         return;
       }
 
       const samplesOnScreen = sampleRate * 4;
-      const pxPerSample = w / samplesOnScreen;
-      const centerPixelX = w / 2;
-
-      ctx.beginPath();
-      ctx.strokeStyle = "#38bdf8";
-      ctx.lineWidth = 2;
-
       const startSample = playheadSample - Math.floor(samplesOnScreen / 2);
       const endSample = playheadSample + Math.floor(samplesOnScreen / 2);
 
-      let firstDrawn = false;
-      for (let s = startSample; s < endSample; s += Math.max(1, Math.floor(samplesOnScreen / w))) {
-        const x = centerPixelX + (s - playheadSample) * pxPerSample;
-        if (x >= 0 && x <= w) {
-          const val = getSample(s);
-          const y = centerY + val * (h / 2 - 10);
-          if (!firstDrawn) {
-            ctx.moveTo(x, y);
-            firstDrawn = true;
-          } else {
-            ctx.lineTo(x, y);
-          }
+      const startCol = startSample / hopSize;
+      const endCol = endSample / hopSize;
+      const colSpan = endCol - startCol;
+
+      try {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(
+          specCanvas,
+          Math.round(startCol), 0, Math.max(1, Math.round(colSpan)), numBins,
+          0, 0, w, h
+        );
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        for (let y = 0; y < h; y += 3) {
+          ctx.fillRect(0, y, w, 1);
         }
-      }
-      ctx.stroke();
+      } catch (err) {}
 
       const currentSec = playheadSample / sampleRate;
       const m = Math.floor(currentSec / 60).toString().padStart(2, '0');
@@ -406,20 +599,18 @@
     }
     draw();
 
-    // Scrubbing im Waveform-Fenster
-    let isDraggingWave = false;
     let dragStartX = 0;
     let dragStartSample = 0;
-
-    waveWrapper.addEventListener('mousedown', (e) => {
+    waveWrapper.addEventListener('pointerdown', (e) => {
       if (totalSamples === 0) return;
       if (isPlaying) stopPlayback();
       isDraggingWave = true;
       dragStartX = e.clientX;
       dragStartSample = playheadSample;
+      try { waveWrapper.setPointerCapture(e.pointerId); } catch (_) {}
     });
-
-    window.addEventListener('mousemove', (e) => {
+    
+    waveWrapper.addEventListener('pointermove', (e) => {
       if (!isDraggingWave) return;
       const dx = e.clientX - dragStartX;
       const samplesOnScreen = sampleRate * 4;
@@ -427,63 +618,100 @@
       const sampleDelta = Math.round(-dx / pxPerSample);
       playheadSample = Math.max(0, Math.min(totalSamples, dragStartSample + sampleDelta));
     });
+    
+    const endWaveDry = () => { isDraggingWave = false; };
+    waveWrapper.addEventListener('pointerup', endWaveDry);
+    waveWrapper.addEventListener('pointercancel', endWaveDry);
+    waveWrapper.addEventListener('lostpointercapture', endWaveDry);
 
-    window.addEventListener('mouseup', () => { isDraggingWave = false; });
-
-    waveWrapper.addEventListener('touchstart', (e) => {
-      if (totalSamples === 0) return;
-      if (isPlaying) stopPlayback();
-      isDraggingWave = true;
-      dragStartX = e.touches[0].clientX;
-      dragStartSample = playheadSample;
-    });
-
-    window.addEventListener('touchmove', (e) => {
-      if (!isDraggingWave) return;
-      const dx = e.touches[0].clientX - dragStartX;
-      const samplesOnScreen = sampleRate * 4;
-      const pxPerSample = waveWrapper.clientWidth / samplesOnScreen;
-      const sampleDelta = Math.round(-dx / pxPerSample);
-      playheadSample = Math.max(0, Math.min(totalSamples, dragStartSample + sampleDelta));
-    });
-
-    window.addEventListener('touchend', () => { isDraggingWave = false; });
-
-    // Wiedergabe
-    function startPlayback() {
-      if (totalSamples === 0) return;
-      initAudio();
-
-      if (playheadSample >= totalSamples) playheadSample = 0;
-
-      const buffer = audioCtx.createBuffer(1, totalSamples, sampleRate);
-      const channelData = buffer.getChannelData(0);
-      for (let i = 0; i < totalSamples; i++) {
-        channelData[i] = getSample(i);
+    function createReverbImpulse(ctx, duration = 0.6, decay = 3.0) {
+      const rate = ctx.sampleRate;
+      const length = rate * duration;
+      const impulse = ctx.createBuffer(2, length, rate);
+      const left = impulse.getChannelData(0);
+      const right = impulse.getChannelData(1);
+      for (let i = 0; i < length; i++) {
+        const n = Math.random() * 2 - 1;
+        left[i] = n * Math.pow(1 - i / length, decay);
+        right[i] = n * Math.pow(1 - i / length, decay);
       }
+      return impulse;
+    }
 
-      playAudioSource = audioCtx.createBufferSource();
-      playAudioSource.buffer = buffer;
-      playAudioSource.connect(audioCtx.destination);
+    async function startPlayback() {
+      if (totalSamples === 0 || isRecording) return;
+      try {
+        await initAudio();
+        if (playheadSample >= totalSamples) playheadSample = 0;
+        
+        const buffer = audioCtx.createBuffer(1, totalSamples, sampleRate);
+        const channelData = buffer.getChannelData(0);
+        for (let i = 0; i < totalSamples; i++) channelData[i] = getSample(i);
+        
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
 
-      playOffsetSec = playheadSample / sampleRate;
-      playStartTime = audioCtx.currentTime;
-      playAudioSource.start(0, playOffsetSec);
+        // Sanfterer Telefon-Filter (weiterer Bereich, damit die Stimme natürlicher klingt)
+        const phoneFilter = audioCtx.createBiquadFilter();
+        phoneFilter.type = 'bandpass';
+        phoneFilter.frequency.setValueAtTime(1400, audioCtx.currentTime);
+        phoneFilter.Q.setValueAtTime(0.7, audioCtx.currentTime);
 
-      isPlaying = true;
-      playBtn.textContent = "⏸ Pausieren";
-      statusText.textContent = "Wiedergabe...";
+        const compressor = audioCtx.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-24, audioCtx.currentTime);
+        compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+
+        const makeupGain = audioCtx.createGain();
+        makeupGain.gain.value = 2.0; 
+
+        // Dezenterer Hall (weniger Anteil)
+        const convolver = audioCtx.createConvolver();
+        convolver.buffer = createReverbImpulse(audioCtx, 0.6, 3.0);
+
+        const dryGain = audioCtx.createGain();
+        dryGain.gain.value = 0.9;
+        const wetGain = audioCtx.createGain();
+        wetGain.gain.value = 0.12; // Schön dezent
+
+        source.connect(phoneFilter);
+        phoneFilter.connect(compressor);
+        compressor.connect(makeupGain);
+
+        makeupGain.connect(dryGain);
+        dryGain.connect(audioCtx.destination);
+
+        makeupGain.connect(convolver);
+        convolver.connect(wetGain);
+        wetGain.connect(audioCtx.destination);
+
+        activeSourceNodes = [source];
+
+        playOffsetSec = playheadSample / sampleRate;
+        playStartTime = audioCtx.currentTime;
+        source.start(0, playOffsetSec);
+
+        source.onended = () => {
+          if (isPlaying) stopPlayback();
+        };
+
+        isPlaying = true;
+        playBtn.textContent = '⏸ Pausieren (Telefon-FX)';
+        statusText.textContent = 'Wiedergabe aktiv…';
+      } catch (err) {
+        console.error(err);
+        statusText.textContent = 'Wiedergabe nicht möglich';
+      }
     }
 
     function stopPlayback() {
       if (!isPlaying) return;
-      if (playAudioSource) {
-        try { playAudioSource.stop(); } catch(e){}
-        playAudioSource = null;
-      }
+      activeSourceNodes.forEach(src => {
+        try { src.stop(); } catch (_) {}
+      });
+      activeSourceNodes = [];
       isPlaying = false;
-      playBtn.textContent = "▶ Abspielen";
-      statusText.textContent = "Pausiert";
+      playBtn.textContent = '▶ Abspielen (Telefon-FX)';
+      statusText.textContent = 'Pausiert';
     }
 
     playBtn.addEventListener('click', () => {
@@ -491,99 +719,133 @@
       else startPlayback();
     });
 
-    // Präziser Ogg-Export des tatsächlichen aktuellen Audioinhalts
     exportBtn.addEventListener('click', async () => {
-      if (totalSamples === 0) return;
+      if (totalSamples === 0 || isRecording) return;
       if (isPlaying) stopPlayback();
-
-      statusText.textContent = "Rendere Ogg...";
+      statusText.textContent = 'Rendere .ogg Datei…';
       exportBtn.disabled = true;
-
       try {
-        // Erstelle einen Offline-Context, um den exakten Audiobuffer zu verarbeiten
-        const offlineCtx = new OfflineAudioContext(1, totalSamples, sampleRate);
+        // Ultraschneller, direkter Offline-Render mit minimalem Buffer-Overhead
+        const offlineCtx = new OfflineAudioContext(1, totalSamples + sampleRate * 0.4, sampleRate);
         const buffer = offlineCtx.createBuffer(1, totalSamples, sampleRate);
         const channelData = buffer.getChannelData(0);
-        for (let i = 0; i < totalSamples; i++) {
-          channelData[i] = getSample(i);
-        }
-
+        for (let i = 0; i < totalSamples; i++) channelData[i] = getSample(i);
+        
         const source = offlineCtx.createBufferSource();
         source.buffer = buffer;
-        source.connect(offlineCtx.destination);
+
+        const phoneFilter = offlineCtx.createBiquadFilter();
+        phoneFilter.type = 'bandpass';
+        phoneFilter.frequency.setValueAtTime(1400, 0);
+        phoneFilter.Q.setValueAtTime(0.7, 0);
+
+        const compressor = offlineCtx.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-24, 0);
+        compressor.ratio.setValueAtTime(12, 0);
+
+        const makeupGain = offlineCtx.createGain();
+        makeupGain.gain.value = 2.0;
+
+        const convolver = offlineCtx.createConvolver();
+        convolver.buffer = createReverbImpulse(offlineCtx, 0.6, 3.0);
+
+        const dryGain = offlineCtx.createGain();
+        dryGain.gain.value = 0.9;
+        const wetGain = offlineCtx.createGain();
+        wetGain.gain.value = 0.12;
+
+        source.connect(phoneFilter);
+        phoneFilter.connect(compressor);
+        compressor.connect(makeupGain);
+        
+        makeupGain.connect(dryGain);
+        dryGain.connect(offlineCtx.destination);
+
+        makeupGain.connect(convolver);
+        convolver.connect(wetGain);
+        wetGain.connect(offlineCtx.destination);
+
         source.start(0);
-
         const renderedBuffer = await offlineCtx.startRendering();
-
-        // Über MediaStream Destination aufzeichnen, um echtes Ogg/WebM mit Opus-Codecs zu erzeugen
+        
         const streamDest = audioCtx.createMediaStreamDestination();
         const liveSource = audioCtx.createBufferSource();
         liveSource.buffer = renderedBuffer;
         liveSource.connect(streamDest);
-
-        let options = { mimeType: 'audio/ogg;codecs=opus' };
+        
+        const options = { mimeType: 'audio/ogg;codecs=opus' };
         if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-          options = { mimeType: 'audio/webm;codecs=opus' };
+          options.mimeType = 'audio/webm;codecs=opus';
         }
 
         const recorder = new MediaRecorder(streamDest.stream, options);
-        let chunks = [];
-        recorder.ondataavailable = (e) => chunks.push(e.data);
-        
+        const chunks = [];
+        recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
         recorder.onstop = () => {
-          const blob = new Blob(chunks, { type: options.mimeType.includes('ogg') ? 'audio/ogg' : 'audio/webm' });
+          const blob = new Blob(chunks, { type: 'audio/ogg' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.style.display = 'none';
           a.href = url;
-          a.download = "bearbeitete-aufnahme.ogg";
+          a.download = 'telefon-aufnahme.ogg';
           document.body.appendChild(a);
           a.click();
-          setTimeout(() => {
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          }, 100);
-
-          statusText.textContent = "Exportiert!";
+          setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
+          statusText.textContent = 'Blitzschnell als .ogg exportiert!';
           exportBtn.disabled = false;
+          streamDest.stream.getTracks().forEach(track => track.stop());
         };
-
+        recorder.onerror = () => {
+          statusText.textContent = 'Fehler beim Export';
+          exportBtn.disabled = false;
+          streamDest.stream.getTracks().forEach(track => track.stop());
+        };
         recorder.start();
         liveSource.start(0);
-        
-        // Nach Ablauf der Audiodauer stoppen
-        setTimeout(() => {
-          if (recorder.state === 'recording') {
-            recorder.stop();
-          }
-        }, (totalSamples / sampleRate) * 1000 + 200);
-
+        setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, ((totalSamples / sampleRate) + 0.4) * 1000 + 100);
       } catch (err) {
         console.error(err);
-        statusText.textContent = "Fehler beim Export";
+        statusText.textContent = 'Fehler beim Export';
         exportBtn.disabled = false;
       }
     });
 
-    // Sicherheitsabfrage beim Löschen
-    clearBtn.addEventListener('click', () => {
+    clearBtn.addEventListener('click', async () => {
+      if (isRecording) return;
       if (isPlaying) stopPlayback();
-      
-      if (confirm("Möchtest du die gesamte Aufnahme wirklich unwiderruflich löschen?")) {
+      if (!confirm('Möchtest du die gesamte Aufnahme wirklich unwiderruflich löschen?')) return;
+      try {
         audioChunks = [new Float32Array(CHUNK_SIZE)];
         totalSamples = 0;
+        currentWriteSample = 0;
         playheadSample = 0;
+        lastRenderedCol = 0;
+        specCanvas.width = 0;
+        specCanvas.height = 0;
+        if (db) {
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(['segments', 'meta'], 'readwrite');
+            tx.objectStore('segments').clear();
+            tx.objectStore('meta').clear();
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+          });
+        }
         updateButtons();
-        statusText.textContent = "Gelöscht";
+        statusText.textContent = 'Gelöscht';
+      } catch (err) {
+        statusText.textContent = 'Löschen fehlgeschlagen';
       }
     });
 
     function updateButtons() {
       const hasData = totalSamples > 0;
-      playBtn.disabled = !hasData;
-      exportBtn.disabled = !hasData;
-      clearBtn.disabled = !hasData;
+      playBtn.disabled = !hasData || isRecording;
+      exportBtn.disabled = !hasData || isRecording;
+      clearBtn.disabled = !hasData || isRecording;
     }
+
+    restorePromise = loadSavedAudio();
   </script>
 </body>
 </html>
