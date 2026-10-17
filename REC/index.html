@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Audio-Recorder & Retro-Telefon (Perfekt & Sichtbar)</title>
+  <title>Audio-Recorder</title>
   <style>
     :root {
       --bg-color: #0b0f19;
@@ -215,9 +215,9 @@
       <div class="status-text" id="statusText">Bereit</div>
       
       <div class="secondary-controls">
-        <button class="text-btn" id="playBtn" disabled>▶ Abspielen (Telefon-FX)</button>
-        <button class="text-btn export" id="exportBtn" disabled>💾 Als Ogg exportieren</button>
-        <button class="text-btn" id="clearBtn" disabled>Löschen</button>
+        <button class="text-btn" id="playBtn" disabled>▶ Abspielen</button>
+        <button class="text-btn export" id="exportBtn" disabled>💾 Speichern</button>
+        <button class="text-btn" id="clearBtn" disabled>🗑️ Löschen</button>
       </div>
     </div>
   </div>
@@ -695,7 +695,7 @@
         };
 
         isPlaying = true;
-        playBtn.textContent = '⏸ Pausieren (Telefon-FX)';
+        playBtn.textContent = '⏸ Pausieren';
         statusText.textContent = 'Wiedergabe aktiv…';
       } catch (err) {
         console.error(err);
@@ -710,7 +710,7 @@
       });
       activeSourceNodes = [];
       isPlaying = false;
-      playBtn.textContent = '▶ Abspielen (Telefon-FX)';
+      playBtn.textContent = '▶ Abspielen';
       statusText.textContent = 'Pausiert';
     }
 
@@ -787,7 +787,7 @@
           const a = document.createElement('a');
           a.style.display = 'none';
           a.href = url;
-          a.download = 'telefon-aufnahme.ogg';
+          a.download = 'Aufnahme.ogg';
           document.body.appendChild(a);
           a.click();
           setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
