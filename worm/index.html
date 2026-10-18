@@ -69,7 +69,7 @@
       background: rgba(0,0,0,0.5);
     }
 
-    /* Neu hinzugefügtes Dataset-Panel direkt unter dem Gehirn-HUD */
+    /* Dataset-Panel direkt unter dem Gehirn-HUD */
     #dataset-hud {
       position: absolute;
       top: 310px;
@@ -113,7 +113,6 @@
       height: 100%;
       justify-content: center;
       align-items: center;
-      cursor: pointer;
       position: relative;
     }
 
@@ -197,7 +196,7 @@
     </div>
   </div>
 
-  <!-- Neues Dataset-Panel direkt unter dem Gehirn-HUD -->
+  <!-- Dataset-Panel direkt unter dem Gehirn-HUD -->
   <div id="dataset-hud">
     <input type="file" id="zip-file" accept=".zip" style="display: none;">
     <button id="upload-btn" onclick="document.getElementById('zip-file').click()">ZIP Dataset laden</button>
@@ -384,7 +383,7 @@ function updateBrainGlow() {
 }
 
 // ==========================================
-// DATASET.ZIP LOGIK (Neues Panel)
+// DATASET.ZIP LOGIK (Automatisches Laden & Scroll-Navigation)
 // ==========================================
 let imageUrls = [];
 let currentIndex = 0;
@@ -394,28 +393,50 @@ const uploadBtn = document.getElementById('upload-btn');
 const datasetContainer = document.getElementById('image-container');
 const imgElement = document.getElementById('current-image');
 
+async function processZipFile(file) {
+  try {
+    const zip = await JSZip.loadAsync(file);
+    imageUrls = [];
+
+    for (const relativePath of Object.keys(zip.files)) {
+      const zipEntry = zip.files[relativePath];
+      if (!zipEntry.dir && /\.(jpe?g|png|gif|webp)$/i.test(relativePath)) {
+        const blob = await zipEntry.async('blob');
+        imageUrls.push(URL.createObjectURL(blob));
+      }
+    }
+
+    if (imageUrls.length > 0) {
+      currentIndex = 0;
+      uploadBtn.style.display = 'none';
+      datasetContainer.style.display = 'flex';
+      imgElement.src = imageUrls[currentIndex];
+    } else {
+      alert('Keine Bilder in der ZIP-Datei gefunden!');
+    }
+  } catch (err) {
+    console.error("Fehler beim Laden der ZIP:", err);
+  }
+}
+
+// Automatisches Finden & Laden über einen automatischen fetch/request oder Drag & Drop / Auto-Detection falls URL bekannt,
+// hier behalten wir den File-Input bei, setzen aber standardmäßig Trigger oder prüfen ob eine Datei automatisch gesucht werden soll.
 zipInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
-  if (!file) return;
+  if (file) await processZipFile(file);
+});
 
-  const zip = await JSZip.loadAsync(file);
-  imageUrls = [];
-
-  for (const relativePath of Object.keys(zip.files)) {
-    const zipEntry = zip.files[relativePath];
-    if (!zipEntry.dir && /\.(jpe?g|png|gif|webp)$/i.test(relativePath)) {
-      const blob = await zipEntry.async('blob');
-      imageUrls.push(URL.createObjectURL(blob));
+// Versuche optional automatisch eine dataset.zip zu laden falls vorhanden (optionaler Fallback / Auto-Fetch)
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const response = await fetch('dataset.zip');
+    if (response.ok) {
+      const blob = await response.blob();
+      const file = new File([blob], "dataset.zip", { type: "application/zip" });
+      await processZipFile(file);
     }
-  }
-
-  if (imageUrls.length > 0) {
-    currentIndex = 0;
-    uploadBtn.style.display = 'none';
-    datasetContainer.style.display = 'flex';
-    imgElement.src = imageUrls[currentIndex];
-  } else {
-    alert('Keine Bilder in der ZIP-Datei gefunden!');
+  } catch (e) {
+    // Falls keine dataset.zip lokal bereitliegt, bleibt der Button zum manuellen Auswählen sichtbar
   }
 });
 
@@ -431,10 +452,16 @@ function prevImage() {
   imgElement.src = imageUrls[currentIndex];
 }
 
-datasetContainer.addEventListener('click', (e) => {
-  e.stopPropagation(); // Verhindert Kollision mit Canvas-Klicks
-  nextImage();
-});
+// Scrollrad im Dataset-Panel wechselt nun die Bilder
+datasetContainer.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (imageUrls.length === 0) return;
+  if (e.deltaY > 0) {
+    nextImage();
+  } else {
+    prevImage();
+  }
+}, { passive: false });
 
 // ==========================================
 // 3. WURM SIMULATION (Canvas 2D + KI & Pan/Zoom)
@@ -482,15 +509,7 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 // ==========================================
 
 canvas.addEventListener('wheel', (e) => {
-  // Wenn über dem Dataset-Panel oder Brain-HUD gezoomt wird, soll das Canvas nicht zoomen
-  if (e.target.closest('#dataset-hud') || e.target.closest('#brain-hud')) {
-    if (imageUrls.length > 0 && e.target.closest('#dataset-hud')) {
-      e.preventDefault();
-      if (e.deltaY > 0) nextImage();
-      else prevImage();
-    }
-    return;
-  }
+  if (e.target.closest('#dataset-hud') || e.target.closest('#brain-hud')) return;
 
   e.preventDefault();
   const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
