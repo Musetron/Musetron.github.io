@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>ZIP Bildanzeige</title>
+  <!-- JSZip Bibliothek zum Entpacken -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    #loading {
+      font-size: 20px;
+      color: #aaa;
+    }
+    #image-container {
+      display: none;
+      width: 100vw;
+      height: 100vh;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+    }
+    img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Status / Ladeanzeige -->
+  <div id="loading">Lade dataset.zip...</div>
+
+  <!-- Container für das aktuelle Bild -->
+  <div id="image-container">
+    <img id="current-image" src="" alt="Bild">
+  </div>
+
+  <script>
+    let imageUrls = [];
+    let currentIndex = 0;
+
+    const loadingEl = document.getElementById('loading');
+    const container = document.getElementById('image-container');
+    const imgElement = document.getElementById('current-image');
+
+    // Automatisch dataset.zip beim Laden der Seite abrufen
+    async function loadDatasetZip() {
+      try {
+        const response = await fetch('dataset.zip');
+        if (!response.ok) {
+          throw new Error('dataset.zip konnte nicht gefunden werden (HTTP ' + response.status + ').');
+        }
+
+        const blob = await response.blob();
+        const zip = await JSZip.loadAsync(blob);
+        imageUrls = [];
+
+        // Alle Bilder aus der ZIP auslesen
+        for (const relativePath of Object.keys(zip.files)) {
+          const zipEntry = zip.files[relativePath];
+          if (!zipEntry.dir && /\.(jpe?g|png|gif|webp)$/i.test(relativePath)) {
+            const imgBlob = await zipEntry.async('blob');
+            imageUrls.push(URL.createObjectURL(imgBlob));
+          }
+        }
+
+        if (imageUrls.length > 0) {
+          currentIndex = 0;
+          loadingEl.style.display = 'none';
+          container.style.display = 'flex';
+          showImage(currentIndex);
+        } else {
+          loadingEl.textContent = 'Keine Bilder in dataset.zip gefunden!';
+        }
+      } catch (error) {
+        console.error(error);
+        loadingEl.textContent = 'Fehler: ' + error.message + ' (Läuft ein lokaler Server?)';
+      }
+    }
+
+    function showImage(index) {
+      imgElement.src = imageUrls[index];
+    }
+
+    function nextImage() {
+      if (imageUrls.length === 0) return;
+      currentIndex = (currentIndex + 1) % imageUrls.length;
+      showImage(currentIndex);
+    }
+
+    function prevImage() {
+      if (imageUrls.length === 0) return;
+      currentIndex = (currentIndex - 1 + imageUrls.length) % imageUrls.length;
+      showImage(currentIndex);
+    }
+
+    // Beim Klicken auf das Bild zum nächsten Bild wechseln
+    container.addEventListener('click', nextImage);
+
+    // Scrollrad nutzen, um Bilder zu wechseln
+    window.addEventListener('wheel', (e) => {
+      if (imageUrls.length === 0) return;
+      if (e.deltaY > 0) {
+        nextImage();
+      } else {
+        prevImage();
+      }
+    });
+
+    // Pfeiltasten der Tastatur nutzen
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextImage();
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prevImage();
+    });
+
+    // Sofort beim Start ausführen
+    loadDatasetZip();
+  </script>
+
+</body>
+</html>
