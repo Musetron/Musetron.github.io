@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>C. elegans - Neural Network Controller & Simulation</title>
+  <!-- JSZip Bibliothek zum Entpacken der Dataset-ZIP -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     html, body {
       margin: 0;
@@ -65,6 +67,61 @@
       padding: 2px 4px;
       border-radius: 3px;
       background: rgba(0,0,0,0.5);
+    }
+
+    /* Neu hinzugefügtes Dataset-Panel direkt unter dem Gehirn-HUD */
+    #dataset-hud {
+      position: absolute;
+      top: 310px;
+      right: 15px;
+      width: 280px;
+      height: 220px;
+      background: rgba(15, 15, 20, 0.85);
+      border: 1px solid #33ffaa44;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(51, 255, 170, 0.1);
+      overflow: hidden;
+      backdrop-filter: blur(5px);
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 10px;
+    }
+
+    #upload-btn {
+      padding: 12px 20px;
+      font-size: 13px;
+      cursor: pointer;
+      background: #222;
+      color: #00ffcc;
+      border: 1px solid #00ffcc44;
+      border-radius: 8px;
+      font-family: monospace;
+      transition: all 0.2s;
+    }
+
+    #upload-btn:hover {
+      background: #333;
+      border-color: #00ffcc;
+    }
+
+    #image-container {
+      display: none;
+      width: 100%;
+      height: 100%;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      position: relative;
+    }
+
+    #current-image {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 4px;
     }
 
     #touch-controls {
@@ -137,6 +194,15 @@
       <span id="state-sens" class="act-tag" style="color:#ffff00">SENS: 0%</span>
       <span id="state-proc" class="act-tag" style="color:#0099ff">PROC: 0%</span>
       <span id="state-mot" class="act-tag" style="color:#00ff55">MOT: 0%</span>
+    </div>
+  </div>
+
+  <!-- Neues Dataset-Panel direkt unter dem Gehirn-HUD -->
+  <div id="dataset-hud">
+    <input type="file" id="zip-file" accept=".zip" style="display: none;">
+    <button id="upload-btn" onclick="document.getElementById('zip-file').click()">ZIP Dataset laden</button>
+    <div id="image-container">
+      <img id="current-image" src="" alt="Dataset Bild">
     </div>
   </div>
 
@@ -318,6 +384,59 @@ function updateBrainGlow() {
 }
 
 // ==========================================
+// DATASET.ZIP LOGIK (Neues Panel)
+// ==========================================
+let imageUrls = [];
+let currentIndex = 0;
+
+const zipInput = document.getElementById('zip-file');
+const uploadBtn = document.getElementById('upload-btn');
+const datasetContainer = document.getElementById('image-container');
+const imgElement = document.getElementById('current-image');
+
+zipInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const zip = await JSZip.loadAsync(file);
+  imageUrls = [];
+
+  for (const relativePath of Object.keys(zip.files)) {
+    const zipEntry = zip.files[relativePath];
+    if (!zipEntry.dir && /\.(jpe?g|png|gif|webp)$/i.test(relativePath)) {
+      const blob = await zipEntry.async('blob');
+      imageUrls.push(URL.createObjectURL(blob));
+    }
+  }
+
+  if (imageUrls.length > 0) {
+    currentIndex = 0;
+    uploadBtn.style.display = 'none';
+    datasetContainer.style.display = 'flex';
+    imgElement.src = imageUrls[currentIndex];
+  } else {
+    alert('Keine Bilder in der ZIP-Datei gefunden!');
+  }
+});
+
+function nextImage() {
+  if (imageUrls.length === 0) return;
+  currentIndex = (currentIndex + 1) % imageUrls.length;
+  imgElement.src = imageUrls[currentIndex];
+}
+
+function prevImage() {
+  if (imageUrls.length === 0) return;
+  currentIndex = (currentIndex - 1 + imageUrls.length) % imageUrls.length;
+  imgElement.src = imageUrls[currentIndex];
+}
+
+datasetContainer.addEventListener('click', (e) => {
+  e.stopPropagation(); // Verhindert Kollision mit Canvas-Klicks
+  nextImage();
+});
+
+// ==========================================
 // 3. WURM SIMULATION (Canvas 2D + KI & Pan/Zoom)
 // ==========================================
 const canvas = document.getElementById('canvas');
@@ -362,19 +481,26 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 // INPUT HANDLING (Maus, Touch, Pan & Zoom)
 // ==========================================
 
-// ZOOM MIT MAUSRAD
 canvas.addEventListener('wheel', (e) => {
+  // Wenn über dem Dataset-Panel oder Brain-HUD gezoomt wird, soll das Canvas nicht zoomen
+  if (e.target.closest('#dataset-hud') || e.target.closest('#brain-hud')) {
+    if (imageUrls.length > 0 && e.target.closest('#dataset-hud')) {
+      e.preventDefault();
+      if (e.deltaY > 0) nextImage();
+      else prevImage();
+    }
+    return;
+  }
+
   e.preventDefault();
   const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
   const newZoom = Math.min(Math.max(camera.zoom * zoomFactor, camera.minZoom), camera.maxZoom);
 
-  // Focus auf Mausposition beim Zoomen
   camera.x = e.clientX - (e.clientX - camera.x) * (newZoom / camera.zoom);
   camera.y = e.clientY - (e.clientY - camera.y) * (newZoom / camera.zoom);
   camera.zoom = newZoom;
 }, { passive: false });
 
-// PAN & INTERAKTION MIT MAUS
 let dragStartPos = { x: 0, y: 0 };
 let isDragging = false;
 
@@ -382,7 +508,7 @@ canvas.addEventListener('mousedown', (e) => {
   dragStartPos = { x: e.clientX, y: e.clientY };
   isDragging = false;
 
-  if (e.button === 1 || isSpacePressed) { // Mittlere Maustaste oder Space
+  if (e.button === 1 || isSpacePressed) {
     isPanning = true;
     startPanMouse = { x: e.clientX - camera.x, y: e.clientY - camera.y };
   }
@@ -405,18 +531,17 @@ canvas.addEventListener('mouseup', (e) => {
     return;
   }
 
-  // Klick-Aktion nur wenn nicht gezogen wurde
   if (!isDragging) {
     const worldPos = screenToWorld(e.clientX, e.clientY);
 
-    if (e.button === 0) { // Linksklick (Grün)
+    if (e.button === 0) {
       const existingIndex = foodNodes.findIndex(f => Math.hypot(f.x - worldPos.x, f.y - worldPos.y) < 22 / camera.zoom);
       if (existingIndex !== -1) {
         foodNodes.splice(existingIndex, 1);
       } else {
         foodNodes.push({ x: worldPos.x, y: worldPos.y, radius: 8 });
       }
-    } else if (e.button === 2) { // Rechtsklick (Rot)
+    } else if (e.button === 2) {
       const existingIndex = threatNodes.findIndex(t => Math.hypot(t.x - worldPos.x, t.y - worldPos.y) < 22 / camera.zoom);
       if (existingIndex !== -1) {
         threatNodes.splice(existingIndex, 1);
@@ -427,7 +552,6 @@ canvas.addEventListener('mouseup', (e) => {
   }
 });
 
-// TOUCH-PAN & PINCH-ZOOM STEUERUNG
 let initialPinchDist = null;
 let initialZoom = 1;
 let touchPanStart = null;
@@ -462,6 +586,7 @@ document.getElementById('touch-follow').addEventListener('click', () => {
 updateTouchButtons();
 
 canvas.addEventListener('touchstart', (e) => {
+  if (e.target.closest('#dataset-hud') || e.target.closest('#brain-hud')) return;
   e.preventDefault();
 
   if (e.touches.length === 1) {
@@ -481,6 +606,7 @@ canvas.addEventListener('touchstart', (e) => {
 }, { passive: false });
 
 canvas.addEventListener('touchmove', (e) => {
+  if (e.target.closest('#dataset-hud') || e.target.closest('#brain-hud')) return;
   e.preventDefault();
 
   if (e.touches.length === 1 && touchPanStart) {
@@ -510,9 +636,9 @@ canvas.addEventListener('touchmove', (e) => {
 }, { passive: false });
 
 canvas.addEventListener('touchend', (e) => {
+  if (e.target.closest('#dataset-hud') || e.target.closest('#brain-hud')) return;
   e.preventDefault();
 
-  // One-finger tap = place/remove the currently selected point.
   if (e.touches.length === 0 && !touchMoved && dragStartPos) {
     const worldPos = screenToWorld(dragStartPos.x, dragStartPos.y);
     const nodes = touchAction === 'food' ? foodNodes : threatNodes;
@@ -812,7 +938,6 @@ function drawWorm() {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  // KAMERA-TRANSFORMATION ANWENDEN (Pan & Zoom)
   ctx.save();
   ctx.translate(camera.x, camera.y);
   ctx.scale(camera.zoom, camera.zoom);
@@ -844,7 +969,7 @@ function drawWorm() {
     }
   }
 
-  ctx.restore(); // Kamera-Transformation zurücksetzen
+  ctx.restore();
 }
 
 // ==========================================
