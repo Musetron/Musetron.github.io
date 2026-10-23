@@ -1,61 +1,266 @@
 <!DOCTYPE html>
-
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RVC Family</title>
-<style>
-body {
-background-color: #121212;
-color: #e0e0e0;
-font-family: sans-serif;
-display: flex;
-flex-direction: column;
-justify-content: center;
-align-items: center;
-height: 100vh;
-margin: 0;
-}
-
-    a {
-        color: #ffffff;
-        text-decoration: none;
-        font-size: 1.2rem;
-        padding: 12px 24px;
-        border: 1px solid #333;
-        border-radius: 6px;
-        background-color: #1e1e1e;
-    }
-
-    a:hover {
-        background-color: #2c2c2c;
-    }
-
-    h2 { margin: 12px 0; font-size: 1.15rem; }
-    .models { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 600px; margin: 0 16px 24px; }
-    .models a { font-size: 1rem; padding: 10px 14px; }
-
-</style>
-
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FBO Studio</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- JSZip Bibliothek -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
-<body>
+<body class="bg-[#090D16] text-gray-100 min-h-screen p-6">
 
-<h1>RVC Family</h1>
-<h2>Modelle zum Herunterladen</h2>
-<div class="models">
-  <a href="https://drive.google.com/uc?export=download&id=1bjCmJlzxjHGEQQpsG1GY3ht0ER3VEXEv" target="_blank" rel="noopener">Dave herunterladen</a>
-  <a href="https://drive.google.com/uc?export=download&id=1F0p1cdPrVuLiVN5-evX2lKKd_a89nRb8" target="_blank" rel="noopener">Luca herunterladen</a>
-  <a href="https://drive.google.com/uc?export=download&id=1PGcR_9uommSn5pp1pqJakjez89s0fTjJ" target="_blank" rel="noopener">Stefan herunterladen</a>
-  <a href="https://drive.google.com/uc?export=download&id=15SViBLFyDwno8ZrBm4YNNNAxvHUNnhnE" target="_blank" rel="noopener">Melanie herunterladen</a>
-</div>
-<p>Klicke unten, um das Notebook zu öffnen:</p>
+    <div class="max-w-6xl mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 border-b border-gray-800 pb-4">
+            <h1 class="text-2xl font-bold text-indigo-400 mb-4 md:mb-0">Family Database</h1>
+        </header>
 
-<a href="https://share.google/IAXNw1t2CRm7X9ZAW" target="_self">
-    In Google Colab öffnen
-</a>
+        <!-- Lade-Indikator / Status -->
+        <div id="loadingStatus" class="text-center py-20 text-gray-400 flex flex-col items-center justify-center">
+            <svg class="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p id="loadingText" class="text-lg font-medium">Modelle werden geladen...</p>
+        </div>
 
+        <!-- Grid für die Shortcuts -->
+        <div id="gridContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></div>
+    </div>
 
+    <!-- Modal für Detailansicht -->
+    <div id="detailModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-[#111827] border border-gray-800 rounded-2xl max-w-2xl w-full p-6 relative shadow-2xl flex flex-col md:flex-row gap-6">
+            <button id="closeModal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-xl font-bold z-10">✕</button>
+            
+            <!-- Linke Seite: Klickbares Bild -->
+            <div class="w-full md:w-1/2 flex flex-col justify-between">
+                <div class="flex justify-between items-center mb-1">
+                    <label class="text-xs text-gray-400 uppercase tracking-wider font-semibold">Bild (Klicken = Kopieren):</label>
+                    <span id="imageCopyFeedback" class="text-xs text-indigo-400 font-semibold opacity-0 transition-opacity duration-300">🖼️ Bild kopiert!</span>
+                </div>
+                <!-- Klickbarer Bild-Container -->
+                <div id="imageContainer" class="flex items-center justify-center bg-[#030712] rounded-xl p-2 border border-gray-800 hover:border-indigo-500 cursor-pointer h-64 transition-all relative group" title="Klicken, um das Bild zu kopieren">
+                    <img id="modalImage" class="max-h-full object-contain rounded-lg pointer-events-none" alt="Referenzbild"/>
+                </div>
+            </div>
+
+            <!-- Rechte Seite: Name, Klickbarer Prompt & Download Model Button -->
+            <div class="w-full md:w-1/2 flex flex-col justify-between">
+                <div>
+                    <h2 id="modalTitle" class="text-lg font-bold text-indigo-300 mb-2 truncate"></h2>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs text-gray-400 uppercase tracking-wider font-semibold">Prompt (Klicken = Kopieren):</label>
+                        <span id="promptCopyFeedback" class="text-xs text-emerald-400 font-semibold opacity-0 transition-opacity duration-300">✅ Prompt kopiert!</span>
+                    </div>
+                    
+                    <!-- Klickbarer Prompt-Bereich -->
+                    <div id="modalPrompt" 
+                         class="text-sm text-gray-300 bg-[#030712] p-3 rounded-lg border border-gray-800 hover:border-indigo-500 cursor-pointer select-none h-44 overflow-y-auto transition-all relative group"
+                         title="Klicken, um den Prompt zu kopieren">
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <a id="downloadFboBtn" class="bg-indigo-600 hover:bg-indigo-500 text-center text-white text-xs py-3 px-4 rounded-lg font-semibold transition-all block w-full shadow-lg">
+                        💾 Download Model
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = 'https://musetron.github.io/RVC/models/';
+        const MODEL_FILES = [
+            'Dave.fbo',
+            'Musetron.fbo',
+            'Melanie.fbo',
+            'Megtron.fbo'
+        ];
+
+        const gridContainer = document.getElementById('gridContainer');
+        const loadingStatus = document.getElementById('loadingStatus');
+        const loadingText = document.getElementById('loadingText');
+        const detailModal = document.getElementById('detailModal');
+        const closeModal = document.getElementById('closeModal');
+        const modalImage = document.getElementById('modalImage');
+        const imageContainer = document.getElementById('imageContainer');
+        const imageCopyFeedback = document.getElementById('imageCopyFeedback');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalPrompt = document.getElementById('modalPrompt');
+        const promptCopyFeedback = document.getElementById('promptCopyFeedback');
+        const downloadFboBtn = document.getElementById('downloadFboBtn');
+
+        let currentPromptText = "";
+        let currentReferenceUrl = null;
+
+        // Automatisch alle Modelle beim Laden laden
+        window.addEventListener('DOMContentLoaded', async () => {
+            let loadedCount = 0;
+
+            for (const fileName of MODEL_FILES) {
+                const fileUrl = BASE_URL + fileName;
+                loadingText.textContent = `Lade Modell (${loadedCount + 1}/${MODEL_FILES.length}): ${fileName}...`;
+
+                try {
+                    const response = await fetch(fileUrl);
+                    if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+                    
+                    const blob = await response.blob();
+                    const zip = new JSZip();
+                    const zipContent = await zip.loadAsync(blob);
+
+                    let promptText = "Kein Prompt gefunden.";
+                    let coverBlobUrl = null;
+                    let referenceBlobUrl = null;
+
+                    let coverFileName = null;
+                    let referenceFileName = null;
+                    let promptFileName = null;
+
+                    for (let relativePath in zipContent.files) {
+                        const lowerPath = relativePath.toLowerCase();
+                        if (lowerPath.includes('prompt.txt')) {
+                            promptFileName = relativePath;
+                        } else if (lowerPath.includes('cover.jpg') || lowerPath.includes('cover.jpeg') || lowerPath.includes('cover.png')) {
+                            coverFileName = relativePath;
+                        } else if (lowerPath.includes('reference') || lowerPath.includes('ref')) {
+                            referenceFileName = relativePath;
+                        }
+                    }
+
+                    if (!referenceFileName) {
+                        for (let relativePath in zipContent.files) {
+                            const lowerPath = relativePath.toLowerCase();
+                            if (lowerPath.match(/.*\.(jpg|jpeg|png)$/) && relativePath !== coverFileName) {
+                                referenceFileName = relativePath;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (promptFileName) {
+                        promptText = await zipContent.files[promptFileName].async("text");
+                    }
+
+                    if (coverFileName) {
+                        const coverData = await zipContent.files[coverFileName].async("blob");
+                        coverBlobUrl = URL.createObjectURL(coverData);
+                    }
+
+                    if (referenceFileName) {
+                        const refData = await zipContent.files[referenceFileName].async("blob");
+                        referenceBlobUrl = URL.createObjectURL(refData);
+                    } else {
+                        referenceBlobUrl = coverBlobUrl;
+                    }
+
+                    if (!coverBlobUrl && referenceBlobUrl) {
+                        coverBlobUrl = referenceBlobUrl;
+                    }
+
+                    createShortcutCard(fileName, fileUrl, coverBlobUrl, referenceBlobUrl, promptText);
+                    loadedCount++;
+
+                } catch (err) {
+                    console.error("Fehler beim Laden von " + fileName, err);
+                }
+            }
+
+            loadingStatus.style.display = 'none';
+        });
+
+        function createShortcutCard(fileName, downloadUrl, coverSrc, referenceSrc, promptText) {
+            const card = document.createElement('div');
+            card.className = "bg-[#111827] border border-gray-800 rounded-xl p-3 flex flex-col items-center cursor-pointer hover:border-indigo-500 hover:scale-[1.02] transition-all shadow-md group";
+
+            const imgDiv = document.createElement('div');
+            imgDiv.className = "w-full h-36 bg-[#030712] rounded-lg overflow-hidden flex items-center justify-center mb-2 border border-gray-900";
+
+            if (coverSrc) {
+                const img = document.createElement('img');
+                img.src = coverSrc;
+                img.className = "w-full h-full object-cover group-hover:scale-105 transition-transform duration-300";
+                imgDiv.appendChild(img);
+            } else {
+                imgDiv.innerHTML = '<span class="text-xs text-gray-600">Kein Cover</span>';
+            }
+
+            const title = document.createElement('span');
+            title.className = "text-xs font-medium text-gray-300 text-center truncate w-full";
+            title.textContent = fileName.replace(/\.[^/.]+$/, "");
+
+            card.appendChild(imgDiv);
+            card.appendChild(title);
+
+            card.addEventListener('click', () => {
+                modalImage.src = referenceSrc || coverSrc || "";
+                modalTitle.textContent = fileName;
+                modalPrompt.textContent = promptText.trim();
+                currentPromptText = promptText.trim();
+                currentReferenceUrl = referenceSrc || coverSrc;
+                
+                downloadFboBtn.href = downloadUrl;
+                downloadFboBtn.download = fileName;
+
+                detailModal.classList.remove('hidden');
+            });
+
+            gridContainer.appendChild(card);
+        }
+
+        closeModal.addEventListener('click', () => detailModal.classList.add('hidden'));
+        detailModal.addEventListener('click', (e) => {
+            if (e.target === detailModal) detailModal.classList.add('hidden');
+        });
+
+        // Klick auf den Prompt kopiert diesen
+        modalPrompt.addEventListener('click', () => {
+            if (!currentPromptText) return;
+            navigator.clipboard.writeText(currentPromptText);
+            
+            promptCopyFeedback.classList.remove('opacity-0');
+            setTimeout(() => {
+                promptCopyFeedback.classList.add('opacity-0');
+            }, 1500);
+        });
+
+        // Klick auf das Bild kopiert das Bild direkt als PNG in die Zwischenablage
+        imageContainer.addEventListener('click', async () => {
+            if (!currentReferenceUrl) return;
+            try {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = currentReferenceUrl;
+
+                await img.decode();
+
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+
+                canvas.toBlob(async (pngBlob) => {
+                    try {
+                        await navigator.clipboard.write([
+                            new ClipboardItem({ 'image/png': pngBlob })
+                        ]);
+                        imageCopyFeedback.classList.remove('opacity-0');
+                        setTimeout(() => {
+                            imageCopyFeedback.classList.add('opacity-0');
+                        }, 1500);
+                    } catch (clipErr) {
+                        alert("Kopieren wird von diesem Browser nicht unterstützt: " + clipErr.message);
+                    }
+                }, 'image/png');
+
+            } catch (err) {
+                alert("Fehler beim Verarbeiten des Bildes: " + err.message);
+            }
+        });
+    </script>
 </body>
 </html>
