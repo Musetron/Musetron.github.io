@@ -1,463 +1,698 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>3D Studio - Prompt zu Video</title>
-​<!-- Tailwind CSS -->
-<script src="https://cdn.tailwindcss.com"></script>
-<!-- FontAwesome Icons -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-​<!-- Three.js & Loaders -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/umd/index.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
-​<!-- Reine Client-Side TTS Library (100% verlässlich ohne API/Server) -->
-<script src="https://cdn.jsdelivr.net/npm/mespeak@1.9.8/mespeak.js"></script>
-​<style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;800&display=swap');
-​* {
--webkit-tap-highlight-color: transparent;
-touch-action: manipulation;
-}
-​body {
-font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-background-color: #ffffff;
-color: #1f2937;
-overflow: hidden;
-user-select: none;
-height: 100vh;
-width: 100vw;
-}
-​#canvas-container {
-width: 100%;
-height: 100%;
-position: absolute;
-top: 0;
-left: 0;
-z-index: 0;
-}
-​.glass {
-background: rgba(255, 255, 255, 0.88);
-backdrop-filter: blur(16px);
--webkit-backdrop-filter: blur(16px);
-border: 1px solid rgba(0, 0, 0, 0.08);
-box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Familien 3D Studio Mobile</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Three.js & Loaders -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/umd/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;800&display=swap');
+        
+        * {
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            background-color: #090d16;
+            color: #f3f4f6;
+            overflow: hidden;
+            user-select: none;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .glass {
+            background: rgba(15, 23, 42, 0.78);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        /* Large Touch Sliders for Mobile Fingers */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 9999px;
+            height: 10px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 26px;
+            width: 26px;
+            border-radius: 50%;
+            background: #38bdf8;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+            cursor: pointer;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
 </head>
-<body class="relative overflow-hidden w-screen h-screen select-none bg-white">
-​<!-- 3D Canvas Container -->
-<div id="canvas-container"></div>
-​<!-- Subtitle Overlay -->
-<div id="subtitle-box" class="hidden absolute top-8 left-1/2 -translate-x-1/2 z-20 glass px-6 py-3 rounded-2xl max-w-[90vw] text-center border border-gray-200 transition-all duration-300">
-<span id="subtitle-speaker" class="font-extrabold text-indigo-600 block text-xs uppercase tracking-wider mb-0.5">Sprecher</span>
-<p id="subtitle-text" class="text-gray-800 text-sm font-semibold">...</p>
-</div>
-​<!-- Recording Indicator -->
-<div id="rec-badge" class="hidden absolute top-8 right-8 z-20 bg-red-600 text-white font-extrabold text-xs px-4 py-2 rounded-full flex items-center space-x-2 animate-pulse shadow-lg">
-<div class="w-2.5 h-2.5 bg-white rounded-full"></div>
-<span>AUFNAHME LÄUFT...</span>
-</div>
-​<!-- UI Prompt Control Bar -->
-<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 w-full max-w-2xl px-4 pointer-events-auto">
-<div class="glass p-3 rounded-3xl space-y-3">
-<textarea id="prompt-input" rows="3" class="w-full bg-gray-50/90 text-gray-800 text-xs sm:text-sm font-medium p-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" placeholder="Prompt eingeben, z.B.:
-Musetron: ich bin da
-Sister_Melanie: Hallo was geht?"></textarea>
-​<div class="flex items-center justify-between gap-2">
-<button id="btn-play" onclick="triggerPlaySequence(false)" class="flex-1 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-extrabold text-xs sm:text-sm py-3 px-4 rounded-xl shadow-lg shadow-indigo-500/20 flex items-center justify-center space-x-2 transition-all">
-<i class="fa-solid fa-play"></i>
-<span>PLAY VIDEO</span>
-</button>
-<button id="btn-render" onclick="triggerPlaySequence(true)" class="flex-1 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-xs sm:text-sm py-3 px-4 rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center space-x-2 transition-all">
-<i class="fa-solid fa-file-video"></i>
-<span>RENDER VIDEO</span>
-</button>
-</div>
-</div>
-</div>
-​<!-- Loading Screen -->
-<div id="loader" class="absolute inset-0 z-40 bg-white/95 backdrop-blur-md flex flex-col items-center justify-center space-y-4">
-<div class="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-<p id="loader-text" class="text-xs font-bold text-gray-600 tracking-wider">Charaktere werden vorbereitet...</p>
-</div>
-​<script>
-const CHARACTER_CONFIG = {
-'Musetron': { scale: 1.0, url: 'https://dl.mediafire.com/file/8cuonfm38kcu7jn/Musetron.fbx/file' },
-'Megtron': { scale: 1.0, url: 'https://dl.mediafire.com/file/2w7r13ff5upgpv6/Megtron.fbx/file' },
-'Maschderle': { scale: 1.0, url: 'https://dl.mediafire.com/file/l5u293at8i8v1kx/Maschderle.fbx/file' },
-'Lord_PoBack': { scale: 1.0, url: 'https://dl.mediafire.com/file/qv2zwomjgv8d12o/Lord_PoBack.fbx/file' },
-'Sister_Melanie': { scale: 0.82, url: 'https://dl.mediafire.com/file/x5ei9p2quf7yp0m/Sister_Melanie.fbx/file' }
-};
-​const WALK_SPEED = 1.1;
-​const characters = new Map();
-let scene, camera, renderer, clock;
-let activeSpeakerKey = null;
-​const FIXED_CAM_POS = new THREE.Vector3(0, 2.2, 7.5);
-const DEFAULT_LOOK_AT = new THREE.Vector3(0, 1.2, 0);
-​let targetCamLookAt = DEFAULT_LOOK_AT.clone();
-let currentCamLookAt = DEFAULT_LOOK_AT.clone();
-​const DEFAULT_FOV = 40;
-const ZOOM_FOV = 28;
-let targetFOV = DEFAULT_FOV;
-​let mediaRecorder = null;
-let recordedChunks = [];
-let isRecording = false;
-​let ttsReady = false;
-​function initTTS() {
-if (window.meSpeak) {
-try {
-meSpeak.loadConfig("https://cdn.jsdelivr.net/npm/mespeak@1.9.8/mespeak_config.json", () => {
-meSpeak.loadVoice("https://cdn.jsdelivr.net/npm/mespeak@1.9.8/voices/de.json", () => {
-ttsReady = true;
-console.log("meSpeak TTS bereit!");
-});
-});
-} catch(e) {
-console.warn("meSpeak Init Fehler:", e);
-}
-}
-}
-​function init() {
-scene = new THREE.Scene();
-scene.background = new THREE.Color(0xffffff);
-​camera = new THREE.PerspectiveCamera(DEFAULT_FOV, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.copy(FIXED_CAM_POS);
-camera.lookAt(DEFAULT_LOOK_AT);
-​renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-​renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
-​document.getElementById('canvas-container').appendChild(renderer.domElement);
-clock = new THREE.Clock();
-​scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-​const sun = new THREE.DirectionalLight(0xffffff, 0.95);
-sun.position.set(6, 14, 8);
-sun.castShadow = true;
-sun.shadow.mapSize.width = 2048;
-sun.shadow.mapSize.height = 2048;
-sun.shadow.bias = -0.0002;
-scene.add(sun);
-​const rimLight = new THREE.DirectionalLight(0xa5b4fc, 0.3);
-rimLight.position.set(-8, 8, -5);
-scene.add(rimLight);
-​const shadowPlane = new THREE.Mesh(
-new THREE.PlaneGeometry(100, 100),
-new THREE.ShadowMaterial({ opacity: 0.12 })
-);
-shadowPlane.rotation.x = -Math.PI / 2;
-shadowPlane.position.y = 0;
-shadowPlane.receiveShadow = true;
-scene.add(shadowPlane);
-​window.addEventListener('resize', onWindowResize);
-​initTTS();
-loadAllCharacters();
-animate();
-}
-​async function loadAllCharacters() {
-const loader = new THREE.FBXLoader();
-const keys = Object.keys(CHARACTER_CONFIG);
-const total = keys.length;
-​const spacing = 1.8;
-const startX = -((total - 1) * spacing) / 2;
-const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-​for (let i = 0; i < keys.length; i++) {
-const key = keys[i];
-const config = CHARACTER_CONFIG[key];
-document.getElementById('loader-text').innerText = Lade (${i + 1}/${total}): ${key}...;
-​try {
-const group = await loadFBX(loader, config.url);
-​group.traverse((child) => {
-if (child.isMesh) {
-child.castShadow = child.receiveShadow = true;
-if (child.material) {
-const mats = Array.isArray(child.material) ? child.material : [child.material];
-const cleanMats = mats.map(m => {
-if (m.map) {
-m.map.wrapS = THREE.ClampToEdgeWrapping;
-m.map.wrapT = THREE.ClampToEdgeWrapping;
-m.map.minFilter = THREE.LinearMipmapLinearFilter;
-m.map.encoding = THREE.sRGBEncoding;
-if (maxAnisotropy > 0) m.map.anisotropy = maxAnisotropy;
-}
-return new THREE.MeshStandardMaterial({
-map: m.map || null,
-color: m.color ? m.color.clone() : new THREE.Color(0xd1d5db),
-roughness: 0.92,
-metalness: 0.0,
-skinning: true
-});
-});
-child.material = Array.isArray(child.material) ? cleanMats : cleanMats[0];
-}
-}
-});
-​group.scale.set(1, 1, 1);
-group.position.set(0, 0, 0);
-group.updateMatrixWorld(true);
-​const box = new THREE.Box3().setFromObject(group);
-const size = box.getSize(new THREE.Vector3());
-const maxDim = Math.max(size.x, size.y, size.z);
-const baseScale = maxDim > 0 ? (2.15 / maxDim) * config.scale : 0.01;
-group.scale.setScalar(baseScale);
-​group.updateMatrixWorld(true);
-const scaledBox = new THREE.Box3().setFromObject(group);
-const groundY = -scaledBox.min.y;
-group.position.y = groundY;
-​const homeX = startX + (i * spacing);
-group.position.x = homeX;
-group.position.z = 0;
-​const mixer = new THREE.AnimationMixer(group);
-let idleAction = null;
-let walkAction = null;
-​if (group.animations.length > 0) {
-idleAction = mixer.clipAction(group.animations[0]);
-idleAction.play();
-}
-​scene.add(group);
-​characters.set(key, {
-key,
-group,
-mixer,
-idleAction,
-walkAction,
-state: 'idle',
-groundY: groundY,
-targetPos: group.position.clone(),
-homeArea: { minX: homeX - 0.6, maxX: homeX + 0.6, minZ: -0.6, maxZ: 0.6 },
-nextStateChange: clock.getElapsedTime() + Math.random() * 4 + 2
-});
-​} catch (err) {
-console.warn(Fehler beim Laden von ${key}:, err);
-}
-}
-​document.getElementById('loader').classList.add('hidden');
-}
-​function loadFBX(loader, url) {
-return new Promise((resolve, reject) => {
-loader.load(url, resolve, undefined, reject);
-});
-}
-​function updateCharacterBehaviors(delta, time) {
-characters.forEach((char) => {
-if (char.mixer) char.mixer.update(delta);
-​char.group.position.y = char.groundY;
-​if (activeSpeakerKey === char.key) {
-if (char.state === 'walk') {
-char.state = 'idle';
-if (char.idleAction) {
-if (char.walkAction) char.walkAction.fadeOut(0.2);
-char.idleAction.reset().fadeIn(0.2).play();
-}
-}
-char.nextStateChange = time + 3.0;
-return;
-}
-​if (time > char.nextStateChange) {
-char.nextStateChange = time + Math.random() * 5 + 3;
-if (char.state === 'idle') {
-char.targetPos.set(
-THREE.MathUtils.randFloat(char.homeArea.minX, char.homeArea.maxX),
-char.groundY,
-THREE.MathUtils.randFloat(char.homeArea.minZ, char.homeArea.maxZ)
-);
-char.state = 'walk';
-if (char.walkAction) {
-if (char.idleAction) char.idleAction.fadeOut(0.2);
-char.walkAction.reset().fadeIn(0.2).play();
-}
-} else {
-char.state = 'idle';
-if (char.idleAction) {
-if (char.walkAction) char.walkAction.fadeOut(0.2);
-char.idleAction.reset().fadeIn(0.2).play();
-}
-}
-}
-​if (char.state === 'walk') {
-const dir = new THREE.Vector3().subVectors(char.targetPos, char.group.position);
-dir.y = 0;
-const dist = dir.length();
-​if (dist > 0.05) {
-dir.normalize();
-const targetAngle = Math.atan2(dir.x, dir.z);
-char.group.rotation.y = THREE.MathUtils.lerp(char.group.rotation.y, targetAngle, delta * 5);
-​char.group.position.addScaledVector(dir, delta * WALK_SPEED);
-​char.group.position.x = THREE.MathUtils.clamp(char.group.position.x, char.homeArea.minX, char.homeArea.maxX);
-char.group.position.z = THREE.MathUtils.clamp(char.group.position.z, char.homeArea.minZ, char.homeArea.maxZ);
-} else {
-char.state = 'idle';
-if (char.idleAction) {
-if (char.walkAction) char.walkAction.fadeOut(0.2);
-char.idleAction.reset().fadeIn(0.2).play();
-}
-}
-}
-});
-}
-​let sequenceIsPlaying = false;
-​async function triggerPlaySequence(shouldRecord) {
-if (sequenceIsPlaying) {
-if (window.meSpeak) meSpeak.stop();
-sequenceIsPlaying = false;
-activeSpeakerKey = null;
-hideSubtitle();
-return;
-}
-​sequenceIsPlaying = true;
-const playButton = document.getElementById('btn-play');
-const renderButton = document.getElementById('btn-render');
-playButton.disabled = renderButton.disabled = true;
-​try {
-if (shouldRecord) startVideoRecording();
-await playPromptSequence();
-} catch (err) {
-console.error('Playback/TTS error:', err);
-} finally {
-if (shouldRecord) stopVideoRecording();
-sequenceIsPlaying = false;
-playButton.disabled = renderButton.disabled = false;
-activeSpeakerKey = null;
-}
-}
-​function startVideoRecording() {
-recordedChunks = [];
-isRecording = true;
-document.getElementById('rec-badge').classList.remove('hidden');
-​const stream = renderer.domElement.captureStream(60);
-​let mimeType = 'video/webm';
-if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) mimeType = 'video/webm;codecs=vp9';
-else if (MediaRecorder.isTypeSupported('video/mp4')) mimeType = 'video/mp4';
-​try {
-mediaRecorder = new MediaRecorder(stream, { mimeType });
-mediaRecorder.ondataavailable = (e) => {
-if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-};
-mediaRecorder.onstop = downloadVideoFile;
-mediaRecorder.start(100);
-} catch (e) {
-console.error("Recording error:", e);
-}
-}
-​function stopVideoRecording() {
-if (mediaRecorder && isRecording) {
-isRecording = false;
-document.getElementById('rec-badge').classList.add('hidden');
-mediaRecorder.stop();
-}
-}
-​function downloadVideoFile() {
-const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
-const url = URL.createObjectURL(blob);
-const a = document.createElement('a');
-a.style.display = 'none';
-a.href = url;
-const ext = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
-a.download = 3D_Prompt_Video_${Date.now()}.${ext};
-document.body.appendChild(a);
-a.click();
-setTimeout(() => {
-document.body.removeChild(a);
-window.URL.revokeObjectURL(url);
-}, 100);
-}
-​async function playPromptSequence() {
-const promptText = document.getElementById('prompt-input').value.trim();
-if (!promptText) return;
-​const lines = promptText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-​for (const line of lines) {
-if (!sequenceIsPlaying) break;
-const parts = line.split(':');
-if (parts.length >= 2) {
-const rawName = parts[0].trim();
-const text = parts.slice(1).join(':').trim();
-​const matchedKey = findCharacterKey(rawName);
-activeSpeakerKey = matchedKey;
-​if (matchedKey && characters.has(matchedKey)) {
-focusCameraOnSpeaker(matchedKey);
-} else {
-resetCameraFocus();
-}
-​await speakLine(rawName, text);
-}
-}
-​activeSpeakerKey = null;
-resetCameraFocus();
-hideSubtitle();
-}
-​function findCharacterKey(nameInput) {
-const cleanInput = nameInput.toLowerCase().replace(/[^a-z0-9]/g, '');
-for (const key of characters.keys()) {
-const cleanKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-if (cleanKey.includes(cleanInput) || cleanInput.includes(cleanKey)) {
-return key;
-}
-}
-return null;
-}
-​function focusCameraOnSpeaker(charKey) {
-const charData = characters.get(charKey);
-if (!charData) return;
-​const headPos = charData.group.position.clone().add(new THREE.Vector3(0, 1.25, 0));
-targetCamLookAt.copy(headPos);
-targetFOV = ZOOM_FOV;
-}
-​function resetCameraFocus() {
-targetCamLookAt.copy(DEFAULT_LOOK_AT);
-targetFOV = DEFAULT_FOV;
-}
-​async function speakLine(speakerName, text) {
-showSubtitle(speakerName, text);
-​if (!text.trim()) return;
-​const isFemale = speakerName.toLowerCase().includes('melanie');
-​return new Promise((resolve) => {
-if (ttsReady && window.meSpeak) {
-meSpeak.speak(text, {
-pitch: isFemale ? 65 : 35,
-speed: 130,
-variant: isFemale ? "f3" : "m3"
-}, () => {
-setTimeout(resolve, 200);
-});
-} else {
-setTimeout(resolve, Math.max(1500, text.length * 80));
-}
-});
-}
-​function showSubtitle(speaker, text) {
-document.getElementById('subtitle-speaker').innerText = speaker;
-document.getElementById('subtitle-text').innerText = text;
-document.getElementById('subtitle-box').classList.remove('hidden');
-}
-​function hideSubtitle() {
-document.getElementById('subtitle-box').classList.add('hidden');
-}
-​function animate() {
-requestAnimationFrame(animate);
-​const rawDelta = clock.getDelta();
-const delta = Math.min(rawDelta, 0.05);
-const time = clock.getElapsedTime();
-​updateCharacterBehaviors(delta, time);
-​currentCamLookAt.lerp(targetCamLookAt, delta * 4.0);
-camera.position.copy(FIXED_CAM_POS);
-camera.lookAt(currentCamLookAt);
-​if (Math.abs(camera.fov - targetFOV) > 0.01) {
-camera.fov = THREE.MathUtils.lerp(camera.fov, targetFOV, delta * 4.0);
-camera.updateProjectionMatrix();
-}
-​renderer.render(scene, camera);
-}
-​function onWindowResize() {
-camera.aspect = window.innerWidth / window.innerHeight;
-camera.updateProjectionMatrix();
-renderer.setSize(window.innerWidth, window.innerHeight);
-}
-​window.onload = init;
-</script>
+<body class="relative overflow-hidden w-screen h-screen select-none">
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Header: Presets & Quick Actions -->
+    <header class="absolute top-3 left-3 right-3 z-10 flex items-center justify-between gap-2 pointer-events-none">
+        
+        <!-- Character Horizontal Selector -->
+        <div class="glass p-1 rounded-2xl flex items-center space-x-1.5 pointer-events-auto overflow-x-auto no-scrollbar max-w-[calc(100vw-80px)]">
+            <button onclick="addPreset('Musetron')" class="bg-white/10 active:bg-sky-500/30 text-white px-3 py-2 rounded-xl flex items-center space-x-1.5 shrink-0 border border-white/10">
+                <span class="text-lg">🧔</span>
+                <span class="text-xs font-extrabold">Musetron</span>
+            </button>
+            <button onclick="addPreset('Megtron')" class="bg-white/10 active:bg-purple-500/30 text-white px-3 py-2 rounded-xl flex items-center space-x-1.5 shrink-0 border border-white/10">
+                <span class="text-lg">🤖</span>
+                <span class="text-xs font-extrabold">Megtron</span>
+            </button>
+            <button onclick="addPreset('Maschderle')" class="bg-white/10 active:bg-emerald-500/30 text-white px-3 py-2 rounded-xl flex items-center space-x-1.5 shrink-0 border border-white/10">
+                <span class="text-lg">🧑</span>
+                <span class="text-xs font-extrabold">Maschderle</span>
+            </button>
+            <button onclick="addPreset('Lord_PoBack')" class="bg-white/10 active:bg-amber-500/30 text-white px-3 py-2 rounded-xl flex items-center space-x-1.5 shrink-0 border border-white/10">
+                <span class="text-lg">🕵️</span>
+                <span class="text-xs font-extrabold">Lord PoBack</span>
+            </button>
+            <button onclick="addPreset('Sister_Melanie')" class="bg-white/10 active:bg-rose-500/30 text-white px-3 py-2 rounded-xl flex items-center space-x-1.5 shrink-0 border border-white/10">
+                <span class="text-lg">👧</span>
+                <span class="text-xs font-extrabold">Melanie</span>
+            </button>
+        </div>
+
+        <!-- Take Photo Render Button -->
+        <button onclick="takePhoto()" class="pointer-events-auto bg-gradient-to-tr from-emerald-500 to-teal-400 active:scale-95 text-white p-3 rounded-2xl shadow-lg shadow-emerald-500/30 flex items-center justify-center shrink-0 border border-emerald-300/30">
+            <i class="fa-solid fa-camera text-xl"></i>
+        </button>
+    </header>
+
+    <!-- Side Quick Tools -->
+    <div class="absolute right-3 top-20 z-10 flex flex-col space-y-2 pointer-events-auto">
+        <!-- Background Picker -->
+        <button onclick="cycleBackground()" class="glass w-11 h-11 rounded-2xl flex items-center justify-center text-gray-200 active:scale-95">
+            <i class="fa-solid fa-palette text-sm"></i>
+        </button>
+        <!-- Toggle Grid -->
+        <button onclick="toggleGrid()" class="glass w-11 h-11 rounded-2xl flex items-center justify-center text-sky-400 active:scale-95">
+            <i class="fa-solid fa-border-all text-sm"></i>
+        </button>
+    </div>
+
+    <!-- Bottom Mobile Toolbar / Control Sheet -->
+    <div id="bottom-sheet" class="hidden absolute bottom-3 left-3 right-3 z-10 glass p-3.5 rounded-3xl space-y-3 pointer-events-auto">
+        
+        <!-- Header Info & Actions -->
+        <div class="flex items-center justify-between pb-2 border-b border-white/10">
+            <div class="flex items-center space-x-2">
+                <span id="sheet-emoji" class="text-xl">🧑</span>
+                <span id="sheet-title" class="text-xs font-extrabold uppercase tracking-wider text-white">Figur</span>
+            </div>
+
+            <!-- Mode Switch Tabs -->
+            <div class="flex items-center space-x-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                <button id="tab-move" onclick="setMode('move')" class="px-3 py-1 rounded-lg text-xs font-extrabold bg-sky-500 text-white shadow">Position</button>
+                <button id="tab-pose" onclick="setMode('pose')" class="px-3 py-1 rounded-lg text-xs font-extrabold text-gray-400">Pose 🦴</button>
+            </div>
+
+            <button onclick="deleteActiveChar()" class="text-rose-400 active:text-rose-300 p-2 text-sm">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
+        </div>
+
+        <!-- 1. POSITION / MOVE CONTROLS -->
+        <div id="panel-move" class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <div class="flex justify-between text-[11px] font-bold text-gray-300 mb-1">
+                        <span>Größe</span>
+                        <span id="val-scale" class="text-sky-400">1.0x</span>
+                    </div>
+                    <input type="range" id="input-scale" min="0.4" max="2.2" step="0.05" value="1.0" class="w-full">
+                </div>
+                <div>
+                    <div class="flex justify-between text-[11px] font-bold text-gray-300 mb-1">
+                        <span>Drehung</span>
+                        <span id="val-rot" class="text-sky-400">0°</span>
+                    </div>
+                    <input type="range" id="input-rot" min="-180" max="180" step="1" value="0" class="w-full">
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between gap-2 pt-1">
+                <button onclick="quickMove('left')" class="flex-1 bg-white/5 active:bg-white/10 text-xs py-2 rounded-xl border border-white/10 font-bold">⬅️ Links</button>
+                <button onclick="quickMove('center')" class="flex-1 bg-white/5 active:bg-white/10 text-xs py-2 rounded-xl border border-white/10 font-bold">🎯 Mitte</button>
+                <button onclick="quickMove('right')" class="flex-1 bg-white/5 active:bg-white/10 text-xs py-2 rounded-xl border border-white/10 font-bold">Rechts ➡️</button>
+            </div>
+        </div>
+
+        <!-- 2. POSE MODE: 3 SLIDERS PER BONE -->
+        <div id="panel-pose" class="hidden space-y-2.5">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <span class="text-[11px] font-bold text-gray-400">Gelenk:</span>
+                    <select id="bone-select" class="bg-black/50 text-sky-400 text-xs font-bold px-2 py-1.5 rounded-xl border border-white/10 outline-none max-w-[140px] truncate"></select>
+                </div>
+                <button onclick="resetActivePose()" class="bg-amber-500/20 active:bg-amber-500/30 text-amber-300 text-[11px] font-bold px-2.5 py-1.5 rounded-xl border border-amber-500/30">
+                    <i class="fa-solid fa-rotate-left"></i> Reset
+                </button>
+            </div>
+
+            <!-- 3 Touch-Friendly Rotation Sliders -->
+            <div class="space-y-2 pt-1">
+                <div class="flex items-center space-x-2">
+                    <span class="text-[11px] font-extrabold text-rose-400 w-4">X</span>
+                    <input type="range" id="rot-x" min="-180" max="180" value="0" class="w-full">
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-[11px] font-extrabold text-emerald-400 w-4">Y</span>
+                    <input type="range" id="rot-y" min="-180" max="180" value="0" class="w-full">
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-[11px] font-extrabold text-sky-400 w-4">Z</span>
+                    <input type="range" id="rot-z" min="-180" max="180" value="0" class="w-full">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="hidden absolute top-16 left-1/2 -translate-x-1/2 z-50 glass px-4 py-2 rounded-2xl border border-sky-500/30 text-sky-300 text-xs font-bold shadow-xl"></div>
+
+    <!-- Loading Screen -->
+    <div id="loader" class="hidden absolute inset-0 z-40 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center">
+        <div class="w-10 h-10 border-4 border-sky-400/20 border-t-sky-400 rounded-full animate-spin mb-3"></div>
+        <p id="loader-text" class="text-xs font-bold text-white tracking-wider">Figur wird geladen...</p>
+    </div>
+
+    <script>
+        // Preset Configuration (MediaFire FBX Links)
+        const PRESETS = {
+            'Musetron': { path: 'https://dl.mediafire.com/file/8cuonfm38kcu7jn/Musetron.fbx/file', emoji: '🧔', scale: 1.0 },
+            'Megtron': { path: 'https://dl.mediafire.com/file/2w7r13ff5upgpv6/Megtron.fbx/file', emoji: '🤖', scale: 1.0 },
+            'Maschderle': { path: 'https://dl.mediafire.com/file/l5u293at8i8v1kx/Maschderle.fbx/file', emoji: '🧑', scale: 1.0 },
+            'Lord_PoBack': { path: 'https://dl.mediafire.com/file/qv2zwomjgv8d12o/Lord_PoBack.fbx/file', emoji: '🕵️', scale: 1.0 },
+            'Sister_Melanie': { path: 'https://dl.mediafire.com/file/x5ei9p2quf7yp0m/Sister_Melanie.fbx/file', emoji: '👧', scale: 0.82 }
+        };
+
+        const BG_COLORS = ['#090d16', '#f3f4f6', '#00ff00', '#0066ff'];
+        let bgIndex = 0;
+
+        let scene, camera, renderer, controls, transformControls;
+        let gridHelper, floorPlane;
+        const characters = new Map();
+        let activeCharId = null;
+        let activeBone = null;
+        let currentMode = 'move';
+        let charCounter = 0;
+
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(BG_COLORS[0]);
+
+            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 3.2, 8.5);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.target.set(0, 2.0, 0);
+
+            transformControls = new THREE.TransformControls(camera, renderer.domElement);
+            transformControls.size = 0.7;
+            transformControls.addEventListener('dragging-changed', (e) => controls.enabled = !e.value);
+            transformControls.addEventListener('change', syncActiveToUI);
+            scene.add(transformControls);
+
+            // Lighting (Pure Matte Environment)
+            scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+            const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+            sun.position.set(5, 12, 8);
+            sun.castShadow = true;
+            sun.shadow.mapSize.width = 1024;
+            sun.shadow.mapSize.height = 1024;
+            scene.add(sun);
+
+            gridHelper = new THREE.GridHelper(30, 30, 0x38bdf8, 0x1e293b);
+            scene.add(gridHelper);
+
+            floorPlane = new THREE.Mesh(
+                new THREE.PlaneGeometry(100, 100),
+                new THREE.ShadowMaterial({ opacity: 0.25 })
+            );
+            floorPlane.rotation.x = -Math.PI / 2;
+            floorPlane.position.y = -0.001;
+            floorPlane.receiveShadow = true;
+            scene.add(floorPlane);
+
+            setupUI();
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('pointerdown', onCanvasPointer);
+
+            animate();
+            showToast("Wähle oben eine Figur aus!");
+        }
+
+        // --- PRESET LOADING ---
+        function addPreset(presetKey) {
+            const preset = PRESETS[presetKey];
+            if (!preset) return;
+
+            showLoader(true, `${presetKey} wird geladen...`);
+
+            const loader = new THREE.FBXLoader();
+            loader.load(preset.path, (fbx) => {
+                try {
+                    charCounter++;
+                    const id = `char_${Date.now()}_${charCounter}`;
+
+                    // Enforce Matte Material & Remove Seams
+                    fbx.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = child.receiveShadow = true;
+                            if (child.material) {
+                                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                                const matteMats = mats.map(m => {
+                                    if (m.map) {
+                                        m.map.wrapS = m.map.wrapT = THREE.ClampToEdgeWrapping;
+                                        m.map.minFilter = THREE.LinearMipmapLinearFilter;
+                                        m.map.encoding = THREE.sRGBEncoding;
+                                        const maxAniso = renderer.capabilities.getMaxAnisotropy();
+                                        if (maxAniso > 0) m.map.anisotropy = maxAniso;
+                                    }
+                                    return new THREE.MeshStandardMaterial({
+                                        map: m.map || null,
+                                        color: m.color ? m.color.clone() : new THREE.Color(0xcccccc),
+                                        roughness: 1.0,
+                                        metalness: 0.0,
+                                        skinning: true
+                                    });
+                                });
+                                child.material = Array.isArray(child.material) ? matteMats : matteMats[0];
+                            }
+                        }
+                    });
+
+                    // Normalize Scale & Position
+                    const baseScale = normalizeAndPosition(fbx, preset.scale, characters.size);
+
+                    // Extract Skeletal Bones & Visual Helpers
+                    const { bones, helpersGroup, initialPose } = extractBones(fbx);
+
+                    const charData = {
+                        id, key: presetKey, name: presetKey.replace('_', ' '), emoji: preset.emoji,
+                        group: fbx, baseScale, userScale: 1.0, bones, helpersGroup, initialPose
+                    };
+
+                    characters.set(id, charData);
+                    scene.add(fbx);
+                    scene.add(helpersGroup);
+
+                    setActiveChar(id);
+                    showToast(`${charData.name} im Studio!`);
+                } catch (e) {
+                    console.error(e);
+                    showToast("Fehler beim Verarbeiten");
+                } finally {
+                    showLoader(false);
+                }
+            }, undefined, () => {
+                showLoader(false);
+                showToast(`Konnte ${presetKey}.fbx nicht laden`);
+            });
+        }
+
+        function normalizeAndPosition(obj, targetScaleFactor, count) {
+            obj.scale.set(1, 1, 1);
+            obj.position.set(0, 0, 0);
+            obj.updateMatrixWorld(true);
+
+            const box = new THREE.Box3().setFromObject(obj);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+
+            let baseScale = 1.0;
+            if (maxDim > 0) baseScale = (5.0 * targetScaleFactor) / maxDim;
+            obj.scale.setScalar(baseScale);
+
+            obj.updateMatrixWorld(true);
+            const scaledBox = new THREE.Box3().setFromObject(obj);
+            obj.position.y = -scaledBox.min.y;
+
+            const offset = (count % 2 === 0 ? 1 : -1) * Math.ceil(count / 2) * 2.2;
+            obj.position.x = offset;
+
+            return baseScale;
+        }
+
+        function extractBones(obj) {
+            const bones = [];
+            const initialPose = new Map();
+            const helpersGroup = new THREE.Group();
+            helpersGroup.visible = false;
+
+            const sphereGeo = new THREE.SphereGeometry(0.08, 10, 10);
+            const sphereMat = new THREE.MeshBasicMaterial({ color: 0xfcb316, depthTest: false, transparent: true, opacity: 0.85 });
+
+            obj.traverse((child) => {
+                if (child.isBone) {
+                    bones.push(child);
+                    initialPose.set(child.uuid, {
+                        position: child.position.clone(),
+                        rotation: child.rotation.clone(),
+                        scale: child.scale.clone()
+                    });
+
+                    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+                    sphere.renderOrder = 999;
+                    sphere.userData = { isBoneMarker: true, bone: child };
+                    helpersGroup.add(sphere);
+                }
+            });
+
+            return { bones, helpersGroup, initialPose };
+        }
+
+        function updateBoneHelpers(charData) {
+            if (!charData || !charData.helpersGroup || !charData.helpersGroup.visible) return;
+            charData.helpersGroup.children.forEach(s => {
+                if (s.userData && s.userData.bone) {
+                    const wp = new THREE.Vector3();
+                    s.userData.bone.getWorldPosition(wp);
+                    s.position.copy(wp);
+                }
+            });
+        }
+
+        // --- SELECTION & MODES ---
+        function setActiveChar(id) {
+            if (activeCharId && characters.has(activeCharId)) {
+                characters.get(activeCharId).helpersGroup.visible = false;
+            }
+
+            activeCharId = id;
+            const charData = characters.get(id);
+
+            if (charData) {
+                document.getElementById('bottom-sheet').classList.remove('hidden');
+                document.getElementById('sheet-emoji').innerText = charData.emoji;
+                document.getElementById('sheet-title').innerText = charData.name;
+
+                // Populate Bone Dropdown
+                const sel = document.getElementById('bone-select');
+                sel.innerHTML = '';
+                charData.bones.forEach((b, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    opt.innerText = b.name || `Gelenk ${i+1}`;
+                    sel.appendChild(opt);
+                });
+
+                if (charData.bones.length > 0) selectBone(charData.bones[0]);
+
+                syncActiveToUI();
+                setMode(currentMode);
+            } else {
+                document.getElementById('bottom-sheet').classList.add('hidden');
+                transformControls.detach();
+            }
+        }
+
+        function setMode(mode) {
+            currentMode = mode;
+            const tabMove = document.getElementById('tab-move');
+            const tabPose = document.getElementById('tab-pose');
+            const panelMove = document.getElementById('panel-move');
+            const panelPose = document.getElementById('panel-pose');
+
+            if (mode === 'move') {
+                tabMove.className = "px-3 py-1 rounded-lg text-xs font-extrabold bg-sky-500 text-white shadow";
+                tabPose.className = "px-3 py-1 rounded-lg text-xs font-extrabold text-gray-400";
+                panelMove.classList.remove('hidden');
+                panelPose.classList.add('hidden');
+
+                if (activeCharId && characters.has(activeCharId)) {
+                    const charData = characters.get(activeCharId);
+                    charData.helpersGroup.visible = false;
+                    transformControls.attach(charData.group);
+                    transformControls.setMode('translate');
+                }
+            } else {
+                tabPose.className = "px-3 py-1 rounded-lg text-xs font-extrabold bg-amber-500 text-white shadow";
+                tabMove.className = "px-3 py-1 rounded-lg text-xs font-extrabold text-gray-400";
+                panelPose.classList.remove('hidden');
+                panelMove.classList.add('hidden');
+
+                if (activeCharId && characters.has(activeCharId)) {
+                    const charData = characters.get(activeCharId);
+                    charData.helpersGroup.visible = true;
+                    updateBoneHelpers(charData);
+                    if (activeBone) transformControls.attach(activeBone);
+                    transformControls.setMode('rotate');
+                }
+            }
+        }
+
+        function selectBone(bone) {
+            activeBone = bone;
+            if (!bone) return;
+
+            const charData = characters.get(activeCharId);
+            if (charData) {
+                const idx = charData.bones.indexOf(bone);
+                if (idx !== -1) document.getElementById('bone-select').value = idx;
+            }
+
+            if (currentMode === 'pose') {
+                transformControls.attach(bone);
+                transformControls.setMode('rotate');
+            }
+
+            // Sync 3 Sliders with Bone Rotation
+            document.getElementById('rot-x').value = Math.round(THREE.MathUtils.radToDeg(bone.rotation.x));
+            document.getElementById('rot-y').value = Math.round(THREE.MathUtils.radToDeg(bone.rotation.y));
+            document.getElementById('rot-z').value = Math.round(THREE.MathUtils.radToDeg(bone.rotation.z));
+        }
+
+        function syncActiveToUI() {
+            if (!activeCharId || !characters.has(activeCharId)) return;
+            const charData = characters.get(activeCharId);
+
+            document.getElementById('input-scale').value = charData.userScale.toFixed(2);
+            document.getElementById('val-scale').innerText = `${charData.userScale.toFixed(2)}x`;
+
+            const degY = Math.round(THREE.MathUtils.radToDeg(charData.group.rotation.y));
+            document.getElementById('input-rot').value = degY;
+            document.getElementById('val-rot').innerText = `${degY}°`;
+
+            if (activeBone) {
+                document.getElementById('rot-x').value = Math.round(THREE.MathUtils.radToDeg(activeBone.rotation.x));
+                document.getElementById('rot-y').value = Math.round(THREE.MathUtils.radToDeg(activeBone.rotation.y));
+                document.getElementById('rot-z').value = Math.round(THREE.MathUtils.radToDeg(activeBone.rotation.z));
+            }
+        }
+
+        function onCanvasPointer(e) {
+            if (e.button !== 0) return;
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            if (currentMode === 'pose' && activeCharId && characters.has(activeCharId)) {
+                const charData = characters.get(activeCharId);
+                const intersects = raycaster.intersectObjects(charData.helpersGroup.children, false);
+                if (intersects.length > 0) {
+                    const marker = intersects[0].object;
+                    if (marker.userData && marker.userData.bone) {
+                        selectBone(marker.userData.bone);
+                        return;
+                    }
+                }
+            }
+
+            const charGroups = Array.from(characters.values()).map(c => c.group);
+            const intersects = raycaster.intersectObjects(charGroups, true);
+
+            if (intersects.length > 0) {
+                let obj = intersects[0].object;
+                for (let [id, cData] of characters.entries()) {
+                    if (cData.group === obj || cData.group.children.includes(obj)) {
+                        setActiveChar(id);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // --- UI & SLIDER HANDLERS ---
+        function setupUI() {
+            // Position Sliders
+            document.getElementById('input-scale').addEventListener('input', (e) => {
+                if (!activeCharId || !characters.has(activeCharId)) return;
+                const cData = characters.get(activeCharId);
+                cData.userScale = parseFloat(e.target.value);
+                cData.group.scale.setScalar(cData.baseScale * cData.userScale);
+                document.getElementById('val-scale').innerText = `${cData.userScale.toFixed(2)}x`;
+            });
+
+            document.getElementById('input-rot').addEventListener('input', (e) => {
+                if (!activeCharId || !characters.has(activeCharId)) return;
+                const cData = characters.get(activeCharId);
+                cData.group.rotation.y = THREE.MathUtils.degToRad(parseFloat(e.target.value));
+                document.getElementById('val-rot').innerText = `${e.target.value}°`;
+            });
+
+            // 3 Bone Rotation Sliders
+            ['x', 'y', 'z'].forEach(axis => {
+                document.getElementById(`rot-${axis}`).addEventListener('input', (e) => {
+                    if (!activeBone) return;
+                    activeBone.rotation[axis] = THREE.MathUtils.degToRad(parseFloat(e.target.value));
+                });
+            });
+
+            // Dropdown Bone Select
+            document.getElementById('bone-select').addEventListener('change', (e) => {
+                if (!activeCharId || !characters.has(activeCharId)) return;
+                const cData = characters.get(activeCharId);
+                const bone = cData.bones[parseInt(e.target.value)];
+                if (bone) selectBone(bone);
+            });
+        }
+
+        function quickMove(dir) {
+            if (!activeCharId || !characters.has(activeCharId)) return;
+            const cData = characters.get(activeCharId);
+            if (dir === 'left') cData.group.position.x -= 1.2;
+            if (dir === 'right') cData.group.position.x += 1.2;
+            if (dir === 'center') { cData.group.position.x = 0; cData.group.position.z = 0; }
+        }
+
+        function resetActivePose() {
+            if (!activeCharId || !characters.has(activeCharId)) return;
+            const cData = characters.get(activeCharId);
+            cData.bones.forEach(b => {
+                const init = cData.initialPose.get(b.uuid);
+                if (init) {
+                    b.position.copy(init.position);
+                    b.rotation.copy(init.rotation);
+                    b.scale.copy(init.scale);
+                }
+            });
+            if (activeBone) selectBone(activeBone);
+            showToast("Pose zurückgesetzt");
+        }
+
+        function deleteActiveChar() {
+            if (!activeCharId || !characters.has(activeCharId)) return;
+            const cData = characters.get(activeCharId);
+            transformControls.detach();
+            scene.remove(cData.group);
+            scene.remove(cData.helpersGroup);
+            characters.delete(activeCharId);
+            activeCharId = null;
+            document.getElementById('bottom-sheet').classList.add('hidden');
+            showToast("Figur gelöscht");
+        }
+
+        function cycleBackground() {
+            bgIndex = (bgIndex + 1) % BG_COLORS.length;
+            scene.background.set(BG_COLORS[bgIndex]);
+        }
+
+        function toggleGrid() {
+            gridHelper.visible = !gridHelper.visible;
+        }
+
+        function takePhoto() {
+            const wasGrid = gridHelper.visible;
+            gridHelper.visible = false;
+            transformControls.detach();
+            characters.forEach(c => c.helpersGroup.visible = false);
+
+            renderer.render(scene, camera);
+
+            const a = document.createElement('a');
+            a.download = `3D_Foto_${Date.now()}.png`;
+            a.href = renderer.domElement.toDataURL('image/png');
+            a.click();
+
+            gridHelper.visible = wasGrid;
+            if (activeCharId && characters.has(activeCharId)) {
+                if (currentMode === 'pose') characters.get(activeCharId).helpersGroup.visible = true;
+                else transformControls.attach(characters.get(activeCharId).group);
+            }
+            showToast("📸 Foto gespeichert!");
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (currentMode === 'pose' && activeCharId && characters.has(activeCharId)) {
+                updateBoneHelpers(characters.get(activeCharId));
+            }
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function showLoader(show, text = "") {
+            document.getElementById('loader-text').innerText = text;
+            document.getElementById('loader').classList.toggle('hidden', !show);
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.classList.remove('hidden');
+            setTimeout(() => t.classList.add('hidden'), 2800);
+        }
+
+        window.onload = init;
+    </script>
 </body>
 </html>
