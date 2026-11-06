@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="de" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A Cappella Recording Studio</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .paper-shadow {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+        }
+        /* Custom Scrollbar for lyrics */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-full flex flex-col justify-between py-6 px-4 sm:px-6 lg:px-8">
+
+    <!-- Top Notification Banner for Headphones Warning -->
+    <div class="max-w-3xl mx-auto w-full mb-4 bg-amber-50 border-l-4 border-amber-400 p-4 rounded-r-lg shadow-sm">
+        <div class="flex items-start">
+            <div class="flex-shrink-0">
+                <i class="fa-solid fa-headphones text-amber-500 text-xl mt-0.5"></i>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-amber-800">Wichtiger Hinweis für die Aufnahme</h3>
+                <div class="mt-1 text-sm text-amber-700">
+                    <p>Bitte trage unbedingt <strong>Kopfhörer (Earpiece)</strong>, damit das im Hintergrund spielende Instrumental/Acapella nicht vom Mikrofon mit aufgenommen wird!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Document Container -->
+    <main class="max-w-3xl mx-auto w-full bg-white rounded-xl paper-shadow border border-slate-200 overflow-hidden flex flex-col mb-6">
+        
+        <!-- Document Header / Title bar -->
+        <div class="bg-slate-900 text-white px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <span class="inline-block bg-indigo-500/20 text-indigo-300 text-xs px-2.5 py-1 rounded-full font-semibold uppercase tracking-wider mb-1">A-Cappella Studio v1.0</span>
+                <h1 class="text-xl sm:text-2xl font-bold tracking-tight">Gesangs-Formular & Aufnahme</h1>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="recording-status-badge" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                    <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-500 mr-2"></span>
+                    Bereit
+                </span>
+            </div>
+        </div>
+
+        <!-- Form Fields Section -->
+        <div class="p-6 sm:p-8 space-y-6 border-b border-slate-100 bg-slate-50/50">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label for="track-title" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Song / Titel</label>
+                    <input type="text" id="track-title" class="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors" placeholder="z.B. Sommernachtstraum">
+                </div>
+                <div>
+                    <label for="artist-name" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Interpret / Artist</label>
+                    <input type="text" id="artist-name" class="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors" placeholder="z.B. Max Mustermann">
+                </div>
+            </div>
+            <div>
+                <label for="notes" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Notizen / Regieanweisungen</label>
+                <input type="text" id="notes" class="w-full bg-white border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors" placeholder="z.B. Zweite Strophe etwas gefühlvoller singen...">
+            </div>
+            
+            <!-- Audio Background Source Upload / Config -->
+            <div class="pt-2 border-t border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Begleit-Spur (acapella.mp3 / Instrumental)</label>
+                    <input type="file" id="bg-audio-file" accept="audio/*" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+                </div>
+                <div class="text-xs text-slate-400">
+                    <i class="fa-solid fa-circle-info mr-1"></i> Läuft synchron im Hintergrund beim Aufnehmen.
+                </div>
+            </div>
+        </div>
+
+        <!-- Scrollable Lyrics Box (lyrics.txt style) -->
+        <div class="p-6 sm:p-8 border-b border-slate-100">
+            <div class="flex items-center justify-between mb-2">
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500">Songtext (lyrics.txt)</label>
+                <span class="text-xs text-slate-400">Zum Scrollen während des Singens</span>
+            </div>
+            <div id="lyrics-container" class="h-48 overflow-y-auto bg-slate-900 text-slate-200 p-5 rounded-xl font-mono text-sm leading-relaxed border border-slate-800 shadow-inner whitespace-pre-wrap">[Intro]
+(Hier startet die Melodie...)
+
+[Strophe 1]
+Der Morgen bricht an, die Vögel singen leis,
+wir gehen den Weg, den jeder von uns weiß.
+Die Stimmen erheben sich hoch in die Nacht,
+hat uns ein neuer Gedanken gebracht.
+
+[Refrain]
+Oh, sing mit mir das Lied der Zeit,
+es trägt uns fort in die Ewigkeit!
+Keine Furcht und kein Zurück,
+wir finden zusammen unser Glück.
+
+[Strophe 2]
+Ein leises Echo hallt durch den Raum,
+wir leben unseren gemeinsamen Traum.
+Die Töne verschmelzen zu einem Akkord,
+wir singen und reisen an einen Ort...
+
+[Bridge]
+Atme ein, atme aus,
+hol die letzten Töne heraus!
+Ganz egal, was vorher war,
+jetzt wird alles wunderbar.
+
+[Refrain]
+Oh, sing mit mir das Lied der Zeit,
+es trägt uns fort in die Ewigkeit!
+Keine Furcht und kein Zurück,
+wir finden zusammen unser Glück.
+
+[Outro]
+(Ausklang...)
+Ende des Songs. Gut gemacht!</div>
+        </div>
+
+        <!-- Interactive Timeline & Playhead Section -->
+        <div class="p-6 sm:p-8 border-b border-slate-100 bg-white">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Timeline & Wiedergabe-Position</span>
+                <span id="time-display" class="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded">00:00 / 00:00</span>
+            </div>
+            
+            <!-- Clickable/Scrollable Timeline Bar -->
+            <div id="timeline-bar" class="relative w-full h-10 bg-slate-100 rounded-lg cursor-pointer border border-slate-200 overflow-hidden group">
+                <!-- Recorded segments visualization layers can go here -->
+                <div id="playhead-progress" class="absolute top-0 left-0 bottom-0 bg-indigo-500/15 w-0 transition-all pointer-events-none"></div>
+                <div class="absolute inset-0 flex items-center px-4 justify-between pointer-events-none text-xs text-slate-400 font-mono">
+                    <span>0:00</span>
+                    <span class="group-hover:text-indigo-600 transition-colors"><i class="fa-solid fa-arrows-left-right mr-1"></i> Klicken zum Springen / Überschreiben</span>
+                    <span id="timeline-duration-label">0:00</span>
+                </div>
+                <!-- Visual Playhead Cursor -->
+                <div id="playhead-cursor" class="absolute top-0 bottom-0 w-1 bg-indigo-600 left-0 pointer-events-none shadow"></div>
+            </div>
+            <p class="text-xs text-slate-400 mt-2">
+                <i class="fa-solid fa-lightbulb text-amber-400 mr-1"></i> Tipp: Wenn du in der Timeline zurückspringst und erneut auf Aufnahme drückst, wird ab dieser Sekunde dein Take <strong>überschrieben</strong>!
+            </p>
+        </div>
+
+        <!-- Recording & Playback Control Panel -->
+        <div class="p-6 sm:p-8 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-3 w-full sm:w-auto justify-center">
+                <!-- Playback Preview Button -->
+                <button id="btn-play" disabled class="flex-1 sm:flex-none items-center justify-center bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 font-medium px-5 py-3 rounded-xl text-sm transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-play mr-2 text-indigo-600"></i> Anhören
+                </button>
+                <!-- Stop Playback/Recording Button -->
+                <button id="btn-stop" disabled class="flex-1 sm:flex-none items-center justify-center bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 font-medium px-5 py-3 rounded-xl text-sm transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-stop mr-2 text-rose-500"></i> Stop
+                </button>
+            </div>
+
+            <!-- Main Record Button (Idiotensicher) -->
+            <div class="w-full sm:w-auto flex justify-center">
+                <button id="btn-record" class="w-full sm:w-auto flex items-center justify-center bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-bold px-8 py-4 rounded-2xl text-base shadow-lg shadow-rose-500/25 transition transform active:scale-95">
+                    <i class="fa-solid fa-microphone text-xl mr-3 animate-pulse"></i> Aufnehmen
+                </button>
+            </div>
+        </div>
+
+        <!-- Discord Webhook Integration Section -->
+        <div class="p-6 sm:p-8 bg-white border-t border-slate-100">
+            <div class="flex items-center justify-between mb-2">
+                <label for="discord-webhook" class="block text-xs font-semibold uppercase tracking-wider text-slate-500">Discord Webhook URL (zum Speichern/Teilen)</label>
+                <span class="text-xs text-indigo-600 font-medium">Optional</span>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-3">
+                <div class="relative flex-1">
+                    <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <i class="fa-brands fa-discord"></i>
+                    </span>
+                    <input type="password" id="discord-webhook" class="w-full bg-slate-50 border border-slate-300 rounded-xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors" placeholder="https://discord.com/api/webhooks/...">
+                </div>
+                <button id="btn-send-discord" disabled class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-3 rounded-xl text-sm transition shadow-md shadow-indigo-600/20 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-paper-plane mr-2"></i> An Discord senden
+                </button>
+            </div>
+            <p id="discord-status-msg" class="text-xs mt-2 text-slate-500 hidden"></p>
+        </div>
+
+    </main>
+
+    <!-- Footer Information -->
+    <footer class="max-w-3xl mx-auto w-full text-center text-xs text-slate-400 pb-4">
+        A Cappella Recorder &bull; Sichere Audio-Verarbeitung direkt im Browser &bull; Keine Server-Speicherung ohne Discord-Webhook.
+    </footer>
+
+    <!-- Custom Message Modal / Box (replacing alert) -->
+    <div id="modal-backdrop" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div id="modal-icon" class="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl mb-4 mx-auto">
+                <i class="fa-solid fa-info"></i>
+            </div>
+            <h3 id="modal-title" class="text-lg font-bold text-center text-slate-900 mb-2">Hinweis</h3>
+            <p id="modal-message" class="text-sm text-center text-slate-600 mb-6">Meldungstext...</p>
+            <button id="modal-close-btn" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-medium py-3 rounded-xl text-sm transition shadow">
+                Verstanden
+            </button>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        // Custom message box utility (NO alert/confirm)
+        function showModal(title, message, type = 'info') {
+            const backdrop = document.getElementById('modal-backdrop');
+            const titleEl = document.getElementById('modal-title');
+            const msgEl = document.getElementById('modal-message');
+            const iconEl = document.getElementById('modal-icon');
+
+            titleEl.textContent = title;
+            msgEl.textContent = message;
+
+            iconEl.className = 'w-12 h-12 rounded-full flex items-center justify-center text-xl mb-4 mx-auto';
+            if (type === 'success') {
+                iconEl.classList.add('bg-emerald-50', 'text-emerald-600');
+                iconEl.innerHTML = '<i class="fa-solid fa-check"></i>';
+            } else if (type === 'error') {
+                iconEl.classList.add('bg-rose-50', 'text-rose-600');
+                iconEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+            } else {
+                iconEl.classList.add('bg-indigo-50', 'text-indigo-600');
+                iconEl.innerHTML = '<i class="fa-solid fa-info"></i>';
+            }
+
+            backdrop.classList.remove('hidden');
+        }
+
+        document.getElementById('modal-close-btn').addEventListener('click', () => {
+            document.getElementById('modal-backend' || 'modal-backdrop').classList.add('hidden');
+        });
+        document.getElementById('modal-backdrop').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('modal-backdrop')) {
+                document.getElementById('modal-backdrop').classList.add('hidden');
+            }
+        });
+
+        // Application State Variables
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let recordedBlob = null;
+        let recordedAudioUrl = null;
+        let micStream = null;
+
+        // Web Audio Context for Overdub / Timeline mixing & Background acapella playback
+        let audioCtx = null;
+        let bgAudioBuffer = null;
+        let bgAudioNode = null;
+        
+        let isRecording = false;
+        let isPlaying = false;
+        let playbackStartTime = 0;
+        let playbackOffset = 0;
+        let totalDuration = 30; // Default fallback duration in seconds if no bg audio
+        let currentTimelinePosition = 0;
+        let timerInterval = null;
+
+        // DOM Elements
+        const btnRecord = document.getElementById('btn-record');
+        const btnPlay = document.getElementById('btn-play');
+        const btnStop = document.getElementById('btn-stop');
+        const btnSendDiscord = document.getElementById('btn-send-discord');
+        const bgAudioFileInput = document.getElementById('bg-audio-file');
+        const timelineBar = document.getElementById('timeline-bar');
+        const playheadCursor = document.getElementById('playhead-cursor');
+        const playheadProgress = document.getElementById('playhead-progress');
+        const timeDisplay = document.getElementById('time-display');
+        const timelineDurationLabel = document.getElementById('timeline-duration-label');
+        const recordingStatusBadge = document.getElementById('recording-status-badge');
+        const statusDot = document.getElementById('status-dot');
+        const discordWebhookInput = document.getElementById('discord-webhook');
+        const discordStatusMsg = document.getElementById('discord-status-msg');
+
+        // Initialize Web Audio Context on user interaction
+        function initAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // Handle Background acapella.mp3 file selection
+        bgAudioFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            initAudioContext();
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                bgAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                totalDuration = bgAudioBuffer.duration;
+                updateTimelineDisplay(0);
+                showModal('Begleit-Spur geladen', `Die Datei "${file.name}" wurde erfolgreich geladen (${formatTime(totalDuration)}).`, 'success');
+            } catch (err) {
+                console.error(err);
+                showModal('Fehler', 'Die Audiodatei konnte nicht dekodiert werden.', 'error');
+            }
+        });
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+
+        function updateTimelineDisplay(timeSec) {
+            currentTimelinePosition = Math.max(0, Math.min(timeSec, totalDuration));
+            const percent = (currentTimelinePosition / totalDuration) * 100;
+            playheadCursor.style.left = `${percent}%`;
+            playheadProgress.style.width = `${percent}%`;
+            timeDisplay.textContent = `${formatTime(currentTimelinePosition)} / ${formatTime(totalDuration)}`;
+            timelineDurationLabel.textContent = formatTime(totalDuration);
+        }
+
+        // Timeline clicking for seeking / overdub position
+        timelineBar.addEventListener('click', (e) => {
+            const rect = timelineBar.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const width = rect.width;
+            const ratio = Math.max(0, Math.min(1, clickX / width));
+            
+            playbackOffset = ratio * totalDuration;
+            updateTimelineDisplay(playbackOffset);
+
+            if (isPlaying) {
+                stopPlayback();
+                startPlayback();
+            }
+        });
+
+        // Record Button Handler (Foolproof single-button toggle or trigger)
+        btnRecord.addEventListener('click', async () => {
+            initAudioContext();
+
+            if (!isRecording) {
+                await startRecordingSession();
+            } else {
+                stopRecordingSession();
+            }
+        });
+
+        async function startRecordingSession() {
+            try {
+                // Request microphone access
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+                
+                audioChunks = [];
+                mediaRecorder = new MediaRecorder(micStream);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    recordedBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    recordedAudioUrl = URL.createObjectURL(recordedBlob);
+                    
+                    // Enable playback & discord buttons
+                    btnPlay.disabled = false;
+                    btnSendDiscord.disabled = false;
+                    
+                    showModal('Aufnahme beendet', 'Dein Take wurde erfolgreich aufgezeichnet und ist bereit zum Anhören oder Versenden.', 'success');
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+
+                // Update UI for Recording State
+                btnRecord.innerHTML = '<i class="fa-solid fa-stop text-xl mr-3"></i> Aufnahme stoppen';
+                btnRecord.classList.remove('from-rose-500', 'to-red-600', 'hover:from-rose-600', 'hover:to-red-700', 'shadow-rose-500/25');
+                btnRecord.classList.add('from-slate-800', 'to-slate-900', 'hover:from-slate-900', 'hover:to-black', 'shadow-slate-900/25');
+                
+                recordingStatusBadge.className = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+                statusDot.className = 'w-2 h-2 rounded-full bg-rose-500 mr-2 animate-ping';
+                recordingStatusBadge.querySelector('span:last-child') || (recordingStatusBadge.innerHTML = '<span id="status-dot" class="w-2 h-2 rounded-full bg-rose-500 mr-2 animate-ping"></span> Aufnehmen...');
+
+                // Start background instrumental/acapella playback simultaneously if loaded
+                playBackgroundAudio(playbackOffset);
+
+                // Start progress ticker
+                playbackStartTime = audioCtx.currentTime - playbackOffset;
+                clearInterval(timerInterval);
+                timerInterval = setInterval(() => {
+                    const elapsed = audioCtx.currentTime - playbackStartTime;
+                    if (elapsed >= totalDuration) {
+                        stopRecordingSession();
+                    } else {
+                        updateTimelineDisplay(elapsed);
+                    }
+                }, 100);
+
+            } catch (err) {
+                console.error(err);
+                showModal('Mikrofon-Zugriff verweigert', 'Bitte erlaube den Mikrofon-Zugriff in deinem Browser, um Aufnahmen zu starten.', 'error');
+            }
+        }
+
+        function stopRecordingSession() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                if (micStream) {
+                    micStream.getTracks().forEach(track => track.stop());
+                }
+            }
+            stopBackgroundAudio();
+            clearInterval(timerInterval);
+            isRecording = false;
+
+            // Reset Record Button UI
+            btnRecord.innerHTML = '<i class="fa-solid fa-microphone text-xl mr-3 animate-pulse"></i> Aufnehmen';
+            btnRecord.classList.remove('from-slate-800', 'to-slate-900', 'hover:from-slate-900', 'hover:to-black', 'shadow-slate-900/25');
+            btnRecord.classList.add('from-rose-500', 'to-red-600', 'hover:from-rose-600', 'hover:to-red-700', 'shadow-rose-500/25');
+
+            recordingStatusBadge.className = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 border border-emerald-500/20';
+            statusDot.className = 'w-2 h-2 rounded-full bg-emerald-500 mr-2';
+            recordingStatusBadge.innerHTML = '<span id="status-dot" class="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span> Aufgenommen';
+        }
+
+        function playBackgroundAudio(offset) {
+            if (!bgAudioBuffer || !audioCtx) return;
+            try {
+                if (bgAudioNode) {
+                    bgAudioNode.stop();
+                }
+                bgAudioNode = audioCtx.createBufferSource();
+                bgAudioNode.buffer = bgAudioBuffer;
+                bgAudioNode.connect(audioCtx.destination);
+                bgAudioNode.start(0, offset);
+            } catch (e) {
+                console.error("Playback error:", e);
+            }
+        }
+
+        function stopBackgroundAudio() {
+            if (bgAudioNode) {
+                try {
+                    bgAudioNode.stop();
+                } catch (e) {}
+                bgAudioNode = null;
+            }
+        }
+
+        // Playback recorded audio preview
+        let previewAudioElement = null;
+
+        btnPlay.addEventListener('click', () => {
+            if (!recordedAudioUrl) return;
+            
+            if (isPlaying) {
+                stopPlayback();
+            } else {
+                previewAudioElement = new Audio(recordedAudioUrl);
+                previewAudioElement.play();
+                isPlaying = true;
+                btnPlay.innerHTML = '<i class="fa-solid fa-pause mr-2 text-indigo-600"></i> Pause';
+                btnStop.disabled = false;
+
+                previewAudioElement.onended = () => {
+                    stopPlayback();
+                };
+            }
+        });
+
+        btnStop.addEventListener('click', () => {
+            stopPlayback();
+            if (isRecording) {
+                stopRecordingSession();
+            }
+        });
+
+        function stopPlayback() {
+            if (previewAudioElement) {
+                previewAudioElement.pause();
+                previewAudioElement = null;
+            }
+            isPlaying = false;
+            btnPlay.innerHTML = '<i class="fa-solid fa-play mr-2 text-indigo-600"></i> Anhören';
+            btnStop.disabled = true;
+        }
+
+        // Discord Webhook Integration
+        btnSendDiscord.addEventListener('click', async () => {
+            const webhookUrl = discordWebhookInput.value.trim();
+            if (!webhookUrl) {
+                showModal('Fehler', 'Bitte gib eine gültige Discord Webhook URL ein.', 'error');
+                return;
+            }
+            if (!recordedBlob) {
+                showModal('Fehler', 'Keine Aufnahme vorhanden, die gesendet werden könnte.', 'error');
+                return;
+            }
+
+            const title = document.getElementById('track-title').value || 'Unbenannter Song';
+            const artist = document.getElementById('artist-name').value || 'Unbekannter Interpret';
+            const notes = document.getElementById('notes').value || 'Keine Notizen';
+
+            btnSendDiscord.disabled = true;
+            btnSendDiscord.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Wird gesendet...';
+            discordStatusMsg.classList.remove('hidden');
+            discordStatusMsg.textContent = 'Bereite FormData vor und lade zu Discord hoch...';
+            discordStatusMsg.className = 'text-xs mt-2 text-slate-500';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', recordedBlob, `${title.replace(/\s+/g, '_')}_acapella.webm`);
+                
+                const payload = {
+                    content: `🎙️ **Neues A-Cappella aufgenommen!**\n🎵 **Titel:** ${title}\n👤 **Interpret:** ${artist}\n📝 **Notizen:** ${notes}`
+                };
+                formData.append('payload_json', JSON.stringify(payload));
+
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok || response.status === 204) {
+                    discordStatusMsg.textContent = 'Erfolgreich an Discord gesendet!';
+                    discordStatusMsg.className = 'text-xs mt-2 text-emerald-600 font-medium';
+                    showModal('Erfolg!', 'Deine Aufnahme wurde erfolgreich an den Discord Webhook übermittelt.', 'success');
+                } else {
+                    throw new Error(`Discord API Fehler: ${response.status}`);
+                }
+            } catch (err) {
+                console.error(err);
+                discordStatusMsg.textContent = 'Fehler beim Senden an Discord (siehe Konsole).';
+                discordStatusMsg.className = 'text-xs mt-2 text-rose-600 font-medium';
+                showModal('Fehler', 'Die Aufnahme konnte nicht an Discord gesendet werden. Überprüfe die Webhook-URL.', 'error');
+            } finally {
+                btnSendDiscord.disabled = false;
+                btnSendDiscord.innerHTML = '<i class="fa-solid fa-paper-plane mr-2"></i> An Discord senden';
+            }
+        });
+    </script>
+</body>
+</html>
